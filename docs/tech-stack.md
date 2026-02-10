@@ -1,7 +1,17 @@
 # Tech Stack
 
 - Core: Rust + Tauri v2, React, TypeScript
-- Backend runtime: tokio, portable-pty
-- Frontend UI: Tailwind CSS, Xterm.js, react-grid-layout
-- State: Zustand
-- Build tooling: pnpm workspace, Vite, Cargo
+- Backend runtime:
+  - `portable-pty` for native PTY instances
+  - `tokio` runtime primitives
+  - `tauri-plugin-store` and `tauri-plugin-opener`
+- Frontend UI:
+  - React + Vite
+  - Tailwind CSS
+  - Xterm.js + `@xterm/addon-fit`
+  - `react-grid-layout` (+ `react-resizable`) for pane manager
+- State:
+  - Zustand
+- Build tooling:
+  - pnpm workspace
+  - Cargo
