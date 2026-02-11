@@ -12,12 +12,83 @@ export interface PaneModel {
   error?: string;
 }
 
+export type AgentProfileKey = "claude" | "codex" | "gemini" | "cursor" | "opencode";
+
+export interface AgentAllocation {
+  profile: AgentProfileKey;
+  label: string;
+  command: string;
+  enabled: boolean;
+  count: number;
+}
+
+export type AppSection = "terminal" | "kanban" | "agents" | "prompts" | "settings";
+
+export interface WorkspaceRuntime {
+  id: string;
+  name: string;
+  repoRoot: string;
+  branch: string;
+  worktreePath: string;
+  paneCount: number;
+  paneOrder: string[];
+  panes: Record<string, PaneModel>;
+  layouts: Layout[];
+  zoomedPaneId: string | null;
+  agentAllocation: AgentAllocation[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SessionState {
+  workspaces: WorkspaceRuntime[];
+  activeWorkspaceId: string | null;
+  activeSection: AppSection;
+  echoInput: boolean;
+}
+
+export interface LegacySessionState {
+  paneCount: number;
+  paneOrder: string[];
+  panes: Record<string, PaneModel>;
+  layouts: Layout[];
+  zoomedPaneId: string | null;
+  echoInput: boolean;
+  workspaces: WorkspaceTab[];
+  activeWorkspaceId: string | null;
+}
+
+export interface Snapshot {
+  id: string;
+  name: string;
+  createdAt: string;
+  state: SessionState;
+}
+
+export interface Blueprint {
+  id: string;
+  name: string;
+  paneCount: number;
+  workspacePaths: string[];
+  autorunCommands: string[];
+  agentAllocation?: AgentAllocation[];
+}
+
+export interface PersistedPayload {
+  version: number;
+  session?: SessionState | LegacySessionState;
+  snapshots: Snapshot[];
+  blueprints: Blueprint[];
+}
+
 export interface SpawnPaneRequest {
   paneId: string;
   cwd?: string;
   shell?: string;
   rows?: number;
   cols?: number;
+  initCommand?: string;
+  executeInit?: boolean;
 }
 
 export interface SpawnPaneResponse {
@@ -67,37 +138,4 @@ export interface PaneCommandResult {
   paneId: string;
   ok: boolean;
   error?: string;
-}
-
-export interface SnapshotState {
-  paneCount: number;
-  paneOrder: string[];
-  panes: Record<string, PaneModel>;
-  layouts: Layout[];
-  zoomedPaneId: string | null;
-  echoInput: boolean;
-  workspaces: WorkspaceTab[];
-  activeWorkspaceId: string | null;
-}
-
-export interface Snapshot {
-  id: string;
-  name: string;
-  createdAt: string;
-  state: SnapshotState;
-}
-
-export interface Blueprint {
-  id: string;
-  name: string;
-  paneCount: number;
-  workspacePaths: string[];
-  autorunCommands: string[];
-}
-
-export interface PersistedPayload {
-  version: number;
-  session?: SnapshotState;
-  snapshots: Snapshot[];
-  blueprints: Blueprint[];
 }

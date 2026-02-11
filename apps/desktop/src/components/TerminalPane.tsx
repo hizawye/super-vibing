@@ -5,26 +5,30 @@ import { resizePane, subscribeToPaneEvents } from "../lib/tauri";
 import { useWorkspaceStore } from "../store/workspace";
 
 interface TerminalPaneProps {
+  workspaceId: string;
   paneId: string;
 }
 
 const PROMPTABLE_INPUT_REGEX = /^[\x20-\x7E]$/;
 
-export function TerminalPane({ paneId }: TerminalPaneProps) {
+export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const inputBufferRef = useRef("");
 
-  const pane = useWorkspaceStore((state) => state.panes[paneId]);
+  const pane = useWorkspaceStore((state) => {
+    const workspace = state.workspaces.find((item) => item.id === workspaceId);
+    return workspace?.panes[paneId];
+  });
   const ensurePaneSpawned = useWorkspaceStore((state) => state.ensurePaneSpawned);
   const markPaneExited = useWorkspaceStore((state) => state.markPaneExited);
   const updatePaneLastCommand = useWorkspaceStore((state) => state.updatePaneLastCommand);
   const sendInputFromPane = useWorkspaceStore((state) => state.sendInputFromPane);
 
   useEffect(() => {
-    void ensurePaneSpawned(paneId);
-  }, [ensurePaneSpawned, paneId]);
+    void ensurePaneSpawned(workspaceId, paneId);
+  }, [ensurePaneSpawned, paneId, workspaceId]);
 
   useEffect(() => {
     if (!containerRef.current || terminalRef.current) {
@@ -89,12 +93,12 @@ export function TerminalPane({ paneId }: TerminalPaneProps) {
     resizeObserver.observe(containerRef.current);
 
     const disposeInput = terminal.onData((data) => {
-      void sendInputFromPane(paneId, data);
+      void sendInputFromPane(workspaceId, paneId, data);
 
       if (data === "\r") {
         const command = inputBufferRef.current.trim();
         if (command.length > 0) {
-          updatePaneLastCommand(paneId, command);
+          updatePaneLastCommand(workspaceId, paneId, command);
         }
         inputBufferRef.current = "";
         return;
@@ -122,12 +126,12 @@ export function TerminalPane({ paneId }: TerminalPaneProps) {
 
       if (event.kind === "error") {
         terminalRef.current.writeln(`\r\n[super-vibing] ${event.payload}`);
-        markPaneExited(paneId, event.payload);
+        markPaneExited(workspaceId, paneId, event.payload);
         return;
       }
 
       if (event.kind === "exit") {
-        markPaneExited(paneId);
+        markPaneExited(workspaceId, paneId);
       }
     });
 
@@ -141,7 +145,7 @@ export function TerminalPane({ paneId }: TerminalPaneProps) {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [markPaneExited, paneId, sendInputFromPane, updatePaneLastCommand]);
+  }, [markPaneExited, paneId, sendInputFromPane, updatePaneLastCommand, workspaceId]);
 
   return (
     <div className="terminal-shell">

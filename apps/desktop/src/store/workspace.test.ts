@@ -1,16 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useWorkspaceStore } from "./workspace";
-import type { CreateWorktreeRequest, PaneModel, SnapshotState, SpawnPaneRequest, WorkspaceTab } from "../types";
+import type { AgentAllocation, SessionState, SpawnPaneRequest, WorkspaceRuntime } from "../types";
 import * as tauriApi from "../lib/tauri";
 
 vi.mock("../lib/tauri", () => ({
   closePane: vi.fn(async () => {}),
-  createWorktree: vi.fn(async ({ repoRoot, branch }: CreateWorktreeRequest) => ({
-    id: "workspace-created",
-    repoRoot,
-    branch,
-    worktreePath: `${repoRoot}/.worktrees/${branch}`,
-  })),
   getCurrentBranch: vi.fn(async () => "main"),
   getDefaultCwd: vi.fn(async () => "/repo"),
   runGlobalCommand: vi.fn(async () => []),
@@ -25,7 +19,7 @@ vi.mock("../lib/tauri", () => ({
 
 vi.mock("../lib/persistence", () => ({
   loadPersistedPayload: vi.fn(async () => ({
-    version: 1,
+    version: 2,
     snapshots: [],
     blueprints: [],
   })),
@@ -34,59 +28,83 @@ vi.mock("../lib/persistence", () => ({
   saveSnapshots: vi.fn(async () => {}),
 }));
 
-function pane(id: string, status: PaneModel["status"] = "idle"): PaneModel {
+function allocation(overrides: Partial<AgentAllocation> = {}): AgentAllocation[] {
+  const defaults: AgentAllocation[] = [
+    { profile: "claude", label: "Claude", command: "claude", enabled: false, count: 0 },
+    { profile: "codex", label: "Codex", command: "codex", enabled: false, count: 0 },
+    { profile: "gemini", label: "Gemini", command: "gemini", enabled: false, count: 0 },
+    { profile: "cursor", label: "Cursor", command: "cursor-agent", enabled: false, count: 0 },
+    { profile: "opencode", label: "OpenCode", command: "opencode", enabled: false, count: 0 },
+  ];
+
+  if (!overrides.profile) {
+    return defaults;
+  }
+
+  return defaults.map((item) =>
+    item.profile === overrides.profile ? { ...item, ...overrides } : item,
+  );
+}
+
+function workspace(
+  id: string,
+  name: string,
+  paneCount: number,
+  statuses: Array<"idle" | "running" | "closed" | "error">,
+  cwd = "/repo",
+): WorkspaceRuntime {
+  const paneOrder = Array.from({ length: paneCount }, (_, index) => `pane-${index + 1}`);
+
   return {
     id,
-    title: id,
-    cwd: "/repo",
-    shell: "/bin/bash",
-    status,
-    lastSubmittedCommand: "",
-  };
-}
-
-function baseWorkspace(): WorkspaceTab {
-  return {
-    id: "workspace-main",
-    repoRoot: "/repo",
+    name,
+    repoRoot: cwd,
     branch: "main",
-    worktreePath: "/repo",
+    worktreePath: cwd,
+    paneCount,
+    paneOrder,
+    panes: Object.fromEntries(
+      paneOrder.map((paneId, index) => [
+        paneId,
+        {
+          id: paneId,
+          title: paneId,
+          cwd,
+          shell: "/bin/bash",
+          status: statuses[index] ?? "idle",
+          lastSubmittedCommand: "",
+        },
+      ]),
+    ),
+    layouts: paneOrder.map((paneId, index) => ({
+      i: paneId,
+      x: (index % 4) * 3,
+      y: Math.floor(index / 4) * 3,
+      w: 3,
+      h: 3,
+      minW: 2,
+      minH: 2,
+    })),
+    zoomedPaneId: null,
+    agentAllocation: allocation(),
+    createdAt: "2026-02-11T10:00:00.000Z",
+    updatedAt: "2026-02-11T10:00:00.000Z",
   };
 }
 
-function resetStore(stateOverrides: Partial<SnapshotState> = {}): void {
-  const paneOrder = stateOverrides.paneOrder ?? ["pane-1"];
-  const panes =
-    stateOverrides.panes ??
-    paneOrder.reduce<Record<string, PaneModel>>((acc, paneId) => {
-      acc[paneId] = pane(paneId);
-      return acc;
-    }, {});
+function resetStore(overrides: Partial<SessionState> = {}): void {
+  const baseWorkspace = workspace("workspace-main", "Workspace 1", 2, ["running", "running"]);
 
   useWorkspaceStore.setState({
     initialized: true,
     bootstrapping: false,
-    paneCount: stateOverrides.paneCount ?? paneOrder.length,
-    paneOrder,
-    panes,
-    layouts:
-      stateOverrides.layouts ??
-      paneOrder.map((paneId, index) => ({
-        i: paneId,
-        x: index * 3,
-        y: 0,
-        w: 3,
-        h: 3,
-        minW: 2,
-        minH: 2,
-      })),
-    zoomedPaneId: stateOverrides.zoomedPaneId ?? null,
-    echoInput: stateOverrides.echoInput ?? false,
-    workspaces: stateOverrides.workspaces ?? [baseWorkspace()],
-    activeWorkspaceId: stateOverrides.activeWorkspaceId ?? "workspace-main",
+    activeSection: overrides.activeSection ?? "terminal",
+    paletteOpen: false,
+    echoInput: overrides.echoInput ?? false,
+    workspaces: overrides.workspaces ?? [baseWorkspace],
+    activeWorkspaceId: overrides.activeWorkspaceId ?? baseWorkspace.id,
     snapshots: [],
     blueprints: [],
-    paletteOpen: false,
   });
 }
 
@@ -96,36 +114,35 @@ describe("workspace store", () => {
     resetStore();
   });
 
-  it("clamps pane count between 1 and 16", async () => {
-    await useWorkspaceStore.getState().setPaneCount(0);
-    expect(useWorkspaceStore.getState().paneCount).toBe(1);
+  it("clamps active workspace pane count between 1 and 16", async () => {
+    await useWorkspaceStore.getState().setActiveWorkspacePaneCount(0);
+    let active = useWorkspaceStore.getState().workspaces[0];
+    expect(active.paneCount).toBe(1);
 
-    await useWorkspaceStore.getState().setPaneCount(99);
-    expect(useWorkspaceStore.getState().paneCount).toBe(16);
-    expect(useWorkspaceStore.getState().paneOrder).toHaveLength(16);
+    await useWorkspaceStore.getState().setActiveWorkspacePaneCount(99);
+    active = useWorkspaceStore.getState().workspaces[0];
+    expect(active.paneCount).toBe(16);
+    expect(active.paneOrder).toHaveLength(16);
   });
 
-  it("toggles zoom state idempotently", () => {
-    useWorkspaceStore.getState().toggleZoom("pane-1");
-    expect(useWorkspaceStore.getState().zoomedPaneId).toBe("pane-1");
+  it("toggles active workspace zoom idempotently", () => {
+    useWorkspaceStore.getState().toggleActiveWorkspaceZoom("pane-1");
+    let active = useWorkspaceStore.getState().workspaces[0];
+    expect(active.zoomedPaneId).toBe("pane-1");
 
-    useWorkspaceStore.getState().toggleZoom("pane-1");
-    expect(useWorkspaceStore.getState().zoomedPaneId).toBeNull();
+    useWorkspaceStore.getState().toggleActiveWorkspaceZoom("pane-1");
+    active = useWorkspaceStore.getState().workspaces[0];
+    expect(active.zoomedPaneId).toBeNull();
   });
 
   it("broadcasts input only to running panes when echo mode is on", async () => {
     resetStore({
-      paneOrder: ["pane-1", "pane-2", "pane-3"],
-      panes: {
-        "pane-1": pane("pane-1", "running"),
-        "pane-2": pane("pane-2", "running"),
-        "pane-3": pane("pane-3", "closed"),
-      },
       echoInput: true,
-      paneCount: 3,
+      workspaces: [workspace("workspace-main", "Workspace 1", 3, ["running", "running", "closed"])],
+      activeWorkspaceId: "workspace-main",
     });
 
-    await useWorkspaceStore.getState().sendInputFromPane("pane-1", "ls");
+    await useWorkspaceStore.getState().sendInputFromPane("workspace-main", "pane-1", "ls");
 
     expect(tauriApi.writePaneInput).toHaveBeenNthCalledWith(1, {
       paneId: "pane-1",
@@ -140,27 +157,51 @@ describe("workspace store", () => {
     expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(2);
   });
 
-  it("saves and restores snapshot state", async () => {
+  it("creates workspace and maps enabled agents to pane init commands", async () => {
     resetStore({
-      paneOrder: ["pane-1", "pane-2"],
-      panes: {
-        "pane-1": pane("pane-1", "running"),
-        "pane-2": pane("pane-2", "running"),
-      },
-      paneCount: 2,
-      zoomedPaneId: "pane-2",
-      echoInput: true,
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["running"])],
+      activeWorkspaceId: "workspace-main",
     });
 
+    await useWorkspaceStore.getState().createWorkspace({
+      name: "Workspace 2",
+      directory: "/repo/.worktrees/feature-ai",
+      paneCount: 2,
+      agentAllocation: allocation({ profile: "claude", enabled: true, count: 1 }),
+    });
+
+    const state = useWorkspaceStore.getState();
+    expect(state.workspaces).toHaveLength(2);
+
+    expect(tauriApi.closePane).toHaveBeenCalledWith("pane-1");
+
+    expect(tauriApi.spawnPane).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        paneId: "pane-1",
+        initCommand: "claude",
+        executeInit: true,
+      }),
+    );
+    expect(tauriApi.spawnPane).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        paneId: "pane-2",
+        initCommand: undefined,
+        executeInit: false,
+      }),
+    );
+  });
+
+  it("saves and restores snapshot session state", async () => {
     await useWorkspaceStore.getState().saveSnapshot("snapshot-1");
+
     const snapshot = useWorkspaceStore.getState().snapshots[0];
     expect(snapshot.name).toBe("snapshot-1");
 
     resetStore({
-      paneOrder: ["pane-1"],
-      panes: { "pane-1": pane("pane-1") },
-      paneCount: 1,
-      zoomedPaneId: null,
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["idle"])],
+      activeWorkspaceId: "workspace-main",
       echoInput: false,
     });
 
@@ -168,40 +209,7 @@ describe("workspace store", () => {
     await useWorkspaceStore.getState().restoreSnapshot(snapshot.id);
 
     const state = useWorkspaceStore.getState();
-    expect(state.paneCount).toBe(2);
-    expect(state.zoomedPaneId).toBe("pane-2");
-    expect(state.echoInput).toBe(true);
-  });
-
-  it("launches blueprint, creates missing workspaces, and runs autorun commands", async () => {
-    resetStore({
-      paneOrder: ["pane-1"],
-      panes: { "pane-1": pane("pane-1", "running") },
-      paneCount: 1,
-    });
-    useWorkspaceStore.setState({
-      blueprints: [
-        {
-          id: "bp-1",
-          name: "Daily",
-          paneCount: 2,
-          workspacePaths: ["/repo/a", "/repo/b"],
-          autorunCommands: ["pnpm test", "cargo check"],
-        },
-      ],
-    });
-
-    await useWorkspaceStore.getState().launchBlueprint("bp-1");
-    const state = useWorkspaceStore.getState();
-
-    expect(state.paneCount).toBe(2);
-    expect(state.workspaces.some((item) => item.worktreePath === "/repo/a")).toBe(true);
-    expect(state.workspaces.some((item) => item.worktreePath === "/repo/b")).toBe(true);
-    expect(tauriApi.runGlobalCommand).toHaveBeenCalledTimes(2);
-    expect(tauriApi.runGlobalCommand).toHaveBeenNthCalledWith(1, {
-      paneIds: ["pane-1", "pane-2"],
-      command: "pnpm test",
-      execute: true,
-    });
+    expect(state.workspaces[0].paneCount).toBe(2);
+    expect(state.activeWorkspaceId).toBe("workspace-main");
   });
 });

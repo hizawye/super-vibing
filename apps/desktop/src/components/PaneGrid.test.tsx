@@ -45,7 +45,9 @@ describe("PaneGrid", () => {
 
     render(
       <PaneGrid
+        workspaceId="workspace-1"
         paneIds={["pane-1", "pane-2"]}
+        paneTitles={{ "pane-1": "pane-1", "pane-2": "pane-2" }}
         layouts={layouts}
         zoomedPaneId="pane-2"
         onLayoutsChange={onLayoutsChange}
@@ -66,7 +68,9 @@ describe("PaneGrid", () => {
 
     render(
       <PaneGrid
+        workspaceId="workspace-1"
         paneIds={["pane-1", "pane-2"]}
+        paneTitles={{ "pane-1": "pane-1", "pane-2": "pane-2" }}
         layouts={layouts}
         zoomedPaneId={null}
         onLayoutsChange={onLayoutsChange}

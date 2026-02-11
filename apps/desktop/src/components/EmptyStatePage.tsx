@@ -1,0 +1,29 @@
+interface EmptyStatePageProps {
+  title: string;
+  subtitle: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}
+
+export function EmptyStatePage({ title, subtitle, actionLabel, onAction }: EmptyStatePageProps) {
+  return (
+    <section className="section-surface">
+      <header className="section-head">
+        <h2>{title}</h2>
+      </header>
+
+      <div className="empty-state-wrap">
+        <div className="empty-icon" aria-hidden="true">
+          ◇
+        </div>
+        <h3>{title}</h3>
+        <p>{subtitle}</p>
+        {actionLabel && onAction ? (
+          <button type="button" className="primary-btn" onClick={onAction}>
+            {actionLabel}
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}

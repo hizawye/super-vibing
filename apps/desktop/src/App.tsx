@@ -1,48 +1,104 @@
 import { useEffect, useMemo, useState } from "react";
 import { PaneGrid } from "./components/PaneGrid";
+import { TopChrome } from "./components/TopChrome";
+import { SectionMenu } from "./components/SectionMenu";
+import { NewWorkspaceModal, type WorkspaceCreationInput } from "./components/NewWorkspaceModal";
+import { EmptyStatePage } from "./components/EmptyStatePage";
 import { CommandPalette } from "./components/CommandPalette";
 import { useWorkspaceStore } from "./store/workspace";
+
+const SHORTCUT_GROUPS = [
+  {
+    title: "Workspaces",
+    shortcuts: [
+      ["New workspace tab", "Ctrl/Cmd + N"],
+      ["Next workspace", "Ctrl/Cmd + ]"],
+      ["Previous workspace", "Ctrl/Cmd + ["],
+      ["Close workspace", "Ctrl/Cmd + W"],
+    ],
+  },
+  {
+    title: "Panes",
+    shortcuts: [
+      ["Increase pane layout", "Ctrl/Cmd + Shift + ]"],
+      ["Decrease pane layout", "Ctrl/Cmd + Shift + ["],
+      ["Zoom pane", "Double-click pane header"],
+      ["Run command in all panes", "Ctrl/Cmd + Enter"],
+    ],
+  },
+  {
+    title: "Launcher",
+    shortcuts: [["Open command palette", "Ctrl/Cmd + P"]],
+  },
+] as const;
+
+function SettingsSection() {
+  return (
+    <section className="section-surface">
+      <header className="section-head">
+        <h2>Keyboard Shortcuts</h2>
+        <p>Reference frequently used shortcuts for workspace and pane actions.</p>
+      </header>
+
+      <div className="shortcuts-shell">
+        {SHORTCUT_GROUPS.map((group) => (
+          <div key={group.title} className="shortcuts-group">
+            <h3>{group.title}</h3>
+            <div className="shortcut-list">
+              {group.shortcuts.map(([label, keys]) => (
+                <div key={label} className="shortcut-row">
+                  <span>{label}</span>
+                  <kbd>{keys}</kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function App() {
   const initialized = useWorkspaceStore((state) => state.initialized);
   const bootstrapping = useWorkspaceStore((state) => state.bootstrapping);
-  const paneCount = useWorkspaceStore((state) => state.paneCount);
-  const paneOrder = useWorkspaceStore((state) => state.paneOrder);
-  const layouts = useWorkspaceStore((state) => state.layouts);
-  const zoomedPaneId = useWorkspaceStore((state) => state.zoomedPaneId);
+  const activeSection = useWorkspaceStore((state) => state.activeSection);
   const echoInput = useWorkspaceStore((state) => state.echoInput);
+  const paletteOpen = useWorkspaceStore((state) => state.paletteOpen);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const snapshots = useWorkspaceStore((state) => state.snapshots);
-  const blueprints = useWorkspaceStore((state) => state.blueprints);
-  const paletteOpen = useWorkspaceStore((state) => state.paletteOpen);
 
   const bootstrap = useWorkspaceStore((state) => state.bootstrap);
-  const setPaneCount = useWorkspaceStore((state) => state.setPaneCount);
-  const setLayouts = useWorkspaceStore((state) => state.setLayouts);
-  const toggleZoom = useWorkspaceStore((state) => state.toggleZoom);
+  const setActiveSection = useWorkspaceStore((state) => state.setActiveSection);
   const setEchoInput = useWorkspaceStore((state) => state.setEchoInput);
-  const createWorktree = useWorkspaceStore((state) => state.createWorktree);
-  const setActiveWorkspace = useWorkspaceStore((state) => state.setActiveWorkspace);
   const setPaletteOpen = useWorkspaceStore((state) => state.setPaletteOpen);
+  const createWorkspace = useWorkspaceStore((state) => state.createWorkspace);
+  const closeWorkspace = useWorkspaceStore((state) => state.closeWorkspace);
+  const setActiveWorkspace = useWorkspaceStore((state) => state.setActiveWorkspace);
+  const setActiveWorkspacePaneCount = useWorkspaceStore((state) => state.setActiveWorkspacePaneCount);
+  const setActiveWorkspaceLayouts = useWorkspaceStore((state) => state.setActiveWorkspaceLayouts);
+  const toggleActiveWorkspaceZoom = useWorkspaceStore((state) => state.toggleActiveWorkspaceZoom);
+  const runGlobalCommand = useWorkspaceStore((state) => state.runGlobalCommand);
   const saveSnapshot = useWorkspaceStore((state) => state.saveSnapshot);
-  const restoreSnapshot = useWorkspaceStore((state) => state.restoreSnapshot);
-  const createBlueprint = useWorkspaceStore((state) => state.createBlueprint);
-  const launchBlueprint = useWorkspaceStore((state) => state.launchBlueprint);
 
-  const [repoRootInput, setRepoRootInput] = useState("");
-  const [branchInput, setBranchInput] = useState("");
-  const [baseBranchInput, setBaseBranchInput] = useState("main");
-
-  const [snapshotName, setSnapshotName] = useState("");
-  const [blueprintName, setBlueprintName] = useState("");
-  const [blueprintPathsInput, setBlueprintPathsInput] = useState("");
-  const [blueprintAutorunInput, setBlueprintAutorunInput] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
+  const [globalCommand, setGlobalCommand] = useState("");
+  const [executeCommand, setExecuteCommand] = useState(true);
 
   const activeWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
     [activeWorkspaceId, workspaces],
   );
+
+  const paneTitles = useMemo(() => {
+    if (!activeWorkspace) {
+      return {};
+    }
+    return Object.fromEntries(
+      activeWorkspace.paneOrder.map((paneId) => [paneId, activeWorkspace.panes[paneId]?.title ?? paneId]),
+    );
+  }, [activeWorkspace]);
 
   useEffect(() => {
     void bootstrap();
@@ -50,19 +106,30 @@ function App() {
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      const isPaletteShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
-      if (!isPaletteShortcut) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        setPaletteOpen(false);
+        setNewWorkspaceOpen(true);
         return;
       }
 
-      event.preventDefault();
-      setPaletteOpen(!useWorkspaceStore.getState().paletteOpen);
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        setMenuOpen(false);
+        setNewWorkspaceOpen(false);
+        setPaletteOpen(true);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        setNewWorkspaceOpen(false);
+        setPaletteOpen(false);
+      }
     };
 
     window.addEventListener("keydown", listener);
-    return () => {
-      window.removeEventListener("keydown", listener);
-    };
+    return () => window.removeEventListener("keydown", listener);
   }, [setPaletteOpen]);
 
   if (!initialized || bootstrapping) {
@@ -75,196 +142,166 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="app-header">
-        <div className="app-title">
-          <h1>SuperVibing</h1>
-          <p>
-            Branch: <strong>{activeWorkspace?.branch ?? "unknown"}</strong> | Worktree: {" "}
-            <code>{activeWorkspace?.worktreePath ?? "n/a"}</code>
-          </p>
-        </div>
+      <TopChrome
+        activeSection={activeSection}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onSectionButtonClick={() => setMenuOpen((current) => !current)}
+        onSelectWorkspace={(workspaceId) => {
+          void setActiveWorkspace(workspaceId);
+        }}
+        onCloseWorkspace={(workspaceId) => {
+          void closeWorkspace(workspaceId);
+        }}
+        onOpenWorkspaceModal={() => setNewWorkspaceOpen(true)}
+        onOpenSettings={() => setActiveSection("settings")}
+      />
 
-        <div className="toolbar-row">
-          <label className="toolbar-label" htmlFor="pane-count">
-            Panes ({paneCount})
-          </label>
-          <input
-            id="pane-count"
-            type="range"
-            min={1}
-            max={16}
-            value={paneCount}
-            onChange={(event) => {
-              void setPaneCount(Number(event.currentTarget.value));
-            }}
-          />
-          <label className="check-label">
-            <input
-              type="checkbox"
-              checked={echoInput}
-              onChange={(event) => setEchoInput(event.currentTarget.checked)}
-            />
-            Echo Input
-          </label>
-          <button type="button" className="toolbar-btn" onClick={() => setPaletteOpen(true)}>
-            Cmd/Ctrl+K
-          </button>
-        </div>
-      </header>
+      {activeSection === "terminal" && activeWorkspace ? (
+        <section className="section-surface terminal-surface">
+          <header className="terminal-head">
+            <div className="terminal-context">
+              <h2>{activeWorkspace.name}</h2>
+              <p>
+                {activeWorkspace.branch} · <code>{activeWorkspace.worktreePath}</code>
+              </p>
+            </div>
 
-      <section className="control-grid">
-        <div className="panel">
-          <h2>Worktree Manager</h2>
-          <div className="field-grid">
-            <input
-              className="text-input"
-              placeholder="Repo root"
-              value={repoRootInput}
-              onChange={(event) => setRepoRootInput(event.currentTarget.value)}
-            />
-            <input
-              className="text-input"
-              placeholder="Branch"
-              value={branchInput}
-              onChange={(event) => setBranchInput(event.currentTarget.value)}
-            />
-            <input
-              className="text-input"
-              placeholder="Base branch (optional)"
-              value={baseBranchInput}
-              onChange={(event) => setBaseBranchInput(event.currentTarget.value)}
-            />
-            <button
-              type="button"
-              className="toolbar-btn"
-              onClick={() => {
-                void createWorktree(repoRootInput, branchInput, baseBranchInput || undefined);
-                setBranchInput("");
-              }}
-            >
-              Create Worktree
-            </button>
-          </div>
-          <div className="chips-row">
-            {workspaces.map((workspace) => (
+            <div className="terminal-controls">
+              <label className="compact-label" htmlFor="pane-count">
+                Panes {activeWorkspace.paneCount}
+              </label>
+              <input
+                id="pane-count"
+                type="range"
+                min={1}
+                max={16}
+                value={activeWorkspace.paneCount}
+                onChange={(event) => {
+                  void setActiveWorkspacePaneCount(Number(event.currentTarget.value));
+                }}
+              />
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={echoInput}
+                  onChange={(event) => setEchoInput(event.currentTarget.checked)}
+                />
+                Echo input
+              </label>
               <button
                 type="button"
-                key={workspace.id}
-                className={`chip ${workspace.id === activeWorkspaceId ? "active" : ""}`}
+                className="subtle-btn"
                 onClick={() => {
-                  void setActiveWorkspace(workspace.id);
+                  const fallback = `Snapshot ${new Date().toLocaleString()}`;
+                  void saveSnapshot(fallback);
                 }}
               >
-                {workspace.branch}
+                Save snapshot
               </button>
-            ))}
-          </div>
-        </div>
+            </div>
+          </header>
 
-        <div className="panel">
-          <h2>Snapshots</h2>
-          <div className="field-grid">
+          <div className="command-row">
             <input
               className="text-input"
-              placeholder="Snapshot name"
-              value={snapshotName}
-              onChange={(event) => setSnapshotName(event.currentTarget.value)}
+              placeholder="Run in all panes"
+              value={globalCommand}
+              onChange={(event) => setGlobalCommand(event.currentTarget.value)}
             />
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={executeCommand}
+                onChange={(event) => setExecuteCommand(event.currentTarget.checked)}
+              />
+              Execute
+            </label>
             <button
               type="button"
-              className="toolbar-btn"
+              className="primary-btn"
               onClick={() => {
-                const fallbackName = `Snapshot ${new Date().toLocaleString()}`;
-                void saveSnapshot(snapshotName.trim() || fallbackName);
-                setSnapshotName("");
+                void runGlobalCommand(globalCommand, executeCommand);
+                setGlobalCommand("");
               }}
             >
-              Save Snapshot
+              Run
             </button>
           </div>
-          <div className="chips-row">
-            {snapshots.slice(0, 8).map((snapshot) => (
-              <button
-                type="button"
-                key={snapshot.id}
-                className="chip"
-                onClick={() => {
-                  void restoreSnapshot(snapshot.id);
-                }}
-              >
-                {snapshot.name}
-              </button>
-            ))}
-          </div>
-        </div>
 
-        <div className="panel">
-          <h2>Quick Launch Blueprints</h2>
-          <div className="field-grid">
-            <input
-              className="text-input"
-              placeholder="Blueprint name"
-              value={blueprintName}
-              onChange={(event) => setBlueprintName(event.currentTarget.value)}
+          <div className="grid-shell">
+            <PaneGrid
+              workspaceId={activeWorkspace.id}
+              paneIds={activeWorkspace.paneOrder}
+              paneTitles={paneTitles}
+              layouts={activeWorkspace.layouts}
+              zoomedPaneId={activeWorkspace.zoomedPaneId}
+              onLayoutsChange={(next) => setActiveWorkspaceLayouts(next)}
+              onToggleZoom={toggleActiveWorkspaceZoom}
             />
-            <input
-              className="text-input"
-              placeholder="Paths (comma-separated)"
-              value={blueprintPathsInput}
-              onChange={(event) => setBlueprintPathsInput(event.currentTarget.value)}
-            />
-            <input
-              className="text-input"
-              placeholder="Autorun commands (comma-separated)"
-              value={blueprintAutorunInput}
-              onChange={(event) => setBlueprintAutorunInput(event.currentTarget.value)}
-            />
-            <button
-              type="button"
-              className="toolbar-btn"
-              onClick={() => {
-                const paths = blueprintPathsInput
-                  .split(",")
-                  .map((item) => item.trim())
-                  .filter(Boolean);
-                const commands = blueprintAutorunInput
-                  .split(",")
-                  .map((item) => item.trim())
-                  .filter(Boolean);
-                void createBlueprint(blueprintName.trim() || "Blueprint", paths, commands);
-              }}
-            >
-              Save Blueprint
-            </button>
           </div>
-          <div className="chips-row">
-            {blueprints.slice(0, 8).map((blueprint) => (
-              <button
-                type="button"
-                key={blueprint.id}
-                className="chip"
-                onClick={() => {
-                  void launchBlueprint(blueprint.id);
-                }}
-              >
-                {blueprint.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
-      <section className="grid-shell">
-        <PaneGrid
-          paneIds={paneOrder}
-          layouts={layouts}
-          zoomedPaneId={zoomedPaneId}
-          onLayoutsChange={(next) => setLayouts(next)}
-          onToggleZoom={toggleZoom}
+      {activeSection === "terminal" && !activeWorkspace ? (
+        <EmptyStatePage
+          title="No workspaces"
+          subtitle="Create your first workspace to start multiplexing agent terminals."
+          actionLabel="Create Workspace"
+          onAction={() => setNewWorkspaceOpen(true)}
         />
-      </section>
+      ) : null}
 
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {activeSection === "kanban" ? (
+        <EmptyStatePage
+          title="Kanban Board"
+          subtitle="Track branch tasks through todo, in-progress, review, and done stages."
+          actionLabel="New Task"
+        />
+      ) : null}
+
+      {activeSection === "agents" ? (
+        <EmptyStatePage
+          title="Agents"
+          subtitle="No agents configured yet. Define agent defaults in workspace creation."
+          actionLabel="Create Agent"
+        />
+      ) : null}
+
+      {activeSection === "prompts" ? (
+        <EmptyStatePage
+          title="Prompts"
+          subtitle="Store reusable prompt templates and route them to selected panes."
+          actionLabel="New Prompt"
+        />
+      ) : null}
+
+      {activeSection === "settings" ? <SettingsSection /> : null}
+
+      <SectionMenu
+        open={menuOpen}
+        activeSection={activeSection}
+        onSelectSection={setActiveSection}
+        onClose={() => setMenuOpen(false)}
+      />
+
+      <NewWorkspaceModal
+        open={newWorkspaceOpen}
+        defaultDirectory={activeWorkspace?.worktreePath ?? ""}
+        onClose={() => setNewWorkspaceOpen(false)}
+        onSubmit={(input: WorkspaceCreationInput) => {
+          void createWorkspace(input);
+        }}
+      />
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onOpenWorkspaceModal={() => {
+          setPaletteOpen(false);
+          setNewWorkspaceOpen(true);
+        }}
+      />
     </main>
   );
 }

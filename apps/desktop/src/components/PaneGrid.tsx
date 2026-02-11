@@ -4,7 +4,9 @@ import { TerminalPane } from "./TerminalPane";
 const FluidGridLayout = WidthProvider(GridLayout);
 
 interface PaneGridProps {
+  workspaceId: string;
   paneIds: string[];
+  paneTitles: Record<string, string>;
   layouts: Layout[];
   zoomedPaneId: string | null;
   onLayoutsChange: (next: Layout[]) => void;
@@ -12,7 +14,9 @@ interface PaneGridProps {
 }
 
 export function PaneGrid({
+  workspaceId,
   paneIds,
+  paneTitles,
   layouts,
   zoomedPaneId,
   onLayoutsChange,
@@ -23,7 +27,7 @@ export function PaneGrid({
       <div className="zoom-grid">
         <div className="pane-card is-zoomed">
           <div className="pane-header" onDoubleClick={() => onToggleZoom(zoomedPaneId)}>
-            <span>{zoomedPaneId}</span>
+            <span>{paneTitles[zoomedPaneId] ?? zoomedPaneId}</span>
             <button
               type="button"
               className="toolbar-btn"
@@ -32,7 +36,7 @@ export function PaneGrid({
               Restore
             </button>
           </div>
-          <TerminalPane paneId={zoomedPaneId} />
+          <TerminalPane workspaceId={workspaceId} paneId={zoomedPaneId} />
         </div>
       </div>
     );
@@ -52,12 +56,12 @@ export function PaneGrid({
       {paneIds.map((paneId) => (
         <div key={paneId} className="pane-card">
           <div className="pane-header" onDoubleClick={() => onToggleZoom(paneId)}>
-            <span>{paneId}</span>
+            <span>{paneTitles[paneId] ?? paneId}</span>
             <button type="button" className="toolbar-btn" onClick={() => onToggleZoom(paneId)}>
               Zoom
             </button>
           </div>
-          <TerminalPane paneId={paneId} />
+          <TerminalPane workspaceId={workspaceId} paneId={paneId} />
         </div>
       ))}
     </FluidGridLayout>

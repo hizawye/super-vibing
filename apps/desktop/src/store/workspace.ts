@@ -1,56 +1,57 @@
 import { create } from "zustand";
 import type { Layout } from "react-grid-layout";
-import {
-  closePane as closePaneCommand,
-  createWorktree as createWorktreeCommand,
-  getCurrentBranch,
-  getDefaultCwd,
-  runGlobalCommand,
-  spawnPane,
-  writePaneInput,
-} from "../lib/tauri";
-import {
-  loadPersistedPayload,
-  saveBlueprints,
-  saveSessionState,
-  saveSnapshots,
-} from "../lib/persistence";
+import { closePane, getCurrentBranch, getDefaultCwd, runGlobalCommand, spawnPane, writePaneInput } from "../lib/tauri";
+import { loadPersistedPayload, saveBlueprints, saveSessionState, saveSnapshots } from "../lib/persistence";
 import type {
+  AgentAllocation,
+  AgentProfileKey,
+  AppSection,
   Blueprint,
+  LegacySessionState,
   PaneCommandResult,
   PaneModel,
+  SessionState,
   Snapshot,
-  SnapshotState,
-  WorkspaceTab,
+  WorkspaceRuntime,
 } from "../types";
+
+interface CreateWorkspaceInput {
+  name?: string;
+  directory: string;
+  paneCount: number;
+  agentAllocation: AgentAllocation[];
+}
+
+interface PaneSpawnOptions {
+  initCommand?: string;
+  executeInit?: boolean;
+}
 
 interface WorkspaceStore {
   initialized: boolean;
   bootstrapping: boolean;
-  paneCount: number;
-  paneOrder: string[];
-  panes: Record<string, PaneModel>;
-  layouts: Layout[];
-  zoomedPaneId: string | null;
+  activeSection: AppSection;
+  paletteOpen: boolean;
   echoInput: boolean;
-  workspaces: WorkspaceTab[];
+  workspaces: WorkspaceRuntime[];
   activeWorkspaceId: string | null;
   snapshots: Snapshot[];
   blueprints: Blueprint[];
-  paletteOpen: boolean;
 
   bootstrap: () => Promise<void>;
-  setPaneCount: (count: number) => Promise<void>;
-  ensurePaneSpawned: (paneId: string) => Promise<void>;
-  markPaneExited: (paneId: string, error?: string) => void;
-  updatePaneLastCommand: (paneId: string, command: string) => void;
-  sendInputFromPane: (paneId: string, data: string) => Promise<void>;
-  setLayouts: (layouts: Layout[]) => void;
-  toggleZoom: (paneId: string) => void;
-  setEchoInput: (enabled: boolean) => void;
-  createWorktree: (repoRoot: string, branch: string, baseBranch?: string) => Promise<void>;
-  setActiveWorkspace: (workspaceId: string) => Promise<void>;
+  setActiveSection: (section: AppSection) => void;
   setPaletteOpen: (open: boolean) => void;
+  setEchoInput: (enabled: boolean) => void;
+  createWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
+  closeWorkspace: (workspaceId: string) => Promise<void>;
+  setActiveWorkspace: (workspaceId: string) => Promise<void>;
+  setActiveWorkspacePaneCount: (count: number) => Promise<void>;
+  ensurePaneSpawned: (workspaceId: string, paneId: string, options?: PaneSpawnOptions) => Promise<void>;
+  markPaneExited: (workspaceId: string, paneId: string, error?: string) => void;
+  updatePaneLastCommand: (workspaceId: string, paneId: string, command: string) => void;
+  sendInputFromPane: (workspaceId: string, sourcePaneId: string, data: string) => Promise<void>;
+  setActiveWorkspaceLayouts: (layouts: Layout[]) => void;
+  toggleActiveWorkspaceZoom: (paneId: string) => void;
   runGlobalCommand: (command: string, execute: boolean) => Promise<PaneCommandResult[]>;
   saveSnapshot: (name: string) => Promise<void>;
   restoreSnapshot: (snapshotId: string) => Promise<void>;
@@ -62,6 +63,14 @@ interface WorkspaceStore {
 const MAX_PANES = 16;
 const MIN_PANES = 1;
 
+const AGENT_PROFILE_CONFIG: Array<{ profile: AgentProfileKey; label: string; command: string }> = [
+  { profile: "claude", label: "Claude", command: "claude" },
+  { profile: "codex", label: "Codex", command: "codex" },
+  { profile: "gemini", label: "Gemini", command: "gemini" },
+  { profile: "cursor", label: "Cursor", command: "cursor-agent" },
+  { profile: "opencode", label: "OpenCode", command: "opencode" },
+];
+
 function clampPaneCount(value: number): number {
   return Math.max(MIN_PANES, Math.min(MAX_PANES, value));
 }
@@ -70,10 +79,10 @@ function paneIdAt(index: number): string {
   return `pane-${index + 1}`;
 }
 
-function createPaneModel(id: string, cwd = "", shell = ""): PaneModel {
+function createPaneModel(id: string, title = id, cwd = "", shell = ""): PaneModel {
   return {
     id,
-    title: id,
+    title,
     cwd,
     shell,
     status: "idle",
@@ -103,19 +112,6 @@ function generateDefaultLayouts(paneOrder: string[], existing: Layout[] = []): L
   });
 }
 
-function serializeSnapshotState(state: WorkspaceStore): SnapshotState {
-  return {
-    paneCount: state.paneCount,
-    paneOrder: state.paneOrder,
-    panes: state.panes,
-    layouts: state.layouts,
-    zoomedPaneId: state.zoomedPaneId,
-    echoInput: state.echoInput,
-    workspaces: state.workspaces,
-    activeWorkspaceId: state.activeWorkspaceId,
-  };
-}
-
 function toIdlePanes(panes: Record<string, PaneModel>): Record<string, PaneModel> {
   const next: Record<string, PaneModel> = {};
   Object.entries(panes).forEach(([id, pane]) => {
@@ -128,39 +124,255 @@ function toIdlePanes(panes: Record<string, PaneModel>): Record<string, PaneModel
   return next;
 }
 
-async function closeAllRunningPanes(state: WorkspaceStore): Promise<void> {
-  const runningPaneIds = state.paneOrder.filter((paneId) => state.panes[paneId]?.status === "running");
+function defaultAgentAllocation(): AgentAllocation[] {
+  return AGENT_PROFILE_CONFIG.map((item) => ({
+    profile: item.profile,
+    label: item.label,
+    command: item.command,
+    enabled: false,
+    count: 0,
+  }));
+}
+
+function normalizeAgentAllocation(input?: AgentAllocation[]): AgentAllocation[] {
+  const byProfile = new Map((input ?? []).map((item) => [item.profile, item]));
+  return AGENT_PROFILE_CONFIG.map((base) => {
+    const existing = byProfile.get(base.profile);
+    return {
+      profile: base.profile,
+      label: existing?.label ?? base.label,
+      command: existing?.command ?? base.command,
+      enabled: existing?.enabled ?? false,
+      count: Math.max(0, Math.min(MAX_PANES, existing?.count ?? 0)),
+    };
+  });
+}
+
+function createWorkspaceRuntime(args: {
+  id: string;
+  name: string;
+  directory: string;
+  branch: string;
+  paneCount: number;
+  agentAllocation?: AgentAllocation[];
+  createdAt?: string;
+  paneOrder?: string[];
+  panes?: Record<string, PaneModel>;
+  layouts?: Layout[];
+  zoomedPaneId?: string | null;
+}): WorkspaceRuntime {
+  const paneCount = clampPaneCount(args.paneCount);
+  const paneOrder = args.paneOrder ?? Array.from({ length: paneCount }, (_, index) => paneIdAt(index));
+  const panes = args.panes
+    ? { ...args.panes }
+    : paneOrder.reduce<Record<string, PaneModel>>((acc, paneId) => {
+      acc[paneId] = createPaneModel(paneId);
+      return acc;
+    }, {});
+
+  paneOrder.forEach((paneId) => {
+    if (!panes[paneId]) {
+      panes[paneId] = createPaneModel(paneId);
+    }
+  });
+
+  const timestamp = args.createdAt ?? new Date().toISOString();
+
+  return {
+    id: args.id,
+    name: args.name,
+    repoRoot: args.directory,
+    branch: args.branch,
+    worktreePath: args.directory,
+    paneCount,
+    paneOrder,
+    panes,
+    layouts: generateDefaultLayouts(paneOrder, args.layouts ?? []),
+    zoomedPaneId:
+      args.zoomedPaneId && paneOrder.includes(args.zoomedPaneId)
+        ? args.zoomedPaneId
+        : null,
+    agentAllocation: normalizeAgentAllocation(args.agentAllocation),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+function withWorkspaceUpdated(
+  workspaces: WorkspaceRuntime[],
+  workspaceId: string,
+  updater: (workspace: WorkspaceRuntime) => WorkspaceRuntime,
+): WorkspaceRuntime[] {
+  return workspaces.map((workspace) => (workspace.id === workspaceId ? updater(workspace) : workspace));
+}
+
+function activeWorkspaceOf(state: Pick<WorkspaceStore, "workspaces" | "activeWorkspaceId">): WorkspaceRuntime | null {
+  if (!state.activeWorkspaceId) {
+    return null;
+  }
+  return state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ?? null;
+}
+
+function serializeSessionState(state: WorkspaceStore): SessionState {
+  return {
+    workspaces: state.workspaces,
+    activeWorkspaceId: state.activeWorkspaceId,
+    activeSection: state.activeSection,
+    echoInput: state.echoInput,
+  };
+}
+
+function isLegacySessionState(session: SessionState | LegacySessionState): session is LegacySessionState {
+  return "paneCount" in session;
+}
+
+function migrateLegacySession(session: LegacySessionState): SessionState {
+  const paneCount = clampPaneCount(session.paneCount);
+  const paneOrder = session.paneOrder.slice(0, paneCount);
+  const normalizedOrder = paneOrder.length > 0 ? paneOrder : [paneIdAt(0)];
+  const migratedWorkspaces = (session.workspaces.length > 0 ? session.workspaces : [
+    {
+      id: "workspace-main",
+      repoRoot: ".",
+      branch: "not-a-repo",
+      worktreePath: ".",
+    },
+  ]).map((workspace) =>
+    createWorkspaceRuntime({
+      id: workspace.id,
+      name: workspace.branch,
+      directory: workspace.worktreePath,
+      branch: workspace.branch,
+      paneCount,
+      paneOrder: normalizedOrder,
+      panes: toIdlePanes(session.panes),
+      layouts: session.layouts,
+      zoomedPaneId: session.zoomedPaneId,
+      agentAllocation: defaultAgentAllocation(),
+    }),
+  );
+
+  return {
+    workspaces: migratedWorkspaces,
+    activeWorkspaceId: session.activeWorkspaceId ?? migratedWorkspaces[0]?.id ?? null,
+    activeSection: "terminal",
+    echoInput: session.echoInput,
+  };
+}
+
+function sanitizeSession(session: SessionState): SessionState {
+  const workspaces = session.workspaces.map((workspace) => {
+    const paneCount = clampPaneCount(workspace.paneCount);
+    const paneOrder = workspace.paneOrder.slice(0, paneCount);
+    const normalizedOrder = paneOrder.length > 0 ? paneOrder : [paneIdAt(0)];
+    const panes = toIdlePanes(workspace.panes ?? {});
+
+    normalizedOrder.forEach((paneId) => {
+      if (!panes[paneId]) {
+        panes[paneId] = createPaneModel(paneId);
+      }
+    });
+
+    return createWorkspaceRuntime({
+      id: workspace.id,
+      name: workspace.name,
+      directory: workspace.worktreePath,
+      branch: workspace.branch,
+      paneCount,
+      paneOrder: normalizedOrder,
+      panes,
+      layouts: workspace.layouts,
+      zoomedPaneId: workspace.zoomedPaneId,
+      agentAllocation: workspace.agentAllocation,
+      createdAt: workspace.createdAt,
+    });
+  });
+
+  return {
+    workspaces,
+    activeWorkspaceId: workspaces.some((workspace) => workspace.id === session.activeWorkspaceId)
+      ? session.activeWorkspaceId
+      : workspaces[0]?.id ?? null,
+    activeSection: session.activeSection,
+    echoInput: session.echoInput,
+  };
+}
+
+async function closeRunningPanes(workspace: WorkspaceRuntime): Promise<void> {
+  const runningPaneIds = workspace.paneOrder.filter((paneId) => workspace.panes[paneId]?.status === "running");
   await Promise.all(
     runningPaneIds.map(async (paneId) => {
       try {
-        await closePaneCommand(paneId);
+        await closePane(paneId);
       } catch {
-        // ignore best-effort shutdown failures during workspace/snapshot transition
+        // best effort cleanup when switching contexts
       }
     }),
   );
 }
 
+function buildLaunchPlan(
+  paneOrder: string[],
+  agentAllocation: AgentAllocation[],
+): Map<string, { title: string; command: string }> {
+  const launches: Array<{ title: string; command: string }> = [];
+  agentAllocation.forEach((agent) => {
+    if (!agent.enabled || agent.count <= 0 || !agent.command.trim()) {
+      return;
+    }
+    for (let i = 0; i < agent.count; i += 1) {
+      launches.push({
+        title: agent.label,
+        command: agent.command.trim(),
+      });
+    }
+  });
+
+  const plan = new Map<string, { title: string; command: string }>();
+  paneOrder.forEach((paneId, index) => {
+    const launch = launches[index];
+    if (launch) {
+      plan.set(paneId, launch);
+    }
+  });
+  return plan;
+}
+
+function applyLaunchTitles(
+  workspace: WorkspaceRuntime,
+  launchPlan: Map<string, { title: string; command: string }>,
+): WorkspaceRuntime {
+  const nextPanes: Record<string, PaneModel> = {};
+  workspace.paneOrder.forEach((paneId) => {
+    const pane = workspace.panes[paneId] ?? createPaneModel(paneId);
+    const launch = launchPlan.get(paneId);
+    nextPanes[paneId] = {
+      ...pane,
+      title: launch?.title ?? paneId,
+    };
+  });
+
+  return {
+    ...workspace,
+    panes: nextPanes,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   initialized: false,
   bootstrapping: false,
-  paneCount: 1,
-  paneOrder: [paneIdAt(0)],
-  panes: {
-    [paneIdAt(0)]: createPaneModel(paneIdAt(0)),
-  },
-  layouts: generateDefaultLayouts([paneIdAt(0)]),
-  zoomedPaneId: null,
+  activeSection: "terminal",
+  paletteOpen: false,
   echoInput: false,
   workspaces: [],
   activeWorkspaceId: null,
   snapshots: [],
   blueprints: [],
-  paletteOpen: false,
 
   bootstrap: async () => {
-    const { initialized, bootstrapping } = get();
-    if (initialized || bootstrapping) {
+    const current = get();
+    if (current.initialized || current.bootstrapping) {
       return;
     }
 
@@ -169,90 +381,217 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const persisted = await loadPersistedPayload();
     const persistedSession = persisted.session;
 
-    let workspaces: WorkspaceTab[] = [];
-    let activeWorkspaceId: string | null = null;
-    let paneCount = 1;
-    let paneOrder = [paneIdAt(0)];
-    let panes: Record<string, PaneModel> = {
-      [paneIdAt(0)]: createPaneModel(paneIdAt(0)),
-    };
-    let layouts = generateDefaultLayouts(paneOrder);
-    let zoomedPaneId: string | null = null;
-    let echoInput = false;
-
+    let session: SessionState | null = null;
     if (persistedSession) {
-      paneCount = clampPaneCount(persistedSession.paneCount);
-      paneOrder = persistedSession.paneOrder.slice(0, paneCount);
-      if (paneOrder.length === 0) {
-        paneOrder = [paneIdAt(0)];
-      }
-      panes = toIdlePanes(persistedSession.panes);
-      paneOrder.forEach((paneId) => {
-        if (!panes[paneId]) {
-          panes[paneId] = createPaneModel(paneId);
-        }
-      });
-      layouts = generateDefaultLayouts(paneOrder, persistedSession.layouts);
-      zoomedPaneId =
-        persistedSession.zoomedPaneId && paneOrder.includes(persistedSession.zoomedPaneId)
-          ? persistedSession.zoomedPaneId
-          : null;
-      echoInput = persistedSession.echoInput;
-      workspaces = persistedSession.workspaces;
-      activeWorkspaceId = persistedSession.activeWorkspaceId;
+      session = isLegacySessionState(persistedSession)
+        ? migrateLegacySession(persistedSession)
+        : sanitizeSession(persistedSession);
     }
 
-    if (workspaces.length === 0) {
+    if (!session || session.workspaces.length === 0) {
       const cwd = await getDefaultCwd();
-      let branch = "detached";
+      let branch = "not-a-repo";
       try {
         branch = await getCurrentBranch(cwd);
       } catch {
         branch = "not-a-repo";
       }
 
-      workspaces = [
-        {
-          id: "workspace-main",
-          repoRoot: cwd,
-          branch,
-          worktreePath: cwd,
-        },
-      ];
-      activeWorkspaceId = workspaces[0].id;
+      const workspace = createWorkspaceRuntime({
+        id: "workspace-main",
+        name: "Workspace 1",
+        directory: cwd,
+        branch,
+        paneCount: 1,
+      });
+
+      session = {
+        workspaces: [workspace],
+        activeWorkspaceId: workspace.id,
+        activeSection: "terminal",
+        echoInput: false,
+      };
     }
 
     set({
-      paneCount,
-      paneOrder,
-      panes,
-      layouts,
-      zoomedPaneId,
-      echoInput,
-      workspaces,
-      activeWorkspaceId,
+      activeSection: session.activeSection,
+      echoInput: session.echoInput,
+      workspaces: session.workspaces,
+      activeWorkspaceId: session.activeWorkspaceId,
       snapshots: persisted.snapshots,
       blueprints: persisted.blueprints,
       initialized: true,
       bootstrapping: false,
     });
 
-    for (const paneId of get().paneOrder) {
-      await get().ensurePaneSpawned(paneId);
+    const activeWorkspace = activeWorkspaceOf(get());
+    if (activeWorkspace) {
+      for (const paneId of activeWorkspace.paneOrder) {
+        await get().ensurePaneSpawned(activeWorkspace.id, paneId);
+      }
     }
 
     await get().persistSession();
   },
 
-  setPaneCount: async (requestedCount: number) => {
-    const count = clampPaneCount(requestedCount);
-    const current = get();
-    if (count === current.paneCount) {
+  setActiveSection: (section: AppSection) => {
+    set({ activeSection: section });
+    void get().persistSession();
+  },
+
+  setPaletteOpen: (open: boolean) => {
+    set({ paletteOpen: open });
+  },
+
+  setEchoInput: (enabled: boolean) => {
+    set({ echoInput: enabled });
+    void get().persistSession();
+  },
+
+  createWorkspace: async (input: CreateWorkspaceInput) => {
+    const directory = input.directory.trim() || (await getDefaultCwd());
+    let branch = "not-a-repo";
+    try {
+      branch = await getCurrentBranch(directory);
+    } catch {
+      branch = "not-a-repo";
+    }
+
+    const workspaceId = `workspace-${crypto.randomUUID()}`;
+    const name = input.name?.trim() || `Workspace ${get().workspaces.length + 1}`;
+
+    let nextWorkspace = createWorkspaceRuntime({
+      id: workspaceId,
+      name,
+      directory,
+      branch,
+      paneCount: input.paneCount,
+      agentAllocation: input.agentAllocation,
+    });
+
+    const launchPlan = buildLaunchPlan(nextWorkspace.paneOrder, nextWorkspace.agentAllocation);
+    nextWorkspace = applyLaunchTitles(nextWorkspace, launchPlan);
+
+    const activeWorkspace = activeWorkspaceOf(get());
+    if (activeWorkspace) {
+      await closeRunningPanes(activeWorkspace);
+    }
+
+    set((state) => ({
+      activeSection: "terminal",
+      workspaces: [
+        ...state.workspaces.map((workspace) =>
+          workspace.id === activeWorkspace?.id
+            ? {
+                ...workspace,
+                panes: toIdlePanes(workspace.panes),
+                updatedAt: new Date().toISOString(),
+              }
+            : workspace,
+        ),
+        nextWorkspace,
+      ],
+      activeWorkspaceId: nextWorkspace.id,
+    }));
+
+    for (const paneId of nextWorkspace.paneOrder) {
+      const launch = launchPlan.get(paneId);
+      await get().ensurePaneSpawned(nextWorkspace.id, paneId, {
+        initCommand: launch?.command,
+        executeInit: Boolean(launch),
+      });
+    }
+
+    await get().persistSession();
+  },
+
+  closeWorkspace: async (workspaceId: string) => {
+    const state = get();
+    if (state.workspaces.length <= 1) {
       return;
     }
 
-    const nextPaneOrder = Array.from({ length: count }, (_, index) => paneIdAt(index));
-    const nextPanes: Record<string, PaneModel> = { ...current.panes };
+    const workspace = state.workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) {
+      return;
+    }
+
+    const closingActive = workspaceId === state.activeWorkspaceId;
+    if (closingActive) {
+      await closeRunningPanes(workspace);
+    }
+
+    const remaining = state.workspaces.filter((item) => item.id !== workspaceId);
+    const nextActiveId = closingActive ? remaining[0]?.id ?? null : state.activeWorkspaceId;
+
+    set({
+      workspaces: remaining,
+      activeWorkspaceId: nextActiveId,
+    });
+
+    if (closingActive && nextActiveId) {
+      const nextWorkspace = get().workspaces.find((item) => item.id === nextActiveId);
+      if (nextWorkspace) {
+        for (const paneId of nextWorkspace.paneOrder) {
+          await get().ensurePaneSpawned(nextWorkspace.id, paneId);
+        }
+      }
+    }
+
+    await get().persistSession();
+  },
+
+  setActiveWorkspace: async (workspaceId: string) => {
+    const state = get();
+    if (state.activeWorkspaceId === workspaceId) {
+      return;
+    }
+
+    const target = state.workspaces.find((workspace) => workspace.id === workspaceId);
+    if (!target) {
+      return;
+    }
+
+    const currentActive = activeWorkspaceOf(state);
+    if (currentActive) {
+      await closeRunningPanes(currentActive);
+    }
+
+    set((previous) => ({
+      activeWorkspaceId: workspaceId,
+      activeSection: "terminal",
+      workspaces: previous.workspaces.map((workspace) =>
+        workspace.id === currentActive?.id
+          ? {
+              ...workspace,
+              panes: toIdlePanes(workspace.panes),
+              updatedAt: new Date().toISOString(),
+            }
+          : workspace,
+      ),
+    }));
+
+    for (const paneId of target.paneOrder) {
+      await get().ensurePaneSpawned(target.id, paneId);
+    }
+
+    await get().persistSession();
+  },
+
+  setActiveWorkspacePaneCount: async (requestedCount: number) => {
+    const state = get();
+    const activeWorkspace = activeWorkspaceOf(state);
+    if (!activeWorkspace) {
+      return;
+    }
+
+    const paneCount = clampPaneCount(requestedCount);
+    if (paneCount === activeWorkspace.paneCount) {
+      return;
+    }
+
+    const nextPaneOrder = Array.from({ length: paneCount }, (_, index) => paneIdAt(index));
+    const nextPanes: Record<string, PaneModel> = { ...activeWorkspace.panes };
 
     nextPaneOrder.forEach((paneId) => {
       if (!nextPanes[paneId]) {
@@ -260,14 +599,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
     });
 
-    const removedPaneIds = current.paneOrder.filter((paneId) => !nextPaneOrder.includes(paneId));
+    const removedPaneIds = activeWorkspace.paneOrder.filter((paneId) => !nextPaneOrder.includes(paneId));
     await Promise.all(
       removedPaneIds.map(async (paneId) => {
-        if (current.panes[paneId]?.status === "running") {
+        if (activeWorkspace.panes[paneId]?.status === "running") {
           try {
-            await closePaneCommand(paneId);
+            await closePane(paneId);
           } catch {
-            // ignore best effort close while shrinking pane count
+            // best effort close while resizing pane count
           }
         }
       }),
@@ -277,124 +616,176 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       delete nextPanes[paneId];
     });
 
-    const zoomedPaneId =
-      current.zoomedPaneId && nextPaneOrder.includes(current.zoomedPaneId)
-        ? current.zoomedPaneId
-        : null;
-
-    set({
-      paneCount: count,
-      paneOrder: nextPaneOrder,
-      panes: nextPanes,
-      layouts: generateDefaultLayouts(nextPaneOrder, current.layouts),
-      zoomedPaneId,
-    });
+    set((current) => ({
+      workspaces: withWorkspaceUpdated(current.workspaces, activeWorkspace.id, (workspace) => ({
+        ...workspace,
+        paneCount,
+        paneOrder: nextPaneOrder,
+        panes: nextPanes,
+        layouts: generateDefaultLayouts(nextPaneOrder, workspace.layouts),
+        zoomedPaneId:
+          workspace.zoomedPaneId && nextPaneOrder.includes(workspace.zoomedPaneId)
+            ? workspace.zoomedPaneId
+            : null,
+        updatedAt: new Date().toISOString(),
+      })),
+    }));
 
     for (const paneId of nextPaneOrder) {
-      await get().ensurePaneSpawned(paneId);
+      await get().ensurePaneSpawned(activeWorkspace.id, paneId);
     }
 
     await get().persistSession();
   },
 
-  ensurePaneSpawned: async (paneId: string) => {
+  ensurePaneSpawned: async (workspaceId: string, paneId: string, options?: PaneSpawnOptions) => {
     const state = get();
-    const pane = state.panes[paneId];
+    if (state.activeWorkspaceId !== workspaceId) {
+      return;
+    }
+
+    const workspace = state.workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) {
+      return;
+    }
+
+    const pane = workspace.panes[paneId];
     if (!pane || pane.status === "running") {
       return;
     }
 
-    const activeWorkspace = state.workspaces.find(
-      (workspace) => workspace.id === state.activeWorkspaceId,
-    );
-
     set((current) => ({
-      panes: {
-        ...current.panes,
-        [paneId]: {
-          ...current.panes[paneId],
-          status: "idle",
-          error: undefined,
-        },
-      },
+      workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
+        const currentPane = target.panes[paneId];
+        if (!currentPane) {
+          return target;
+        }
+        return {
+          ...target,
+          panes: {
+            ...target.panes,
+            [paneId]: {
+              ...currentPane,
+              status: "idle",
+              error: undefined,
+            },
+          },
+        };
+      }),
     }));
 
     try {
       const response = await spawnPane({
         paneId,
-        cwd: activeWorkspace?.worktreePath,
+        cwd: workspace.worktreePath,
+        initCommand: options?.initCommand,
+        executeInit: options?.executeInit,
       });
 
       set((current) => ({
-        panes: {
-          ...current.panes,
-          [paneId]: {
-            ...current.panes[paneId],
-            cwd: response.cwd,
-            shell: response.shell,
-            title: paneId,
-            status: "running",
-            error: undefined,
-          },
-        },
+        workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
+          const currentPane = target.panes[paneId];
+          if (!currentPane) {
+            return target;
+          }
+          return {
+            ...target,
+            panes: {
+              ...target.panes,
+              [paneId]: {
+                ...currentPane,
+                cwd: response.cwd,
+                shell: response.shell,
+                status: "running",
+                error: undefined,
+              },
+            },
+          };
+        }),
       }));
     } catch (error) {
       set((current) => ({
-        panes: {
-          ...current.panes,
-          [paneId]: {
-            ...current.panes[paneId],
-            status: "error",
-            error: String(error),
-          },
-        },
+        workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
+          const currentPane = target.panes[paneId];
+          if (!currentPane) {
+            return target;
+          }
+          return {
+            ...target,
+            panes: {
+              ...target.panes,
+              [paneId]: {
+                ...currentPane,
+                status: "error",
+                error: String(error),
+              },
+            },
+          };
+        }),
       }));
     }
   },
 
-  markPaneExited: (paneId: string, error?: string) => {
-    set((state) => {
-      const pane = state.panes[paneId];
-      if (!pane) {
-        return state;
-      }
-      return {
-        panes: {
-          ...state.panes,
-          [paneId]: {
-            ...pane,
-            status: "closed",
-            error,
+  markPaneExited: (workspaceId: string, paneId: string, error?: string) => {
+    set((state) => ({
+      workspaces: withWorkspaceUpdated(state.workspaces, workspaceId, (workspace) => {
+        const pane = workspace.panes[paneId];
+        if (!pane) {
+          return workspace;
+        }
+        return {
+          ...workspace,
+          panes: {
+            ...workspace.panes,
+            [paneId]: {
+              ...pane,
+              status: "closed",
+              error,
+            },
           },
-        },
-      };
-    });
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+    }));
     void get().persistSession();
   },
 
-  updatePaneLastCommand: (paneId: string, command: string) => {
-    set((state) => {
-      const pane = state.panes[paneId];
-      if (!pane) {
-        return state;
-      }
-      return {
-        panes: {
-          ...state.panes,
-          [paneId]: {
-            ...pane,
-            lastSubmittedCommand: command,
+  updatePaneLastCommand: (workspaceId: string, paneId: string, command: string) => {
+    set((state) => ({
+      workspaces: withWorkspaceUpdated(state.workspaces, workspaceId, (workspace) => {
+        const pane = workspace.panes[paneId];
+        if (!pane) {
+          return workspace;
+        }
+        return {
+          ...workspace,
+          panes: {
+            ...workspace.panes,
+            [paneId]: {
+              ...pane,
+              lastSubmittedCommand: command,
+            },
           },
-        },
-      };
-    });
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+    }));
     void get().persistSession();
   },
 
-  sendInputFromPane: async (sourcePaneId: string, data: string) => {
+  sendInputFromPane: async (workspaceId: string, sourcePaneId: string, data: string) => {
     const state = get();
+    if (workspaceId !== state.activeWorkspaceId) {
+      return;
+    }
+
+    const workspace = activeWorkspaceOf(state);
+    if (!workspace) {
+      return;
+    }
+
     const targetPaneIds = state.echoInput
-      ? state.paneOrder.filter((paneId) => state.panes[paneId]?.status === "running")
+      ? workspace.paneOrder.filter((paneId) => workspace.panes[paneId]?.status === "running")
       : [sourcePaneId];
 
     await Promise.all(
@@ -408,79 +799,50 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     );
   },
 
-  setLayouts: (layouts: Layout[]) => {
-    set({ layouts });
-    void get().persistSession();
-  },
-
-  toggleZoom: (paneId: string) => {
-    set((state) => ({
-      zoomedPaneId: state.zoomedPaneId === paneId ? null : paneId,
-    }));
-    void get().persistSession();
-  },
-
-  setEchoInput: (enabled: boolean) => {
-    set({ echoInput: enabled });
-    void get().persistSession();
-  },
-
-  createWorktree: async (repoRoot: string, branch: string, baseBranch?: string) => {
-    const tab = await createWorktreeCommand({ repoRoot, branch, baseBranch });
-    set((state) => ({
-      workspaces: [...state.workspaces, tab],
-      activeWorkspaceId: tab.id,
-    }));
-
-    const current = get();
-    await closeAllRunningPanes(current);
-    set((state) => ({
-      panes: toIdlePanes(state.panes),
-    }));
-
-    for (const paneId of get().paneOrder) {
-      await get().ensurePaneSpawned(paneId);
-    }
-
-    await get().persistSession();
-  },
-
-  setActiveWorkspace: async (workspaceId: string) => {
-    const current = get();
-    if (current.activeWorkspaceId === workspaceId) {
+  setActiveWorkspaceLayouts: (layouts: Layout[]) => {
+    const activeWorkspace = activeWorkspaceOf(get());
+    if (!activeWorkspace) {
       return;
     }
 
-    await closeAllRunningPanes(current);
-
     set((state) => ({
-      activeWorkspaceId: workspaceId,
-      panes: toIdlePanes(state.panes),
+      workspaces: withWorkspaceUpdated(state.workspaces, activeWorkspace.id, (workspace) => ({
+        ...workspace,
+        layouts,
+        updatedAt: new Date().toISOString(),
+      })),
     }));
-
-    for (const paneId of get().paneOrder) {
-      await get().ensurePaneSpawned(paneId);
-    }
-
-    await get().persistSession();
+    void get().persistSession();
   },
 
-  setPaletteOpen: (open: boolean) => {
-    set({ paletteOpen: open });
+  toggleActiveWorkspaceZoom: (paneId: string) => {
+    const activeWorkspace = activeWorkspaceOf(get());
+    if (!activeWorkspace) {
+      return;
+    }
+
+    set((state) => ({
+      workspaces: withWorkspaceUpdated(state.workspaces, activeWorkspace.id, (workspace) => ({
+        ...workspace,
+        zoomedPaneId: workspace.zoomedPaneId === paneId ? null : paneId,
+        updatedAt: new Date().toISOString(),
+      })),
+    }));
+    void get().persistSession();
   },
 
   runGlobalCommand: async (command: string, execute: boolean) => {
-    const state = get();
-    const paneIds = state.paneOrder.filter((paneId) => state.panes[paneId]?.status === "running");
-    if (paneIds.length === 0 || command.trim().length === 0) {
+    const workspace = activeWorkspaceOf(get());
+    if (!workspace || command.trim().length === 0) {
       return [];
     }
 
-    return runGlobalCommand({
-      paneIds,
-      command,
-      execute,
-    });
+    const paneIds = workspace.paneOrder.filter((paneId) => workspace.panes[paneId]?.status === "running");
+    if (paneIds.length === 0) {
+      return [];
+    }
+
+    return runGlobalCommand({ paneIds, command, execute });
   },
 
   saveSnapshot: async (name: string) => {
@@ -489,7 +851,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       id: crypto.randomUUID(),
       name,
       createdAt: new Date().toISOString(),
-      state: serializeSnapshotState(state),
+      state: serializeSessionState(state),
     };
 
     const snapshots = [snapshot, ...state.snapshots].slice(0, 25);
@@ -505,30 +867,25 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return;
     }
 
-    await closeAllRunningPanes(state);
+    const activeWorkspace = activeWorkspaceOf(state);
+    if (activeWorkspace) {
+      await closeRunningPanes(activeWorkspace);
+    }
 
-    const paneCount = clampPaneCount(snapshot.state.paneCount);
-    const paneOrder = snapshot.state.paneOrder.slice(0, paneCount);
-    const panes = toIdlePanes(snapshot.state.panes);
-    paneOrder.forEach((paneId) => {
-      if (!panes[paneId]) {
-        panes[paneId] = createPaneModel(paneId);
-      }
-    });
+    const restored = sanitizeSession(snapshot.state);
 
     set({
-      paneCount,
-      paneOrder,
-      panes,
-      layouts: generateDefaultLayouts(paneOrder, snapshot.state.layouts),
-      zoomedPaneId: snapshot.state.zoomedPaneId,
-      echoInput: snapshot.state.echoInput,
-      workspaces: snapshot.state.workspaces,
-      activeWorkspaceId: snapshot.state.activeWorkspaceId,
+      workspaces: restored.workspaces,
+      activeWorkspaceId: restored.activeWorkspaceId,
+      activeSection: restored.activeSection,
+      echoInput: restored.echoInput,
     });
 
-    for (const paneId of paneOrder) {
-      await get().ensurePaneSpawned(paneId);
+    const nextActiveWorkspace = activeWorkspaceOf(get());
+    if (nextActiveWorkspace) {
+      for (const paneId of nextActiveWorkspace.paneOrder) {
+        await get().ensurePaneSpawned(nextActiveWorkspace.id, paneId);
+      }
     }
 
     await get().persistSession();
@@ -536,12 +893,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   createBlueprint: async (name: string, workspacePaths: string[], autorunCommands: string[]) => {
     const state = get();
+    const activeWorkspace = activeWorkspaceOf(state);
     const blueprint: Blueprint = {
       id: crypto.randomUUID(),
       name,
-      paneCount: state.paneCount,
+      paneCount: activeWorkspace?.paneCount ?? 1,
       workspacePaths,
       autorunCommands,
+      agentAllocation: activeWorkspace?.agentAllocation,
     };
 
     const blueprints = [blueprint, ...state.blueprints].slice(0, 25);
@@ -556,40 +915,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return;
     }
 
-    await get().setPaneCount(blueprint.paneCount);
+    if (blueprint.workspacePaths.length > 0) {
+      const targetPath = blueprint.workspacePaths[0];
+      const existing = state.workspaces.find((workspace) => workspace.worktreePath === targetPath);
 
-    for (let index = 0; index < blueprint.workspacePaths.length; index += 1) {
-      const workspacePath = blueprint.workspacePaths[index];
-      const existing = get().workspaces.find((item) => item.worktreePath === workspacePath);
       if (existing) {
-        continue;
+        await get().setActiveWorkspace(existing.id);
+      } else {
+        await get().createWorkspace({
+          name: `Workspace ${get().workspaces.length + 1}`,
+          directory: targetPath,
+          paneCount: blueprint.paneCount,
+          agentAllocation: normalizeAgentAllocation(blueprint.agentAllocation),
+        });
       }
-
-      let branch = "detached";
-      try {
-        branch = await getCurrentBranch(workspacePath);
-      } catch {
-        branch = "not-a-repo";
-      }
-
-      const workspace: WorkspaceTab = {
-        id: `workspace-${crypto.randomUUID()}`,
-        repoRoot: workspacePath,
-        branch,
-        worktreePath: workspacePath,
-      };
-
-      set((current) => ({
-        workspaces: [...current.workspaces, workspace],
-      }));
     }
 
-    const targetWorkspace = get().workspaces.find(
-      (item) => item.worktreePath === blueprint.workspacePaths[0],
-    );
-    if (targetWorkspace) {
-      await get().setActiveWorkspace(targetWorkspace.id);
-    }
+    await get().setActiveWorkspacePaneCount(blueprint.paneCount);
 
     for (const command of blueprint.autorunCommands) {
       await get().runGlobalCommand(command, true);
@@ -600,6 +942,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   persistSession: async () => {
     const state = get();
-    await saveSessionState(serializeSnapshotState(state));
+    await saveSessionState(serializeSessionState(state));
   },
 }));
+
+export function getAgentDefaults(): AgentAllocation[] {
+  return defaultAgentAllocation();
+}

@@ -89,6 +89,8 @@ struct SpawnPaneRequest {
     shell: Option<String>,
     rows: Option<u16>,
     cols: Option<u16>,
+    init_command: Option<String>,
+    execute_init: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -221,10 +223,30 @@ async fn spawn_pane(
         .master
         .try_clone_reader()
         .map_err(|err| AppError::pty(format!("failed to clone pty reader: {err}")).to_string())?;
-    let writer = pty_pair
+    let mut writer = pty_pair
         .master
         .take_writer()
         .map_err(|err| AppError::pty(format!("failed to acquire pty writer: {err}")).to_string())?;
+
+    if let Some(init_command) = request
+        .init_command
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        writer.write_all(init_command.as_bytes()).map_err(|err| {
+            AppError::pty(format!("failed to write initial command: {err}")).to_string()
+        })?;
+        if request.execute_init.unwrap_or(false) {
+            writer.write_all(b"\n").map_err(|err| {
+                AppError::pty(format!("failed to write initial command newline: {err}"))
+                    .to_string()
+            })?;
+        }
+        writer.flush().map_err(|err| {
+            AppError::pty(format!("failed to flush initial pane command: {err}")).to_string()
+        })?;
+    }
 
     let pane_runtime = Arc::new(PaneRuntime {
         writer: Mutex::new(writer),
