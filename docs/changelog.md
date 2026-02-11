@@ -11,6 +11,7 @@
 - Hardened backend command error responses with categorized error messages.
 - Improved PTY pane spawn lifecycle to avoid duplicate-pane races and guarantee async registry cleanup.
 - Bounded PTY read buffer size for predictable stream chunking.
+- Updated `pnpm-lock.yaml` after successful dependency resolution for the frontend test stack.
 
 ## Unreleased
 - Added pnpm monorepo scaffold with Tauri v2 desktop app.

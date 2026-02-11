@@ -20,3 +20,10 @@
 **Rationale:** Reduces ambiguous failures and prevents stale pane registry state under high churn.
 **Consequences:** Slightly more backend complexity, but simpler debugging and safer command behavior.
 **Alternatives Considered:** Keep ad-hoc string errors and rely on UI-side retries only.
+
+## [2026-02-11] - Verification Execution Path
+**Context:** Local sandbox networking could not resolve npm registry, blocking dependency install and frontend verification.
+**Decision:** Execute install and tauri smoke validation outside sandbox limits, then keep lockfile changes tracked in git.
+**Rationale:** Produces a fully verified, reproducible dependency graph while preserving strict local checks.
+**Consequences:** Validation run requires elevated command path in restricted environments.
+**Alternatives Considered:** Deferring validation to CI only.
