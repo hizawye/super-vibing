@@ -1,21 +1,17 @@
 # Project Status
 
-- Last Updated: 2026-02-11 (workspace-shell-and-palette)
+- Last Updated: 2026-02-11 (ci-rust-linux-deps)
 
 - Current progress:
-  - Implemented BridgeSpace-inspired workspace shell across desktop UI.
-  - Added top chrome with persistent workspace tabs, section navigation popover, and workspace creation modal.
-  - Migrated frontend state to workspace-centric runtime model (per-workspace panes/layout/zoom/agent allocation).
-  - Added AI agent allocation in New Workspace flow and wired backend pane spawn init command execution.
-  - Kept and upgraded command palette to VS Code-style unified launcher triggered by `Ctrl/Cmd + P`.
-  - Added/updated tests for store behavior, pane grid, and command palette interactions.
-  - Validation passed: `pnpm --filter @supervibing/desktop typecheck`, `pnpm --filter @supervibing/desktop test:ci`, `pnpm --filter @supervibing/desktop build`, and `cargo test`.
+  - Diagnosed failing GitHub Actions runs on `main` (`21925803308`, `21924547887`) via `gh` logs.
+  - Confirmed failure isolated to `rust` job while `frontend` job passed.
+  - Root cause identified: missing Linux system libraries (`glib-2.0`, `gobject-2.0`, `gio-2.0`) required by Tauri dependencies in CI.
+  - Patched `.github/workflows/ci.yml` to install required Linux dependencies before Rust checks/tests.
 
 - Blockers/Bugs:
-  - No blocking issues found in this slice.
-  - Non-blocking warning persists: frontend build chunk size warning (>500 kB).
+  - Pending verification from next GitHub Actions run after push.
+  - Non-blocking warning remains: frontend build chunk size warning (>500 kB).
 
 - Next immediate starting point:
-  - Perform manual `tauri:dev` UX pass for keyboard/focus polish (palette, modal, section menu).
-  - Optional follow-up: split bundle with route/component-level dynamic imports to reduce chunk warning.
-  - Prepare commit(s) for UI shell migration and palette retention updates.
+  - Push CI workflow fix to `main` and confirm green run on GitHub Actions.
+  - If CI still fails, capture updated failing logs and refine dependency package list.
