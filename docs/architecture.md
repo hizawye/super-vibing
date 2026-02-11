@@ -12,6 +12,12 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 - PTY reads run in `tauri::async_runtime::spawn_blocking` (tokio-backed runtime thread pool).
 - Frontend writes input through `write_pane_input` and resize through `resize_pane`.
 
+## Hardening model
+- Backend command errors are normalized by typed error categories (`validation`, `conflict`, `not found`, `pty`, `git`, `system`).
+- Duplicate pane spawn is race-safe: insertion is checked under write-lock before registry update.
+- PTY reader cleanup always schedules pane-registry removal through async runtime cleanup.
+- PTY output uses bounded read chunks (`PTY_READ_BUFFER_BYTES`) for predictable stream payload size.
+
 ## State model
 - Zustand store (`src/store/workspace.ts`) stores pane count/order/layouts, pane metadata, workspace tabs, and UI modes.
 - Store actions coordinate spawn/close/broadcast/worktree and session persistence.
@@ -31,3 +37,8 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
   - last session state,
   - named snapshots,
   - quick-launch blueprints.
+
+## Validation and CI
+- Frontend test harness: Vitest + Testing Library + jsdom (`apps/desktop/vitest.config.ts`).
+- Rust unit tests validate parser/sanitizer/cwd helpers.
+- CI (`.github/workflows/ci.yml`) runs frontend typecheck/tests/build and rust check/tests on push/PR.

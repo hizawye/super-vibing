@@ -1,16 +1,18 @@
 # Project Status
 
+- Last Updated: 2026-02-11 (testing-hardening-ci)
+
 - Current progress:
-  - Monorepo scaffolded with `pnpm` workspace and `apps/desktop` Tauri v2 app.
-  - Rust PTY bridge implemented (`spawn_pane`, `write_pane_input`, `resize_pane`, `close_pane`, `run_global_command`).
-  - Git worktree backend commands implemented (`create_worktree`, `list_worktrees`, `get_current_branch`).
-  - React frontend rebuilt with dynamic pane grid (1..16), drag/resize, zoom mode, Xterm integration.
-  - Command palette (`Cmd/Ctrl+K`), echo-input mode, workspace tabs, snapshot and blueprint persistence implemented.
+  - Added frontend test harness configuration (`vitest`, Testing Library, jsdom) and new unit tests for store and key UI components.
+  - Added Rust unit tests for branch sanitization, worktree porcelain parsing, and cwd normalization.
+  - Hardened backend PTY/worktree error reporting and pane lifecycle cleanup logic.
+  - Added GitHub Actions CI workflow for frontend and Rust validation paths.
 
 - Blockers/Bugs:
-  - No blockers found in compile checks.
-  - `vite build` reports a chunk-size warning (>500kb) due terminal/grid libs; functional but can be optimized later.
+  - Network/DNS is currently failing in this environment (`EAI_AGAIN` against `registry.npmjs.org`), so new frontend test dependencies could not be installed locally.
+  - Because of the install blocker, frontend `typecheck`/`test` could not be re-validated after adding test dependencies.
 
 - Next immediate starting point:
-  - Run `pnpm tauri:dev` and validate interactive flows end-to-end in desktop runtime.
-  - Add automated tests for Zustand store transitions and selected tauri command integration.
+  - Re-run `pnpm install --no-frozen-lockfile` once DNS/network is healthy.
+  - Run `pnpm --filter @supervibing/desktop typecheck` and `pnpm --filter @supervibing/desktop test:ci`.
+  - Run manual `pnpm tauri:dev` checklist for pane/worktree/snapshot regression pass.

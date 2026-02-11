@@ -12,6 +12,13 @@
   - `react-grid-layout` (+ `react-resizable`) for pane manager
 - State:
   - Zustand
+- Testing:
+  - Vitest
+  - Testing Library (`@testing-library/react`, `@testing-library/user-event`, `@testing-library/jest-dom`)
+  - jsdom
+  - Rust unit tests via Cargo
+- CI/CD:
+  - GitHub Actions (`.github/workflows/ci.yml`)
 - Build tooling:
   - pnpm workspace
   - Cargo
