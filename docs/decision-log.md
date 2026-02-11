@@ -41,3 +41,10 @@
 **Rationale:** Aligns CI environment with required native libs so Rust checks/tests can run reliably on hosted runners.
 **Consequences:** Slightly longer rust job startup time; significantly more stable CI for Linux targets.
 **Alternatives Considered:** Setting `PKG_CONFIG_PATH` only, skipping rust CI on Linux, or moving checks to containerized custom image.
+
+## [2026-02-12] - Frontend Bundle Segmentation
+**Context:** The desktop frontend build emitted a >500 kB chunk warning and loaded heavy terminal/grid modules upfront.
+**Decision:** Split vendor chunks in Vite (react/grid/terminal/tauri), lazy-load secondary UI overlays, and dynamically import xterm runtime in `TerminalPane`.
+**Rationale:** Reduces initial bundle size and defers heavy dependencies until needed, improving startup performance.
+**Consequences:** Additional chunks generated; terminal initialization now awaits async module load; build output now has multiple sub-300 kB chunks.
+**Alternatives Considered:** Keeping a single bundle and only adjusting `chunkSizeWarningLimit`.

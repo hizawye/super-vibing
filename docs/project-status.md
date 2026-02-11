@@ -1,17 +1,17 @@
 # Project Status
 
-- Last Updated: 2026-02-11 (ci-rust-linux-deps)
+- Last Updated: 2026-02-12 (bundle-segmentation)
 
 - Current progress:
-  - Diagnosed failing GitHub Actions runs on `main` (`21925803308`, `21924547887`) via `gh` logs.
-  - Confirmed failure isolated to `rust` job while `frontend` job passed.
-  - Root cause identified: missing Linux system libraries (`glib-2.0`, `gobject-2.0`, `gio-2.0`) required by Tauri dependencies in CI.
-  - Patched `.github/workflows/ci.yml` to install required Linux dependencies before Rust checks/tests.
+  - Split frontend bundles using Vite manual chunks (react/grid/terminal/tauri).
+  - Lazy-loaded palette, section menu, and workspace modal to reduce initial JS.
+  - Dynamically imported `xterm` and FitAddon in `TerminalPane` to defer terminal runtime load.
+  - Validation passed: `pnpm --filter @supervibing/desktop typecheck`, `test:ci`, and `build` (no 500 kB chunk warning).
 
 - Blockers/Bugs:
-  - Pending verification from next GitHub Actions run after push.
-  - Non-blocking warning remains: frontend build chunk size warning (>500 kB).
+  - Pending verification from current GitHub Actions run `21927033658` (CI fix for Rust dependencies).
+  - No local runtime regressions observed in tests.
 
 - Next immediate starting point:
-  - Push CI workflow fix to `main` and confirm green run on GitHub Actions.
-  - If CI still fails, capture updated failing logs and refine dependency package list.
+  - Confirm CI run passes; if not, refine dependency package list.
+  - Run manual `pnpm tauri:dev` UX pass for terminal startup latency after async xterm load.
