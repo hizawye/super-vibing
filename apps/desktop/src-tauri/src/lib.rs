@@ -2,8 +2,7 @@ use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize}
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    env,
-    fs,
+    env, fmt, fs,
     io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
@@ -12,6 +11,57 @@ use std::{
 use tauri::{ipc::Channel, State};
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
+
+const PTY_READ_BUFFER_BYTES: usize = 4096;
+
+#[derive(Debug)]
+enum AppError {
+    Validation(String),
+    Conflict(String),
+    NotFound(String),
+    Pty(String),
+    Git(String),
+    System(String),
+}
+
+impl AppError {
+    fn validation(message: impl Into<String>) -> Self {
+        Self::Validation(message.into())
+    }
+
+    fn conflict(message: impl Into<String>) -> Self {
+        Self::Conflict(message.into())
+    }
+
+    fn not_found(message: impl Into<String>) -> Self {
+        Self::NotFound(message.into())
+    }
+
+    fn pty(message: impl Into<String>) -> Self {
+        Self::Pty(message.into())
+    }
+
+    fn git(message: impl Into<String>) -> Self {
+        Self::Git(message.into())
+    }
+
+    fn system(message: impl Into<String>) -> Self {
+        Self::System(message.into())
+    }
+}
+
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Validation(message) => write!(f, "validation error: {message}"),
+            Self::Conflict(message) => write!(f, "conflict error: {message}"),
+            Self::NotFound(message) => write!(f, "not found error: {message}"),
+            Self::Pty(message) => write!(f, "pty error: {message}"),
+            Self::Git(message) => write!(f, "git error: {message}"),
+            Self::System(message) => write!(f, "system error: {message}"),
+        }
+    }
+}
 
 struct PaneRuntime {
     writer: Mutex<Box<dyn Write + Send>>,
@@ -149,13 +199,6 @@ async fn spawn_pane(
     let cwd = normalize_cwd(request.cwd)?;
     let shell = request.shell.unwrap_or_else(default_shell);
 
-    {
-        let panes = state.panes.read().await;
-        if panes.contains_key(&pane_id) {
-            return Err(format!("pane `{pane_id}` already exists"));
-        }
-    }
-
     let pty_system = native_pty_system();
     let pty_pair = pty_system
         .openpty(PtySize {
@@ -164,7 +207,7 @@ async fn spawn_pane(
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|err| format!("failed to open pty: {err}"))?;
+        .map_err(|err| AppError::pty(format!("failed to open pty: {err}")).to_string())?;
 
     let mut command = CommandBuilder::new(shell.clone());
     command.cwd(PathBuf::from(&cwd));
@@ -172,16 +215,16 @@ async fn spawn_pane(
     let child = pty_pair
         .slave
         .spawn_command(command)
-        .map_err(|err| format!("failed to spawn process: {err}"))?;
+        .map_err(|err| AppError::pty(format!("failed to spawn process: {err}")).to_string())?;
 
     let mut reader = pty_pair
         .master
         .try_clone_reader()
-        .map_err(|err| format!("failed to clone pty reader: {err}"))?;
+        .map_err(|err| AppError::pty(format!("failed to clone pty reader: {err}")).to_string())?;
     let writer = pty_pair
         .master
         .take_writer()
-        .map_err(|err| format!("failed to acquire pty writer: {err}"))?;
+        .map_err(|err| AppError::pty(format!("failed to acquire pty writer: {err}")).to_string())?;
 
     let pane_runtime = Arc::new(PaneRuntime {
         writer: Mutex::new(writer),
@@ -189,15 +232,25 @@ async fn spawn_pane(
         child: Mutex::new(child),
     });
 
-    {
+    let inserted = {
         let mut panes = state.panes.write().await;
-        panes.insert(pane_id.clone(), pane_runtime);
+        if panes.contains_key(&pane_id) {
+            false
+        } else {
+            panes.insert(pane_id.clone(), Arc::clone(&pane_runtime));
+            true
+        }
+    };
+    if !inserted {
+        let mut child = pane_runtime.child.lock().await;
+        let _ = child.kill();
+        return Err(AppError::conflict(format!("pane `{pane_id}` already exists")).to_string());
     }
 
     let pane_registry = Arc::clone(&state.panes);
     let pane_id_for_task = pane_id.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mut buffer = [0_u8; 8192];
+        let mut buffer = [0_u8; PTY_READ_BUFFER_BYTES];
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => {
@@ -232,9 +285,12 @@ async fn spawn_pane(
             }
         }
 
-        if let Ok(mut panes) = pane_registry.try_write() {
-            panes.remove(&pane_id_for_task);
-        }
+        let cleanup_registry = Arc::clone(&pane_registry);
+        let cleanup_pane_id = pane_id_for_task.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut panes = cleanup_registry.write().await;
+            panes.remove(&cleanup_pane_id);
+        });
     });
 
     Ok(SpawnPaneResponse {
@@ -245,27 +301,29 @@ async fn spawn_pane(
 }
 
 #[tauri::command]
-async fn write_pane_input(state: State<'_, AppState>, request: WriteInputRequest) -> Result<(), String> {
+async fn write_pane_input(
+    state: State<'_, AppState>,
+    request: WriteInputRequest,
+) -> Result<(), String> {
     let pane = {
         let panes = state.panes.read().await;
-        panes
-            .get(&request.pane_id)
-            .cloned()
-            .ok_or_else(|| format!("pane `{}` does not exist", request.pane_id))?
+        panes.get(&request.pane_id).cloned().ok_or_else(|| {
+            AppError::not_found(format!("pane `{}` does not exist", request.pane_id)).to_string()
+        })?
     };
 
     let mut writer = pane.writer.lock().await;
     writer
         .write_all(request.data.as_bytes())
-        .map_err(|err| format!("failed to write input: {err}"))?;
+        .map_err(|err| AppError::pty(format!("failed to write input: {err}")).to_string())?;
     if request.execute.unwrap_or(false) {
         writer
             .write_all(b"\n")
-            .map_err(|err| format!("failed to write newline: {err}"))?;
+            .map_err(|err| AppError::pty(format!("failed to write newline: {err}")).to_string())?;
     }
     writer
         .flush()
-        .map_err(|err| format!("failed to flush pane writer: {err}"))?;
+        .map_err(|err| AppError::pty(format!("failed to flush pane writer: {err}")).to_string())?;
 
     Ok(())
 }
@@ -274,10 +332,9 @@ async fn write_pane_input(state: State<'_, AppState>, request: WriteInputRequest
 async fn resize_pane(state: State<'_, AppState>, request: ResizePaneRequest) -> Result<(), String> {
     let pane = {
         let panes = state.panes.read().await;
-        panes
-            .get(&request.pane_id)
-            .cloned()
-            .ok_or_else(|| format!("pane `{}` does not exist", request.pane_id))?
+        panes.get(&request.pane_id).cloned().ok_or_else(|| {
+            AppError::not_found(format!("pane `{}` does not exist", request.pane_id)).to_string()
+        })?
     };
 
     let master = pane.master.lock().await;
@@ -288,22 +345,22 @@ async fn resize_pane(state: State<'_, AppState>, request: ResizePaneRequest) -> 
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|err| format!("failed to resize pty: {err}"))
+        .map_err(|err| AppError::pty(format!("failed to resize pty: {err}")).to_string())
 }
 
 #[tauri::command]
 async fn close_pane(state: State<'_, AppState>, request: ClosePaneRequest) -> Result<(), String> {
     let pane = {
         let mut panes = state.panes.write().await;
-        panes
-            .remove(&request.pane_id)
-            .ok_or_else(|| format!("pane `{}` does not exist", request.pane_id))?
+        panes.remove(&request.pane_id).ok_or_else(|| {
+            AppError::not_found(format!("pane `{}` does not exist", request.pane_id)).to_string()
+        })?
     };
 
     let mut child = pane.child.lock().await;
     child
         .kill()
-        .map_err(|err| format!("failed to kill pane process: {err}"))
+        .map_err(|err| AppError::pty(format!("failed to kill pane process: {err}")).to_string())
 }
 
 #[tauri::command]
@@ -360,20 +417,22 @@ async fn run_global_command(
 #[tauri::command]
 fn create_worktree(request: CreateWorktreeRequest) -> Result<WorkspaceTab, String> {
     if request.branch.trim().is_empty() {
-        return Err("branch is required".to_string());
+        return Err(AppError::validation("branch is required").to_string());
     }
 
     let repo_root = PathBuf::from(&request.repo_root);
     if !repo_root.exists() {
-        return Err(format!(
+        return Err(AppError::validation(format!(
             "repo root does not exist: {}",
             repo_root.to_string_lossy()
-        ));
+        ))
+        .to_string());
     }
 
     let worktrees_root = repo_root.join(".worktrees");
-    fs::create_dir_all(&worktrees_root)
-        .map_err(|err| format!("failed to create worktrees dir: {err}"))?;
+    fs::create_dir_all(&worktrees_root).map_err(|err| {
+        AppError::system(format!("failed to create worktrees dir: {err}")).to_string()
+    })?;
 
     let worktree_path = worktrees_root.join(sanitize_branch_segment(&request.branch));
 
@@ -385,7 +444,7 @@ fn create_worktree(request: CreateWorktreeRequest) -> Result<WorkspaceTab, Strin
         .arg("--quiet")
         .arg(format!("refs/heads/{}", request.branch))
         .status()
-        .map_err(|err| format!("failed to inspect branches: {err}"))?
+        .map_err(|err| AppError::git(format!("failed to inspect branches: {err}")).to_string())?
         .success();
 
     let mut command = Command::new("git");
@@ -406,13 +465,13 @@ fn create_worktree(request: CreateWorktreeRequest) -> Result<WorkspaceTab, Strin
             .arg(base_branch);
     }
 
-    let output = command
-        .output()
-        .map_err(|err| format!("failed to run git worktree add: {err}"))?;
+    let output = command.output().map_err(|err| {
+        AppError::git(format!("failed to run git worktree add: {err}")).to_string()
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("git worktree add failed: {stderr}"));
+        return Err(AppError::git(format!("git worktree add failed: {stderr}")).to_string());
     }
 
     Ok(WorkspaceTab {
@@ -432,15 +491,67 @@ fn list_worktrees(request: ListWorktreesRequest) -> Result<Vec<WorkspaceTab>, St
         .arg("list")
         .arg("--porcelain")
         .output()
-        .map_err(|err| format!("failed to run git worktree list: {err}"))?;
+        .map_err(|err| {
+            AppError::git(format!("failed to run git worktree list: {err}")).to_string()
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("git worktree list failed: {stderr}"));
+        return Err(AppError::git(format!("git worktree list failed: {stderr}")).to_string());
     }
 
-    let parsed = parse_worktree_porcelain(&String::from_utf8_lossy(&output.stdout), &request.repo_root);
+    let parsed =
+        parse_worktree_porcelain(&String::from_utf8_lossy(&output.stdout), &request.repo_root);
     Ok(parsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_branch_segment_replaces_invalid_characters() {
+        let sanitized = sanitize_branch_segment("feature/abc@123");
+        assert_eq!(sanitized, "feature-abc-123");
+    }
+
+    #[test]
+    fn parse_worktree_porcelain_parses_branch_and_detached_entries() {
+        let input = "\
+worktree /repo
+HEAD abc123
+branch refs/heads/main
+
+worktree /repo/.worktrees/feature-abc
+HEAD def456
+detached
+";
+
+        let tabs = parse_worktree_porcelain(input, "/repo");
+        assert_eq!(tabs.len(), 2);
+        assert_eq!(tabs[0].worktree_path, "/repo");
+        assert_eq!(tabs[0].branch, "main");
+        assert_eq!(tabs[1].worktree_path, "/repo/.worktrees/feature-abc");
+        assert_eq!(tabs[1].branch, "detached");
+    }
+
+    #[test]
+    fn normalize_cwd_rejects_missing_path() {
+        let missing = format!("/tmp/super-vibing-missing-{}", Uuid::new_v4());
+        let err = normalize_cwd(Some(missing)).expect_err("missing path should fail");
+        assert!(err.contains("cwd does not exist"));
+    }
+
+    #[test]
+    fn normalize_cwd_accepts_existing_path() {
+        let dir = std::env::temp_dir().join(format!("super-vibing-cwd-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        let resolved = normalize_cwd(Some(dir.to_string_lossy().to_string())).expect("valid cwd");
+        assert_eq!(resolved, dir.to_string_lossy().to_string());
+
+        fs::remove_dir_all(&dir).expect("cleanup temp dir");
+    }
 }
 
 fn parse_worktree_porcelain(stdout: &str, repo_root: &str) -> Vec<WorkspaceTab> {

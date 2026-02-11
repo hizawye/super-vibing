@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter @supervibing/desktop dev",
     "build": "pnpm --filter @supervibing/desktop build",
+    "test": "pnpm --filter @supervibing/desktop test:ci",
     "tauri:dev": "pnpm --filter @supervibing/desktop tauri dev",
     "tauri:build": "pnpm --filter @supervibing/desktop tauri build"
   }
