@@ -1,18 +1,21 @@
 # Project Status
 
-- Last Updated: 2026-02-11 (verification-complete)
+- Last Updated: 2026-02-11 (workspace-shell-and-palette)
 
 - Current progress:
-  - Verification slice completed end-to-end.
-  - Dependency install succeeded (`pnpm install --no-frozen-lockfile`) after running outside sandbox network limits.
-  - Frontend validation passed: `typecheck`, `test:ci` (11 tests), and `build`.
-  - Rust validation passed: `cargo check` and `cargo test`.
-  - `tauri:dev` smoke start succeeded (Vite + Cargo app boot) under elevated runtime execution.
+  - Implemented BridgeSpace-inspired workspace shell across desktop UI.
+  - Added top chrome with persistent workspace tabs, section navigation popover, and workspace creation modal.
+  - Migrated frontend state to workspace-centric runtime model (per-workspace panes/layout/zoom/agent allocation).
+  - Added AI agent allocation in New Workspace flow and wired backend pane spawn init command execution.
+  - Kept and upgraded command palette to VS Code-style unified launcher triggered by `Ctrl/Cmd + P`.
+  - Added/updated tests for store behavior, pane grid, and command palette interactions.
+  - Validation passed: `pnpm --filter @supervibing/desktop typecheck`, `pnpm --filter @supervibing/desktop test:ci`, `pnpm --filter @supervibing/desktop build`, and `cargo test`.
 
 - Blockers/Bugs:
-  - None active for the validated slice.
-  - Known non-blocking warning: frontend production bundle size warning (>500 kB).
+  - No blocking issues found in this slice.
+  - Non-blocking warning persists: frontend build chunk size warning (>500 kB).
 
 - Next immediate starting point:
-  - Push validated commits to `origin/main`.
-  - Start next feature slice (command palette UX/perf improvements or worktree workflow polish).
+  - Perform manual `tauri:dev` UX pass for keyboard/focus polish (palette, modal, section menu).
+  - Optional follow-up: split bundle with route/component-level dynamic imports to reduce chunk warning.
+  - Prepare commit(s) for UI shell migration and palette retention updates.

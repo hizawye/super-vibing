@@ -27,3 +27,10 @@
 **Rationale:** Produces a fully verified, reproducible dependency graph while preserving strict local checks.
 **Consequences:** Validation run requires elevated command path in restricted environments.
 **Alternatives Considered:** Deferring validation to CI only.
+
+## [2026-02-11] - Workspace-Centric Shell and Ctrl/Cmd+P Palette
+**Context:** SuperVibing needed BridgeSpace-inspired UX flow while keeping terminal orchestration as the core behavior.
+**Decision:** Move to a workspace-centric UI shell (top tab chrome, section menu, modal workspace creation with AI allocation) and preserve command palette as a VS Code-style unified launcher on `Ctrl/Cmd+P`.
+**Rationale:** This keeps high-frequency actions keyboard-first, reduces clutter from legacy control panels, and aligns visual/interaction flow with the reference product.
+**Consequences:** Store/session model migrated from single global pane state to per-workspace runtimes; tests were updated to cover new flows; backend spawn supports optional init command execution.
+**Alternatives Considered:** Removing command palette entirely, keeping old control-grid layout with style-only changes, and implementing near-pixel clone without adapting behavior.
