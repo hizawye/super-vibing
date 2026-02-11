@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { PaneGrid } from "./components/PaneGrid";
 import { TopChrome } from "./components/TopChrome";
-import { SectionMenu } from "./components/SectionMenu";
-import { NewWorkspaceModal, type WorkspaceCreationInput } from "./components/NewWorkspaceModal";
 import { EmptyStatePage } from "./components/EmptyStatePage";
-import { CommandPalette } from "./components/CommandPalette";
+import type { WorkspaceCreationInput } from "./components/NewWorkspaceModal";
 import { useWorkspaceStore } from "./store/workspace";
+
+const SectionMenu = lazy(() =>
+  import("./components/SectionMenu").then((module) => ({ default: module.SectionMenu })),
+);
+const NewWorkspaceModal = lazy(() =>
+  import("./components/NewWorkspaceModal").then((module) => ({ default: module.NewWorkspaceModal })),
+);
+const CommandPalette = lazy(() =>
+  import("./components/CommandPalette").then((module) => ({ default: module.CommandPalette })),
+);
 
 const SHORTCUT_GROUPS = [
   {
@@ -278,30 +286,32 @@ function App() {
 
       {activeSection === "settings" ? <SettingsSection /> : null}
 
-      <SectionMenu
-        open={menuOpen}
-        activeSection={activeSection}
-        onSelectSection={setActiveSection}
-        onClose={() => setMenuOpen(false)}
-      />
+      <Suspense fallback={null}>
+        <SectionMenu
+          open={menuOpen}
+          activeSection={activeSection}
+          onSelectSection={setActiveSection}
+          onClose={() => setMenuOpen(false)}
+        />
 
-      <NewWorkspaceModal
-        open={newWorkspaceOpen}
-        defaultDirectory={activeWorkspace?.worktreePath ?? ""}
-        onClose={() => setNewWorkspaceOpen(false)}
-        onSubmit={(input: WorkspaceCreationInput) => {
-          void createWorkspace(input);
-        }}
-      />
+        <NewWorkspaceModal
+          open={newWorkspaceOpen}
+          defaultDirectory={activeWorkspace?.worktreePath ?? ""}
+          onClose={() => setNewWorkspaceOpen(false)}
+          onSubmit={(input: WorkspaceCreationInput) => {
+            void createWorkspace(input);
+          }}
+        />
 
-      <CommandPalette
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        onOpenWorkspaceModal={() => {
-          setPaletteOpen(false);
-          setNewWorkspaceOpen(true);
-        }}
-      />
+        <CommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          onOpenWorkspaceModal={() => {
+            setPaletteOpen(false);
+            setNewWorkspaceOpen(true);
+          }}
+        />
+      </Suspense>
     </main>
   );
 }
