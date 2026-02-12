@@ -3,6 +3,7 @@ import { useWorkspaceStore } from "./workspace";
 import type { AgentAllocation, SessionState, SpawnPaneRequest, WorkspaceRuntime } from "../types";
 import * as tauriApi from "../lib/tauri";
 import * as persistence from "../lib/persistence";
+import { toRuntimePaneId } from "../lib/panes";
 
 vi.mock("../lib/tauri", () => ({
   closePane: vi.fn(async () => {}),
@@ -119,6 +120,10 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function runtimePaneId(workspaceId: string, paneId: string): string {
+  return toRuntimePaneId(workspaceId, paneId);
+}
+
 describe("workspace store", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -156,12 +161,12 @@ describe("workspace store", () => {
     await useWorkspaceStore.getState().sendInputFromPane("workspace-main", "pane-1", "ls");
 
     expect(tauriApi.writePaneInput).toHaveBeenNthCalledWith(1, {
-      paneId: "pane-1",
+      paneId: runtimePaneId("workspace-main", "pane-1"),
       data: "ls",
       execute: false,
     });
     expect(tauriApi.writePaneInput).toHaveBeenNthCalledWith(2, {
-      paneId: "pane-2",
+      paneId: runtimePaneId("workspace-main", "pane-2"),
       data: "ls",
       execute: false,
     });
@@ -183,21 +188,36 @@ describe("workspace store", () => {
 
     const state = useWorkspaceStore.getState();
     expect(state.workspaces).toHaveLength(2);
-
-    expect(tauriApi.closePane).toHaveBeenCalledWith("pane-1");
+    expect(tauriApi.closePane).not.toHaveBeenCalled();
 
     expect(tauriApi.spawnPane).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        paneId: "pane-1",
+        paneId: runtimePaneId(state.activeWorkspaceId ?? "workspace-main", "pane-1"),
       }),
     );
     expect(tauriApi.spawnPane).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        paneId: "pane-2",
+        paneId: runtimePaneId(state.activeWorkspaceId ?? "workspace-main", "pane-2"),
       }),
     );
+  });
+
+  it("keeps running terminals alive when switching workspaces", async () => {
+    const workspaceMain = workspace("workspace-main", "Workspace 1", 2, ["running", "running"]);
+    const workspaceTwo = workspace("workspace-two", "Workspace 2", 2, ["running", "running"]);
+
+    resetStore({
+      workspaces: [workspaceMain, workspaceTwo],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await useWorkspaceStore.getState().setActiveWorkspace("workspace-two");
+    await useWorkspaceStore.getState().setActiveWorkspace("workspace-main");
+
+    expect(tauriApi.closePane).not.toHaveBeenCalled();
+    expect(tauriApi.spawnPane).not.toHaveBeenCalled();
   });
 
   it("runs assigned agent command when reopening a workspace tab", async () => {
@@ -213,7 +233,7 @@ describe("workspace store", () => {
     await useWorkspaceStore.getState().setActiveWorkspace("workspace-two");
 
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-1",
+      paneId: runtimePaneId("workspace-two", "pane-1"),
       data: "codex",
       execute: true,
     });
@@ -231,7 +251,7 @@ describe("workspace store", () => {
 
     let injected = false;
     vi.mocked(tauriApi.spawnPane).mockImplementation(async ({ paneId, cwd }) => {
-      if (paneId === "pane-1" && !injected) {
+      if (paneId === runtimePaneId("workspace-two", "pane-1") && !injected) {
         injected = true;
         await Promise.all([
           useWorkspaceStore.getState().ensurePaneSpawned("workspace-two", "pane-2"),
@@ -251,22 +271,22 @@ describe("workspace store", () => {
 
     expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(4);
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-1",
+      paneId: runtimePaneId("workspace-two", "pane-1"),
       data: "codex",
       execute: true,
     });
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-2",
+      paneId: runtimePaneId("workspace-two", "pane-2"),
       data: "codex",
       execute: true,
     });
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-3",
+      paneId: runtimePaneId("workspace-two", "pane-3"),
       data: "codex",
       execute: true,
     });
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-4",
+      paneId: runtimePaneId("workspace-two", "pane-4"),
       data: "codex",
       execute: true,
     });
@@ -286,7 +306,7 @@ describe("workspace store", () => {
 
     expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(1);
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-2",
+      paneId: runtimePaneId("workspace-two", "pane-2"),
       data: "codex",
       execute: true,
     });
@@ -323,7 +343,7 @@ describe("workspace store", () => {
     await useWorkspaceStore.getState().bootstrap();
 
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-1",
+      paneId: runtimePaneId("workspace-main", "pane-1"),
       data: "claude",
       execute: true,
     });
@@ -347,7 +367,7 @@ describe("workspace store", () => {
     expect(tauriApi.spawnPane).toHaveBeenCalledTimes(1);
 
     gate.resolve({
-      paneId: "pane-1",
+      paneId: runtimePaneId("workspace-main", "pane-1"),
       cwd: "/repo",
       shell: "/bin/bash",
     });
@@ -357,7 +377,7 @@ describe("workspace store", () => {
     expect(tauriApi.spawnPane).toHaveBeenCalledTimes(1);
     expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(1);
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-1",
+      paneId: runtimePaneId("workspace-main", "pane-1"),
       data: "codex",
       execute: true,
     });
@@ -382,7 +402,7 @@ describe("workspace store", () => {
     expect(tauriApi.spawnPane).toHaveBeenCalledTimes(1);
 
     gate.resolve({
-      paneId: "pane-1",
+      paneId: runtimePaneId("workspace-main", "pane-1"),
       cwd: "/repo",
       shell: "/bin/bash",
     });
@@ -391,7 +411,7 @@ describe("workspace store", () => {
 
     expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(1);
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-1",
+      paneId: runtimePaneId("workspace-main", "pane-1"),
       data: "claude",
       execute: true,
     });
@@ -406,7 +426,7 @@ describe("workspace store", () => {
     vi.mocked(tauriApi.spawnPane)
       .mockRejectedValueOnce(new Error("conflict error: pane `pane-1` already exists"))
       .mockResolvedValueOnce({
-        paneId: "pane-1",
+        paneId: runtimePaneId("workspace-main", "pane-1"),
         cwd: "/repo",
         shell: "/bin/bash",
       });
@@ -416,10 +436,10 @@ describe("workspace store", () => {
       executeInit: true,
     });
 
-    expect(tauriApi.closePane).toHaveBeenCalledWith("pane-1");
+    expect(tauriApi.closePane).toHaveBeenCalledWith(runtimePaneId("workspace-main", "pane-1"));
     expect(tauriApi.spawnPane).toHaveBeenCalledTimes(2);
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-1",
+      paneId: runtimePaneId("workspace-main", "pane-1"),
       data: "codex",
       execute: true,
     });
@@ -442,6 +462,33 @@ describe("workspace store", () => {
     const pane = useWorkspaceStore.getState().workspaces[0].panes["pane-1"];
     expect(pane?.status).toBe("error");
     expect(pane?.error).toContain("spawn failed");
+  });
+
+  it("maps global command runtime pane ids back to logical pane ids", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 2, ["running", "running"])],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    vi.mocked(tauriApi.runGlobalCommand).mockResolvedValueOnce([
+      { paneId: runtimePaneId("workspace-main", "pane-1"), ok: true },
+      { paneId: runtimePaneId("workspace-main", "pane-2"), ok: true },
+    ]);
+
+    const result = await useWorkspaceStore.getState().runGlobalCommand("pwd", true);
+
+    expect(tauriApi.runGlobalCommand).toHaveBeenCalledWith({
+      paneIds: [
+        runtimePaneId("workspace-main", "pane-1"),
+        runtimePaneId("workspace-main", "pane-2"),
+      ],
+      command: "pwd",
+      execute: true,
+    });
+    expect(result).toEqual([
+      { paneId: "pane-1", ok: true },
+      { paneId: "pane-2", ok: true },
+    ]);
   });
 
   it("saves and restores snapshot session state", async () => {
@@ -492,7 +539,7 @@ describe("workspace store", () => {
     await useWorkspaceStore.getState().restoreSnapshot("snapshot-agent");
 
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
-      paneId: "pane-1",
+      paneId: runtimePaneId("workspace-main", "pane-1"),
       data: "codex",
       execute: true,
     });

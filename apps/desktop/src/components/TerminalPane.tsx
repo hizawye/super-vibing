@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Terminal } from "xterm";
 import type { FitAddon } from "@xterm/addon-fit";
+import { toRuntimePaneId } from "../lib/panes";
 import { resizePane, subscribeToPaneEvents } from "../lib/tauri";
 import { useWorkspaceStore } from "../store/workspace";
 
@@ -12,6 +13,7 @@ interface TerminalPaneProps {
 const PROMPTABLE_INPUT_REGEX = /^[\x20-\x7E]$/;
 
 export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
+  const runtimePaneId = toRuntimePaneId(workspaceId, paneId);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -93,7 +95,7 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
         if (terminal && terminal.rows > 0 && terminal.cols > 0) {
           try {
             await resizePane({
-              paneId,
+              paneId: runtimePaneId,
               rows: terminal.rows,
               cols: terminal.cols,
             });
@@ -130,7 +132,7 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
         }
       });
 
-      unsubscribe = subscribeToPaneEvents(paneId, (event) => {
+      unsubscribe = subscribeToPaneEvents(runtimePaneId, (event) => {
         if (!terminalRef.current) {
           return;
         }
@@ -165,7 +167,7 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [markPaneExited, paneId, sendInputFromPane, updatePaneLastCommand, workspaceId]);
+  }, [markPaneExited, paneId, runtimePaneId, sendInputFromPane, updatePaneLastCommand, workspaceId]);
 
   return (
     <div className="terminal-shell">

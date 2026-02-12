@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Layout } from "react-grid-layout";
 import { closePane, getCurrentBranch, getDefaultCwd, runGlobalCommand, spawnPane, writePaneInput } from "../lib/tauri";
+import { toRuntimePaneId } from "../lib/panes";
 import { loadPersistedPayload, saveBlueprints, saveSessionState, saveSnapshots } from "../lib/persistence";
 import type {
   AgentAllocation,
@@ -146,7 +147,7 @@ async function flushPendingPaneInit(
 
   try {
     await writePaneInput({
-      paneId,
+      paneId: toRuntimePaneId(workspaceId, paneId),
       data: pending.command,
       execute: pending.execute,
     });
@@ -156,10 +157,13 @@ async function flushPendingPaneInit(
   }
 }
 
-async function spawnPaneWithConflictRetry(paneId: string, cwd: string): Promise<Awaited<ReturnType<typeof spawnPane>>> {
+async function spawnPaneWithConflictRetry(
+  runtimePaneId: string,
+  cwd: string,
+): Promise<Awaited<ReturnType<typeof spawnPane>>> {
   try {
     return await spawnPane({
-      paneId,
+      paneId: runtimePaneId,
       cwd,
     });
   } catch (error) {
@@ -168,13 +172,13 @@ async function spawnPaneWithConflictRetry(paneId: string, cwd: string): Promise<
     }
 
     try {
-      await closePane(paneId);
+      await closePane(runtimePaneId);
     } catch {
       // best effort cleanup before a single retry
     }
 
     return spawnPane({
-      paneId,
+      paneId: runtimePaneId,
       cwd,
     });
   }
@@ -412,7 +416,7 @@ async function closeRunningPanes(workspace: WorkspaceRuntime): Promise<void> {
   await Promise.all(
     runningPaneIds.map(async (paneId) => {
       try {
-        await closePane(paneId);
+        await closePane(toRuntimePaneId(workspace.id, paneId));
       } catch {
         // best effort cleanup when switching contexts
       }
@@ -619,26 +623,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const launchPlan = buildLaunchPlan(nextWorkspace.paneOrder, nextWorkspace.agentAllocation);
     nextWorkspace = applyLaunchTitles(nextWorkspace, launchPlan);
 
-    const activeWorkspace = activeWorkspaceOf(get());
-    if (activeWorkspace) {
-      await closeRunningPanes(activeWorkspace);
-      clearPendingPaneInitForWorkspace(activeWorkspace.id);
-    }
-
     set((state) => ({
       activeSection: "terminal",
-      workspaces: [
-        ...state.workspaces.map((workspace) =>
-          workspace.id === activeWorkspace?.id
-            ? {
-                ...workspace,
-                panes: toIdlePanes(workspace.panes),
-                updatedAt: new Date().toISOString(),
-              }
-            : workspace,
-        ),
-        nextWorkspace,
-      ],
+      workspaces: [...state.workspaces, nextWorkspace],
       activeWorkspaceId: nextWorkspace.id,
     }));
 
@@ -659,9 +646,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     const closingActive = workspaceId === state.activeWorkspaceId;
-    if (closingActive) {
-      await closeRunningPanes(workspace);
-    }
+    await closeRunningPanes(workspace);
     clearPendingPaneInitForWorkspace(workspaceId);
 
     const remaining = state.workspaces.filter((item) => item.id !== workspaceId);
@@ -690,24 +675,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return;
     }
 
-    const currentActive = activeWorkspaceOf(state);
-    if (currentActive) {
-      await closeRunningPanes(currentActive);
-      clearPendingPaneInitForWorkspace(currentActive.id);
-    }
-
-    set((previous) => ({
+    set(() => ({
       activeWorkspaceId: workspaceId,
       activeSection: "terminal",
-      workspaces: previous.workspaces.map((workspace) =>
-        workspace.id === currentActive?.id
-          ? {
-              ...workspace,
-              panes: toIdlePanes(workspace.panes),
-              updatedAt: new Date().toISOString(),
-            }
-          : workspace,
-      ),
     }));
 
     await spawnWorkspacePanes(get, target.id, true);
@@ -741,7 +711,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       removedPaneIds.map(async (paneId) => {
         if (activeWorkspace.panes[paneId]?.status === "running") {
           try {
-            await closePane(paneId);
+            await closePane(toRuntimePaneId(activeWorkspace.id, paneId));
           } catch {
             // best effort close while resizing pane count
           }
@@ -846,7 +816,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }));
 
       try {
-        const response = await spawnPaneWithConflictRetry(paneId, targetWorkspace.worktreePath);
+        const response = await spawnPaneWithConflictRetry(
+          toRuntimePaneId(workspaceId, paneId),
+          targetWorkspace.worktreePath,
+        );
 
         set((current) => ({
           workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
@@ -967,7 +940,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     await Promise.all(
       targetPaneIds.map((paneId) =>
         writePaneInput({
-          paneId,
+          paneId: toRuntimePaneId(workspaceId, paneId),
           data,
           execute: false,
         }),
@@ -1018,7 +991,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return [];
     }
 
-    return runGlobalCommand({ paneIds, command, execute });
+    const runtimeToPane = new Map(paneIds.map((paneId) => [toRuntimePaneId(workspace.id, paneId), paneId]));
+    const results = await runGlobalCommand({
+      paneIds: Array.from(runtimeToPane.keys()),
+      command,
+      execute,
+    });
+    return results.map((result) => ({
+      ...result,
+      paneId: runtimeToPane.get(result.paneId) ?? result.paneId,
+    }));
   },
 
   saveSnapshot: async (name: string) => {
