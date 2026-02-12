@@ -14,6 +14,46 @@ export function updatesSupported(): boolean {
   return isTauri();
 }
 
+export function formatUpdaterError(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    const normalized = message.toLowerCase();
+
+    if (
+      normalized.includes("network")
+      || normalized.includes("fetch")
+      || normalized.includes("dns")
+      || normalized.includes("timed out")
+      || normalized.includes("timeout")
+    ) {
+      return `Unable to reach the update endpoint. ${message}`;
+    }
+
+    if (
+      normalized.includes("signature")
+      || normalized.includes("pubkey")
+      || normalized.includes("public key")
+      || normalized.includes("minisign")
+    ) {
+      return `Update signature verification failed. ${message}`;
+    }
+
+    if (normalized.includes("json") || normalized.includes("parse")) {
+      return `Release metadata is invalid. ${message}`;
+    }
+
+    if (message.length > 0) {
+      return message;
+    }
+  }
+
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error.trim();
+  }
+
+  return fallback;
+}
+
 export async function checkForPendingUpdate(): Promise<PendingAppUpdate | null> {
   if (!updatesSupported()) {
     return null;

@@ -9,6 +9,7 @@ import type { WorkspaceCreationInput } from "./components/NewWorkspaceModal";
 import {
   checkForPendingUpdate,
   closePendingUpdate,
+  formatUpdaterError,
   installPendingUpdate,
   restartToApplyUpdate,
   updatesSupported,
@@ -82,7 +83,7 @@ interface SettingsSectionProps {
   onDensityChange: (density: DensityMode) => void;
 }
 
-function SettingsSection({
+export function SettingsSection({
   themeId,
   reduceMotion,
   highContrastAssist,
@@ -139,7 +140,7 @@ function SettingsSection({
     } catch (error) {
       setUpdateUi({
         status: "error",
-        message: error instanceof Error ? error.message : "Failed to check for updates.",
+        message: formatUpdaterError(error, "Failed to check for updates."),
       });
     }
   };
@@ -191,7 +192,7 @@ function SettingsSection({
     } catch (error) {
       setUpdateUi({
         status: "error",
-        message: error instanceof Error ? error.message : "Failed to install the update.",
+        message: formatUpdaterError(error, "Failed to install the update."),
       });
     }
   };
@@ -217,7 +218,7 @@ function SettingsSection({
     } catch (error) {
       setUpdateUi({
         status: "error",
-        message: error instanceof Error ? error.message : "Unable to restart automatically.",
+        message: formatUpdaterError(error, "Unable to restart automatically."),
       });
     }
   };
