@@ -1,43 +1,28 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (tmux-style-pane-shortcuts)
+- Last Updated: 2026-02-12 (release-parity-recovery-v0.1.7)
 
 - Current progress:
-  - Implemented tmux-style pane keyboard shortcuts in desktop app:
-    - `Ctrl/Cmd + Alt + Arrow`: move focused pane by layout direction,
-    - `Ctrl/Cmd + Shift + ]` / `Ctrl/Cmd + Shift + [`: increase/decrease pane count,
-    - `Ctrl/Cmd + Alt + Enter`: zoom/unzoom focused pane.
-  - Added runtime focused-pane model in `apps/desktop/src/store/workspace.ts`:
-    - new `focusedPaneByWorkspace` map,
-    - new actions `setFocusedPane` and `moveFocusedPane`,
-    - focus reconciliation on workspace switch, close, pane resize, and snapshot restore.
-  - Added deterministic directional focus resolver:
-    - new `apps/desktop/src/lib/pane-focus.ts` chooses nearest candidate by axis distance, cross-axis distance, then pane order tie-break.
-  - Updated pane rendering and styling:
-    - `apps/desktop/src/components/PaneGrid.tsx` marks focused pane with `.is-focused`,
-    - `apps/desktop/src/components/TerminalPane.tsx` reports focus on pointer interaction,
-    - `apps/desktop/src/styles.css` adds subtle focused pane ring.
-  - Updated keyboard shortcut documentation in Settings to match implemented pane bindings.
-  - Added regression tests:
-    - `apps/desktop/src/lib/pane-focus.test.ts`,
-    - `apps/desktop/src/App.shortcuts.test.ts`,
-    - expanded `apps/desktop/src/store/workspace.test.ts`,
-    - updated `apps/desktop/src/components/PaneGrid.test.tsx` for new focus props.
+  - Diagnosed failed `Release` workflow for tag `v0.1.6`:
+    - failure at `scripts/verify-release-version.sh`,
+    - mismatch detected: tag `v0.1.6` vs `tauri.conf.json` version `0.1.5`.
+  - Applied release parity recovery by version bump to `0.1.7`:
+    - `apps/desktop/src-tauri/tauri.conf.json`,
+    - `apps/desktop/package.json`,
+    - root `package.json`.
+  - Preserved failed `v0.1.6` as historical; follow-up release should use `v0.1.7`.
 
 - Verification:
-  - `pnpm --filter @supervibing/desktop test -- run` (57 tests passing)
-  - `pnpm --filter @supervibing/desktop typecheck`
+  - `gh run view 21956605389 --log-failed` confirms exact parity mismatch failure.
+  - Pending local parity verification command before tag push:
+    - `./scripts/verify-release-version.sh v0.1.7`
 
 - Blockers/Bugs:
-  - No local blockers.
-  - Keyboard movement is layout-directional (no wrap-around when no pane exists in requested direction), by design.
-  - Manual runtime verification still recommended for shortcut behavior across Linux window managers and non-US keyboard layouts.
+  - Existing `v0.1.6` release run remains failed by design (immutable history).
+  - Final confirmation pending new tag workflow result.
 
 - Next immediate starting point:
-  - Manually validate pane shortcuts in desktop runtime:
-    - tiling and free-form modes,
-    - zoomed and non-zoomed states,
-    - 1/2/4/6 pane counts.
-  - Consider optional follow-up:
-    - next/previous workspace shortcuts implementation to match Settings list,
-    - configurable keybinding preferences if shortcut customization is needed.
+  - Commit version parity fix.
+  - Push `main`.
+  - Create and push tag `v0.1.7`.
+  - Verify `CI` + `Release` workflow completion on GitHub Actions.

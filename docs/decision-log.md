@@ -394,3 +394,13 @@ Modal/palette readability kept via a faint translucent overlay panel.
 **Rationale:** Makes pane-heavy workflows keyboard-first without introducing prefix-state complexity while keeping focus behavior deterministic across layout mutations.
 **Consequences:** Pane interaction now depends on explicit focused-pane state; shortcut docs now match actual bindings; no persistence schema changes.
 **Alternatives Considered:** Full tmux prefix emulation (`Ctrl+B` sequences) and non-directional linear pane cycling.
+
+## [2026-02-12] - Release Recovery by Enforcing Tag/Version Parity After v0.1.6 Failure
+**Context:** The `Release` workflow for tag `v0.1.6` failed at parity validation because repository app version metadata still referenced `0.1.5`.
+**Decision:** Bump all release version sources to `0.1.7` and publish a new tag instead of rewriting the failed `v0.1.6` tag:
+- updated `apps/desktop/src-tauri/tauri.conf.json` version to `0.1.7`,
+- updated `apps/desktop/package.json` version to `0.1.7`,
+- updated workspace root `package.json` version to `0.1.7`.
+**Rationale:** Preserves immutable release history while satisfying the guarded release invariant (`tag == tauri version`).
+**Consequences:** `v0.1.6` remains failed/historical; subsequent release should use `v0.1.7` and pass parity gate.
+**Alternatives Considered:** Deleting/re-pointing remote `v0.1.6` tag.
