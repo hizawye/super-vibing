@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useWorkspaceStore } from "./workspace";
 import type { AgentAllocation, SessionState, SpawnPaneRequest, WorkspaceRuntime } from "../types";
 import * as tauriApi from "../lib/tauri";
+import * as persistence from "../lib/persistence";
 
 vi.mock("../lib/tauri", () => ({
   closePane: vi.fn(async () => {}),
@@ -199,6 +200,62 @@ describe("workspace store", () => {
     );
   });
 
+  it("runs assigned agent command when reopening a workspace tab", async () => {
+    const workspaceMain = workspace("workspace-main", "Workspace 1", 1, ["running"]);
+    const workspaceTwo = workspace("workspace-two", "Workspace 2", 1, ["idle"]);
+    workspaceTwo.agentAllocation = allocation({ profile: "codex", enabled: true, count: 1 });
+
+    resetStore({
+      workspaces: [workspaceMain, workspaceTwo],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await useWorkspaceStore.getState().setActiveWorkspace("workspace-two");
+
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-1",
+      data: "codex",
+      execute: true,
+    });
+  });
+
+  it("runs assigned agent command after bootstrap from persisted session", async () => {
+    const restoredWorkspace = workspace("workspace-main", "Workspace 1", 1, ["idle"]);
+    restoredWorkspace.agentAllocation = allocation({ profile: "claude", enabled: true, count: 1 });
+
+    vi.mocked(persistence.loadPersistedPayload).mockResolvedValueOnce({
+      version: 2,
+      session: {
+        workspaces: [restoredWorkspace],
+        activeWorkspaceId: "workspace-main",
+        activeSection: "terminal",
+        echoInput: false,
+      },
+      snapshots: [],
+      blueprints: [],
+    });
+
+    useWorkspaceStore.setState({
+      initialized: false,
+      bootstrapping: false,
+      activeSection: "terminal",
+      paletteOpen: false,
+      echoInput: false,
+      workspaces: [],
+      activeWorkspaceId: null,
+      snapshots: [],
+      blueprints: [],
+    });
+
+    await useWorkspaceStore.getState().bootstrap();
+
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-1",
+      data: "claude",
+      execute: true,
+    });
+  });
+
   it("dedupes concurrent spawn calls and runs init command once", async () => {
     resetStore({
       workspaces: [workspace("workspace-main", "Workspace 1", 1, ["idle"])],
@@ -332,5 +389,39 @@ describe("workspace store", () => {
     const state = useWorkspaceStore.getState();
     expect(state.workspaces[0].paneCount).toBe(2);
     expect(state.activeWorkspaceId).toBe("workspace-main");
+  });
+
+  it("runs assigned agent command when restoring snapshot", async () => {
+    const restoredWorkspace = workspace("workspace-main", "Workspace 1", 1, ["idle"]);
+    restoredWorkspace.agentAllocation = allocation({ profile: "codex", enabled: true, count: 1 });
+
+    resetStore({
+      workspaces: [workspace("workspace-source", "Workspace Source", 1, ["running"])],
+      activeWorkspaceId: "workspace-source",
+    });
+
+    useWorkspaceStore.setState({
+      snapshots: [
+        {
+          id: "snapshot-agent",
+          name: "snapshot-agent",
+          createdAt: "2026-02-12T10:00:00.000Z",
+          state: {
+            workspaces: [restoredWorkspace],
+            activeWorkspaceId: "workspace-main",
+            activeSection: "terminal",
+            echoInput: false,
+          },
+        },
+      ],
+    });
+
+    await useWorkspaceStore.getState().restoreSnapshot("snapshot-agent");
+
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-1",
+      data: "codex",
+      execute: true,
+    });
   });
 });

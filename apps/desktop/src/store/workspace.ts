@@ -468,6 +468,42 @@ function applyLaunchTitles(
   };
 }
 
+async function spawnWorkspacePanes(
+  getState: () => WorkspaceStore,
+  workspaceId: string,
+  withAgentInit: boolean,
+): Promise<void> {
+  const workspace = getState().workspaces.find((item) => item.id === workspaceId);
+  if (!workspace) {
+    return;
+  }
+
+  const launchPlan = withAgentInit ? buildLaunchPlan(workspace.paneOrder, workspace.agentAllocation) : undefined;
+
+  for (const paneId of workspace.paneOrder) {
+    const latest = getState();
+    const latestWorkspace = latest.workspaces.find((item) => item.id === workspaceId);
+    if (!latestWorkspace) {
+      return;
+    }
+
+    const pane = latestWorkspace.panes[paneId];
+    const launch = launchPlan?.get(paneId);
+    const shouldInit = Boolean(launch && pane && pane.status !== "running");
+
+    await latest.ensurePaneSpawned(
+      workspaceId,
+      paneId,
+      shouldInit
+        ? {
+            initCommand: launch?.command,
+            executeInit: true,
+          }
+        : undefined,
+    );
+  }
+}
+
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   initialized: false,
   bootstrapping: false,
@@ -537,9 +573,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     const activeWorkspace = activeWorkspaceOf(get());
     if (activeWorkspace) {
-      for (const paneId of activeWorkspace.paneOrder) {
-        await get().ensurePaneSpawned(activeWorkspace.id, paneId);
-      }
+      await spawnWorkspacePanes(get, activeWorkspace.id, true);
     }
 
     await get().persistSession();
@@ -606,13 +640,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       activeWorkspaceId: nextWorkspace.id,
     }));
 
-    for (const paneId of nextWorkspace.paneOrder) {
-      const launch = launchPlan.get(paneId);
-      await get().ensurePaneSpawned(nextWorkspace.id, paneId, {
-        initCommand: launch?.command,
-        executeInit: Boolean(launch),
-      });
-    }
+    await spawnWorkspacePanes(get, nextWorkspace.id, true);
 
     await get().persistSession();
   },
@@ -643,12 +671,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     });
 
     if (closingActive && nextActiveId) {
-      const nextWorkspace = get().workspaces.find((item) => item.id === nextActiveId);
-      if (nextWorkspace) {
-        for (const paneId of nextWorkspace.paneOrder) {
-          await get().ensurePaneSpawned(nextWorkspace.id, paneId);
-        }
-      }
+      await spawnWorkspacePanes(get, nextActiveId, true);
     }
 
     await get().persistSession();
@@ -685,9 +708,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       ),
     }));
 
-    for (const paneId of target.paneOrder) {
-      await get().ensurePaneSpawned(target.id, paneId);
-    }
+    await spawnWorkspacePanes(get, target.id, true);
 
     await get().persistSession();
   },
@@ -746,9 +767,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       })),
     }));
 
-    for (const paneId of nextPaneOrder) {
-      await get().ensurePaneSpawned(activeWorkspace.id, paneId);
-    }
+    await spawnWorkspacePanes(get, activeWorkspace.id, true);
 
     await get().persistSession();
   },
@@ -1039,9 +1058,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     const nextActiveWorkspace = activeWorkspaceOf(get());
     if (nextActiveWorkspace) {
-      for (const paneId of nextActiveWorkspace.paneOrder) {
-        await get().ensurePaneSpawned(nextActiveWorkspace.id, paneId);
-      }
+      await spawnWorkspacePanes(get, nextActiveWorkspace.id, true);
     }
 
     await get().persistSession();
