@@ -28,6 +28,8 @@ export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneP
   const onFocusPaneRef = useRef(onFocusPane);
 
   const ensurePaneSpawned = useWorkspaceStore((state) => state.ensurePaneSpawned);
+  const markPaneTerminalReady = useWorkspaceStore((state) => state.markPaneTerminalReady);
+  const markPaneTerminalNotReady = useWorkspaceStore((state) => state.markPaneTerminalNotReady);
   const markPaneExited = useWorkspaceStore((state) => state.markPaneExited);
   const updatePaneLastCommand = useWorkspaceStore((state) => state.updatePaneLastCommand);
   const sendInputFromPane = useWorkspaceStore((state) => state.sendInputFromPane);
@@ -193,6 +195,7 @@ export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneP
         }
       });
 
+      markPaneTerminalReady(workspaceId, paneId);
       void resizeToBackend();
     };
 
@@ -214,8 +217,11 @@ export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneP
       terminal?.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
+      markPaneTerminalNotReady(workspaceId, paneId);
     };
   }, [
+    markPaneTerminalNotReady,
+    markPaneTerminalReady,
     markPaneExited,
     paneId,
     runtimePaneId,

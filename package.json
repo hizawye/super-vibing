@@ -1,7 +1,7 @@
 {
   "name": "super-vibing",
   "private": true,
-  "version": "0.1.7",
+  "version": "0.1.8",
   "packageManager": "pnpm@10.29.2",
   "scripts": {
     "dev": "pnpm --filter @supervibing/desktop dev",

@@ -62,6 +62,7 @@ interface WorkspaceStore {
   workspaces: WorkspaceRuntime[];
   activeWorkspaceId: string | null;
   focusedPaneByWorkspace: Record<string, string | null>;
+  terminalReadyPanesByWorkspace: Record<string, Record<string, true>>;
   workspaceBootSessions: Record<string, WorkspaceBootSession>;
   snapshots: Snapshot[];
   blueprints: Blueprint[];
@@ -82,6 +83,8 @@ interface WorkspaceStore {
   pauseWorkspaceBoot: (workspaceId: string) => void;
   resumeWorkspaceBoot: (workspaceId: string) => void;
   cancelWorkspaceBoot: (workspaceId: string) => void;
+  markPaneTerminalReady: (workspaceId: string, paneId: string) => void;
+  markPaneTerminalNotReady: (workspaceId: string, paneId: string) => void;
   ensurePaneSpawned: (workspaceId: string, paneId: string, options?: PaneSpawnOptions) => Promise<void>;
   markPaneExited: (workspaceId: string, paneId: string, error?: string) => void;
   updatePaneLastCommand: (workspaceId: string, paneId: string, command: string) => void;
@@ -155,6 +158,7 @@ const workspaceSuspendTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const paneInputBuffers = new Map<string, string>();
 const paneInputTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const paneInputFlushes = new Map<string, Promise<void>>();
+const paneTerminalReadyWaiters = new Map<string, Set<() => void>>();
 const workspaceBootInFlight = new Map<string, Promise<void>>();
 const workspaceBootControllers = new Map<string, WorkspaceBootController>();
 const spawnSlotWaiters: Array<() => void> = [];
@@ -176,6 +180,84 @@ interface WorkspaceBootController {
 
 function paneRuntimeKey(workspaceId: string, paneId: string): string {
   return `${workspaceId}:${paneId}`;
+}
+
+function isPaneTerminalReady(
+  state: Pick<WorkspaceStore, "terminalReadyPanesByWorkspace">,
+  workspaceId: string,
+  paneId: string,
+): boolean {
+  return Boolean(state.terminalReadyPanesByWorkspace[workspaceId]?.[paneId]);
+}
+
+function wakePaneTerminalReadyWaiters(workspaceId: string, paneId: string): void {
+  const key = paneRuntimeKey(workspaceId, paneId);
+  const waiters = paneTerminalReadyWaiters.get(key);
+  if (!waiters) {
+    return;
+  }
+  paneTerminalReadyWaiters.delete(key);
+  waiters.forEach((wake) => wake());
+}
+
+function clearPaneTerminalReadyWaiters(workspaceId: string, paneId: string): void {
+  paneTerminalReadyWaiters.delete(paneRuntimeKey(workspaceId, paneId));
+}
+
+function clearPaneTerminalReadyWaitersForWorkspace(workspaceId: string): void {
+  const prefix = `${workspaceId}:`;
+  Array.from(paneTerminalReadyWaiters.keys()).forEach((key) => {
+    if (key.startsWith(prefix)) {
+      paneTerminalReadyWaiters.delete(key);
+    }
+  });
+}
+
+async function waitForPaneTerminalReady(
+  getState: () => WorkspaceStore,
+  workspaceId: string,
+  paneId: string,
+  timeoutMs = 3000,
+): Promise<void> {
+  if (isPaneTerminalReady(getState(), workspaceId, paneId)) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const key = paneRuntimeKey(workspaceId, paneId);
+    const waiters = paneTerminalReadyWaiters.get(key) ?? new Set<() => void>();
+    paneTerminalReadyWaiters.set(key, waiters);
+
+    let finished = false;
+    const complete = (): void => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      clearTimeout(timer);
+      const active = paneTerminalReadyWaiters.get(key);
+      active?.delete(complete);
+      if (active && active.size === 0) {
+        paneTerminalReadyWaiters.delete(key);
+      }
+      resolve();
+    };
+
+    const timer = setTimeout(() => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      const active = paneTerminalReadyWaiters.get(key);
+      active?.delete(complete);
+      if (active && active.size === 0) {
+        paneTerminalReadyWaiters.delete(key);
+      }
+      reject(new Error("terminal not ready for interactive launch"));
+    }, timeoutMs);
+
+    waiters.add(complete);
+  });
 }
 
 function isAlreadyExistsError(error: unknown): boolean {
@@ -475,6 +557,9 @@ async function flushPendingPaneInit(
 
   const pane = workspace.panes[paneId];
   if (!pane || pane.status !== "running") {
+    return;
+  }
+  if (!isPaneTerminalReady(state, workspaceId, paneId)) {
     return;
   }
 
@@ -1151,6 +1236,7 @@ async function runWorkspaceBootQueue(
       for (let attempt = 0; attempt <= AGENT_BOOT_RETRY_LIMIT; attempt += 1) {
         try {
           await getState().ensurePaneSpawned(workspaceId, task.paneId);
+          await waitForPaneTerminalReady(getState, workspaceId, task.paneId);
           await writePaneInput({
             paneId: toRuntimePaneId(workspaceId, task.paneId),
             data: task.command,
@@ -1280,6 +1366,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   workspaces: [],
   activeWorkspaceId: null,
   focusedPaneByWorkspace: {},
+  terminalReadyPanesByWorkspace: {},
   workspaceBootSessions: {},
   snapshots: [],
   blueprints: [],
@@ -1293,6 +1380,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     clearAllPendingPaneInit();
     clearAllSuspendTimers();
     clearAllWorkspaceBoot(set);
+    paneTerminalReadyWaiters.clear();
 
     set({ bootstrapping: true });
 
@@ -1342,6 +1430,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workspaces: session.workspaces,
       activeWorkspaceId: session.activeWorkspaceId,
       focusedPaneByWorkspace: buildFocusedPaneMap(session.workspaces),
+      terminalReadyPanesByWorkspace: {},
       snapshots: persisted.snapshots,
       blueprints: persisted.blueprints,
       initialized: true,
@@ -1464,6 +1553,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     await closeRunningPanes(workspace);
     clearPendingPaneInitForWorkspace(workspaceId);
     clearWorkspacePaneInputBuffers(workspaceId);
+    clearPaneTerminalReadyWaitersForWorkspace(workspaceId);
 
     const remaining = state.workspaces.filter((item) => item.id !== workspaceId);
     const nextActiveId = closingActive ? remaining[0]?.id ?? null : state.activeWorkspaceId;
@@ -1486,6 +1576,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         workspaces: remaining,
         activeWorkspaceId: nextActiveId,
         focusedPaneByWorkspace,
+        terminalReadyPanesByWorkspace: Object.fromEntries(
+          Object.entries(current.terminalReadyPanesByWorkspace).filter(([workspaceKey]) => workspaceKey !== workspaceId),
+        ),
       };
     });
 
@@ -1590,6 +1683,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     removedPaneIds.forEach((paneId) => {
       delete nextPanes[paneId];
       clearPendingPaneInit(activeWorkspace.id, paneId);
+      clearPaneTerminalReadyWaiters(activeWorkspace.id, paneId);
       const runtimePaneId = toRuntimePaneId(activeWorkspace.id, paneId);
       const timer = paneInputTimers.get(runtimePaneId);
       if (timer) {
@@ -1614,6 +1708,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         focusedPaneByWorkspace: {
           ...current.focusedPaneByWorkspace,
           [activeWorkspace.id]: focusedPaneId,
+        },
+        terminalReadyPanesByWorkspace: {
+          ...current.terminalReadyPanesByWorkspace,
+          [activeWorkspace.id]: Object.fromEntries(
+            Object.entries(current.terminalReadyPanesByWorkspace[activeWorkspace.id] ?? {}).filter(
+              ([paneId]) => nextPaneOrder.includes(paneId),
+            ),
+          ),
         },
         workspaces: withWorkspaceUpdated(current.workspaces, activeWorkspace.id, (workspace) => ({
           ...workspace,
@@ -1702,6 +1804,44 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
     workspaceBootInFlight.delete(workspaceId);
     removeWorkspaceBootSession(set, workspaceId);
+  },
+
+  markPaneTerminalReady: (workspaceId: string, paneId: string) => {
+    set((state) => ({
+      terminalReadyPanesByWorkspace: {
+        ...state.terminalReadyPanesByWorkspace,
+        [workspaceId]: {
+          ...(state.terminalReadyPanesByWorkspace[workspaceId] ?? {}),
+          [paneId]: true,
+        },
+      },
+    }));
+    wakePaneTerminalReadyWaiters(workspaceId, paneId);
+    void flushPendingPaneInit(get, workspaceId, paneId);
+  },
+
+  markPaneTerminalNotReady: (workspaceId: string, paneId: string) => {
+    clearPaneTerminalReadyWaiters(workspaceId, paneId);
+    set((state) => {
+      const workspaceReadyPanes = state.terminalReadyPanesByWorkspace[workspaceId];
+      if (!workspaceReadyPanes?.[paneId]) {
+        return {};
+      }
+
+      const nextWorkspaceReadyPanes = { ...workspaceReadyPanes };
+      delete nextWorkspaceReadyPanes[paneId];
+
+      const nextReadyByWorkspace = { ...state.terminalReadyPanesByWorkspace };
+      if (Object.keys(nextWorkspaceReadyPanes).length === 0) {
+        delete nextReadyByWorkspace[workspaceId];
+      } else {
+        nextReadyByWorkspace[workspaceId] = nextWorkspaceReadyPanes;
+      }
+
+      return {
+        terminalReadyPanesByWorkspace: nextReadyByWorkspace,
+      };
+    });
   },
 
   ensurePaneSpawned: async (workspaceId: string, paneId: string, options?: PaneSpawnOptions) => {
@@ -1866,7 +2006,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   markPaneExited: (workspaceId: string, paneId: string, error?: string) => {
+    clearPaneTerminalReadyWaiters(workspaceId, paneId);
     set((state) => ({
+      terminalReadyPanesByWorkspace: {
+        ...state.terminalReadyPanesByWorkspace,
+        [workspaceId]: Object.fromEntries(
+          Object.entries(state.terminalReadyPanesByWorkspace[workspaceId] ?? {}).filter(
+            ([readyPaneId]) => readyPaneId !== paneId,
+          ),
+        ),
+      },
       workspaces: withWorkspaceUpdated(state.workspaces, workspaceId, (workspace) => {
         const pane = workspace.panes[paneId];
         if (!pane) {
@@ -2089,6 +2238,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workspaces: restored.workspaces,
       activeWorkspaceId: restored.activeWorkspaceId,
       focusedPaneByWorkspace: buildFocusedPaneMap(restored.workspaces),
+      terminalReadyPanesByWorkspace: {},
       activeSection: restored.activeSection,
       echoInput: restored.echoInput,
       themeId: restored.uiPreferences.theme,
