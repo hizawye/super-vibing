@@ -1,6 +1,6 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (react-selector-stability-fix)
+- Last Updated: 2026-02-12 (agent-startup-defaults-shortcuts-and-automation-hardening)
 
 - Current progress:
   - Worktree manager system remains in place across backend/store/UI with enriched worktree metadata and safe lifecycle actions.
@@ -61,6 +61,20 @@
     - `apps/desktop/src/App.tsx` now separates worktree manager core selector from derived open-workspace paths selector,
     - removed nested inline `.map()` output from a `useShallow` object selector to keep snapshot comparisons stable under React 19,
     - added selector stability regressions in `apps/desktop/src/App.selectors.test.ts`.
+  - Added global agent startup defaults in frontend settings/store:
+    - `apps/desktop/src/store/workspace.ts` now persists `agentStartupDefaults` in session state and applies them to newly created/imported workspaces,
+    - `apps/desktop/src/App.tsx` Settings now provides editable per-agent startup commands and a reset action,
+    - `apps/desktop/src/components/NewWorkspaceModal.tsx` now seeds agent command defaults from global settings.
+  - Fixed keyboard shortcuts while terminal pane has focus:
+    - `apps/desktop/src/components/TerminalPane.tsx` marks terminal shortcut scope with `data-terminal-pane`,
+    - `apps/desktop/src/App.tsx` no longer treats xterm input focus as a generic editable-target block for app/tmux shortcut handling.
+  - Hardened worktree lifecycle UX coverage:
+    - `apps/desktop/src/store/workspace.test.ts` now covers managed worktree create-without-open and remove-with-open-workspace cleanup paths.
+  - Hardened Rust automation bridge request surface in `apps/desktop/src-tauri/src/lib.rs`:
+    - optional bearer-token auth via `SUPERVIBING_AUTOMATION_TOKEN`,
+    - request validation before queueing (`workspaceId`, `paneCount`, branch/command checks),
+    - queue-full returns `429` and expanded HTTP status mapping,
+    - completed-job retention cap to bound in-memory automation job growth.
 
 - Verification:
   - `cargo test -q` (in `apps/desktop/src-tauri`) ✅
@@ -91,23 +105,29 @@
     - desktop tests passed (85/85 in run scope).
   - `timeout 35s pnpm tauri:dev` ✅
     - Vite + Tauri dev app launched cleanly without immediate startup panic in terminal output.
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/App.settings-updater.test.tsx src/store/workspace.test.ts src/components/TerminalPane.test.tsx` ✅
+    - desktop tests passed (92/92).
+  - `cargo test -q` (in `apps/desktop/src-tauri`) ✅
+    - Rust tests passed (16/16).
+  - `cargo check -q` (in `apps/desktop/src-tauri`) ✅
 
 - Blockers/Bugs:
   - No functional blockers identified.
   - User-reported React stack flood (`forceStoreRerender/updateStoreInstance`) is addressed in selector wiring; browser-console confirmation in the reporter environment is still pending.
   - Packaged-app Linux compositor compatibility still depends on host WebKit/GPU stack; diagnostics documented in `docs/architecture.md`.
-  - Automation bridge currently relies on localhost binding without auth; acceptable for local-only automation, but token-based guard may be needed for stricter host-hardening.
+  - Automation bearer-token auth is optional and env-driven; hosts that need stricter local protection should set `SUPERVIBING_AUTOMATION_TOKEN`.
   - Non-fatal shell startup warnings (`fnm/starship` permission and nvm prefix warnings) continue in command output and do not affect build/test outcomes.
   - Live skill smoke tests for `workspaces`/job execution are blocked until SuperVibing desktop is running and serving the automation port.
 
 - Next immediate starting point:
-  - Reproduce the previously failing startup path in the reporter environment and confirm browser console no longer shows the `getRootForUpdatedFiber` / `forceStoreRerender` stack.
-  - Manually verify startup recovery UX in packaged and dev launch paths:
-    - force bootstrap failure and confirm crash screen with Retry/Reset actions,
-    - confirm Reset recovers to default workspace after clearing local store.
-  - Run Linux compositor diagnostics for black-screen reports:
+  - Manual UX pass:
+    - verify settings-edited startup commands are applied for new workspaces and imports,
+    - verify app/tmux shortcuts while cursor is inside active xterm pane in a real desktop run.
+  - Automation smoke run with auth enabled:
+    - launch app with `SUPERVIBING_AUTOMATION_TOKEN=<token>`,
+    - validate `401` on missing token and success with valid `Bearer` token.
+  - Keep Linux compositor diagnostics in the loop for black-screen reports:
     - `pnpm tauri:debug`,
     - `WEBKIT_DISABLE_DMABUF_RENDERER=1 pnpm tauri:debug`,
     - `WEBKIT_DISABLE_COMPOSITING_MODE=1 pnpm tauri:debug`.
-  - Re-run manual tmux/terminal/workspace checks after startup recovery patch to confirm no regressions.
-  - Launch SuperVibing desktop and run full automation skill smoke tests once app is active.

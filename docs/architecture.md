@@ -20,6 +20,7 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 
 ## State model
 - Zustand store (`src/store/workspace.ts`) stores pane count/order/layouts, pane metadata, workspace tabs, and UI modes.
+- Global agent startup defaults (`agentStartupDefaults`) are persisted in session state and used for new workspace/import allocation defaults.
 - Store actions coordinate spawn/close/broadcast/worktree and session persistence.
 - React 19 selector stability rule:
   - avoid nested derived arrays/objects inside `useShallow` object selectors,
@@ -32,6 +33,7 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 - Keyboard model:
   - global app shortcuts remain available (`Ctrl/Cmd+N`, `Ctrl/Cmd+P`, `Escape`),
   - tmux-style pane shortcuts are handled by a frontend prefix controller (`Ctrl+B`, 1000ms armed timeout),
+  - shortcut eligibility explicitly treats xterm pane scope as terminal-first (shortcuts are allowed while cursor is in terminal input),
   - prefix mappings route to pane count/focus/zoom/resize actions, with resize gated to `freeform` layout mode.
 
 ## Git manager
@@ -49,7 +51,12 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
   - `GET /v1/workspaces`,
   - `POST /v1/commands`,
   - `GET /v1/jobs/:jobId`.
+- Request surface hardening:
+  - validates command payloads before queueing (`workspaceId`, pane count range, branch/command guards),
+  - queue pressure returns `429` when capacity is exceeded,
+  - optional bearer-token auth is enforced when `SUPERVIBING_AUTOMATION_TOKEN` is set.
 - Commands are queued and processed by a background worker with persisted in-memory job state (`queued/running/succeeded/failed`).
+- Completed automation jobs are retention-pruned to keep in-memory job history bounded.
 - Frontend remains source-of-truth for open workspace/pane runtime mapping and syncs snapshots through `sync_automation_workspaces`.
 - Backend dispatches UI-bound actions (`create_panes`, `import_worktree`) through Tauri events (`automation:request`) and waits for explicit frontend ack (`automation_report`) with timeout handling.
 
@@ -58,6 +65,7 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
   - last session state,
   - named snapshots,
   - quick-launch blueprints.
+  - global agent startup defaults.
 - Store reset path uses plugin-store `reset()` + `save()` to recover from corrupt startup state.
 
 ## Startup resilience

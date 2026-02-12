@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026-02-12] - Agent Startup Defaults, Terminal Shortcut Scope, and Automation Hardening
+### Added
+- Added global per-agent startup command defaults (`claude`, `codex`, `gemini`, `cursor`, `opencode`) in Settings and persisted session state.
+- Added optional automation bearer-token auth via `SUPERVIBING_AUTOMATION_TOKEN`.
+- Added Rust automation validation/retention coverage tests (auth parsing, payload validation, completed-job pruning behavior).
+
+### Changed
+- New workspace/import flows now seed agent command defaults from settings-managed startup defaults.
+- App/tmux shortcut gating now allows terminal-focused xterm input scope while preserving editable-input protections in regular forms.
+- Automation command submission now validates request payloads before queueing and returns more specific HTTP status codes (`401`, `409`, `429`).
+- Automation job store now prunes old completed jobs to maintain bounded in-memory retention.
+
+### Fixed
+- Fixed keyboard shortcuts failing when cursor was inside an active terminal pane.
+- Hardened worktree UX regressions with additional tests for create-without-open and remove-with-open-workspace flows.
+
 ## [2026-02-12] - React Selector Stability Fix for Startup Loop
 ### Fixed
 - Fixed a React 19 external-store rerender loop risk by removing nested derived arrays from a `useShallow` object selector in `apps/desktop/src/App.tsx`.

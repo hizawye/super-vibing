@@ -7,6 +7,20 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-12] - Global Agent Startup Defaults in Settings
+**Context:** Agent startup commands (Claude/Codex/etc.) were static defaults and not user-editable from the runtime app settings.
+**Decision:** Add persistent global `agentStartupDefaults` in frontend session state, expose editable settings controls, and apply these defaults to newly created/imported workspaces.
+**Rationale:** Keeps startup behavior user-configurable without mutating existing workspace allocations unexpectedly.
+**Consequences:** Session schema now includes startup-default command state; modal and workspace creation/import paths now consume these defaults.
+**Alternatives Considered:** Per-workspace-only edits and retroactive rewriting of all existing workspace allocations.
+
+## [2026-02-12] - Terminal-Focus Shortcut Eligibility + Automation API Guardrails
+**Context:** App/tmux shortcuts were blocked when xterm input had focus, and automation bridge requests lacked upfront validation/auth/retention guardrails.
+**Decision:** Treat xterm scope as shortcut-eligible while preserving normal input protections elsewhere; add automation request validation, optional bearer auth (`SUPERVIBING_AUTOMATION_TOKEN`), queue-pressure/status improvements, and completed-job retention pruning.
+**Rationale:** Restores expected terminal-first keyboard flow and hardens localhost automation without forcing auth for existing users.
+**Consequences:** Keyboard behavior changed in terminal focus scope; automation endpoints now fail fast on invalid payloads and can enforce token auth when configured.
+**Alternatives Considered:** Global shortcut capture everywhere, and keeping automation bridge as unauthenticated permissive local-only surface.
+
 ## [2026-02-11] - Test Stack and CI Baseline
 **Context:** The core orchestrator features are in place but lacked automated regression coverage and branch protection checks.
 **Decision:** Standardize frontend tests on Vitest + Testing Library and add GitHub Actions CI jobs for frontend and Rust validation.
