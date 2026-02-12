@@ -108,6 +108,16 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
   });
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("workspace store", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -187,6 +197,121 @@ describe("workspace store", () => {
         paneId: "pane-2",
       }),
     );
+  });
+
+  it("dedupes concurrent spawn calls and runs init command once", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["idle"])],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    const gate = deferred<{ paneId: string; cwd: string; shell: string }>();
+    vi.mocked(tauriApi.spawnPane).mockImplementationOnce(async () => gate.promise);
+
+    const first = useWorkspaceStore.getState().ensurePaneSpawned("workspace-main", "pane-1", {
+      initCommand: "codex",
+      executeInit: true,
+    });
+    const second = useWorkspaceStore.getState().ensurePaneSpawned("workspace-main", "pane-1");
+
+    expect(tauriApi.spawnPane).toHaveBeenCalledTimes(1);
+
+    gate.resolve({
+      paneId: "pane-1",
+      cwd: "/repo",
+      shell: "/bin/bash",
+    });
+
+    await Promise.all([first, second]);
+
+    expect(tauriApi.spawnPane).toHaveBeenCalledTimes(1);
+    expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(1);
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-1",
+      data: "codex",
+      execute: true,
+    });
+    expect(useWorkspaceStore.getState().workspaces[0].panes["pane-1"]?.status).toBe("running");
+  });
+
+  it("keeps init command when second caller adds it during in-flight spawn", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["idle"])],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    const gate = deferred<{ paneId: string; cwd: string; shell: string }>();
+    vi.mocked(tauriApi.spawnPane).mockImplementationOnce(async () => gate.promise);
+
+    const first = useWorkspaceStore.getState().ensurePaneSpawned("workspace-main", "pane-1");
+    const second = useWorkspaceStore.getState().ensurePaneSpawned("workspace-main", "pane-1", {
+      initCommand: "claude",
+      executeInit: true,
+    });
+
+    expect(tauriApi.spawnPane).toHaveBeenCalledTimes(1);
+
+    gate.resolve({
+      paneId: "pane-1",
+      cwd: "/repo",
+      shell: "/bin/bash",
+    });
+
+    await Promise.all([first, second]);
+
+    expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(1);
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-1",
+      data: "claude",
+      execute: true,
+    });
+  });
+
+  it("retries once on pane-already-exists conflicts", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["idle"])],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    vi.mocked(tauriApi.spawnPane)
+      .mockRejectedValueOnce(new Error("conflict error: pane `pane-1` already exists"))
+      .mockResolvedValueOnce({
+        paneId: "pane-1",
+        cwd: "/repo",
+        shell: "/bin/bash",
+      });
+
+    await useWorkspaceStore.getState().ensurePaneSpawned("workspace-main", "pane-1", {
+      initCommand: "codex",
+      executeInit: true,
+    });
+
+    expect(tauriApi.closePane).toHaveBeenCalledWith("pane-1");
+    expect(tauriApi.spawnPane).toHaveBeenCalledTimes(2);
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-1",
+      data: "codex",
+      execute: true,
+    });
+    expect(useWorkspaceStore.getState().workspaces[0].panes["pane-1"]?.status).toBe("running");
+  });
+
+  it("sets error state for non-conflict spawn failures", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["idle"])],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    vi.mocked(tauriApi.spawnPane).mockRejectedValueOnce(new Error("spawn failed"));
+
+    await useWorkspaceStore.getState().ensurePaneSpawned("workspace-main", "pane-1", {
+      initCommand: "codex",
+      executeInit: true,
+    });
+
+    const pane = useWorkspaceStore.getState().workspaces[0].panes["pane-1"];
+    expect(pane?.status).toBe("error");
+    expect(pane?.error).toContain("spawn failed");
   });
 
   it("saves and restores snapshot session state", async () => {

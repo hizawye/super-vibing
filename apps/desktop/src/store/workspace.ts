@@ -71,6 +71,115 @@ const AGENT_PROFILE_CONFIG: Array<{ profile: AgentProfileKey; label: string; com
   { profile: "opencode", label: "OpenCode", command: "opencode" },
 ];
 
+interface PendingPaneInit {
+  command: string;
+  execute: boolean;
+}
+
+const spawnInFlight = new Map<string, Promise<void>>();
+const pendingPaneInit = new Map<string, PendingPaneInit>();
+
+function paneRuntimeKey(workspaceId: string, paneId: string): string {
+  return `${workspaceId}:${paneId}`;
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  return String(error).toLowerCase().includes("already exists");
+}
+
+function queuePendingPaneInit(workspaceId: string, paneId: string, options?: PaneSpawnOptions): void {
+  const command = options?.initCommand?.trim();
+  if (!command) {
+    return;
+  }
+
+  const key = paneRuntimeKey(workspaceId, paneId);
+  const previous = pendingPaneInit.get(key);
+  pendingPaneInit.set(key, {
+    command,
+    execute: Boolean(options?.executeInit) || (previous?.command === command ? previous.execute : false),
+  });
+}
+
+function clearPendingPaneInit(workspaceId: string, paneId: string): void {
+  pendingPaneInit.delete(paneRuntimeKey(workspaceId, paneId));
+}
+
+function clearPendingPaneInitForWorkspace(workspaceId: string): void {
+  const prefix = `${workspaceId}:`;
+  Array.from(pendingPaneInit.keys()).forEach((key) => {
+    if (key.startsWith(prefix)) {
+      pendingPaneInit.delete(key);
+    }
+  });
+}
+
+function clearAllPendingPaneInit(): void {
+  pendingPaneInit.clear();
+}
+
+async function flushPendingPaneInit(
+  getState: () => WorkspaceStore,
+  workspaceId: string,
+  paneId: string,
+): Promise<void> {
+  const key = paneRuntimeKey(workspaceId, paneId);
+  const pending = pendingPaneInit.get(key);
+  if (!pending) {
+    return;
+  }
+
+  const state = getState();
+  if (state.activeWorkspaceId !== workspaceId) {
+    return;
+  }
+
+  const workspace = state.workspaces.find((item) => item.id === workspaceId);
+  if (!workspace) {
+    return;
+  }
+
+  const pane = workspace.panes[paneId];
+  if (!pane || pane.status !== "running") {
+    return;
+  }
+
+  try {
+    await writePaneInput({
+      paneId,
+      data: pending.command,
+      execute: pending.execute,
+    });
+    pendingPaneInit.delete(key);
+  } catch {
+    // retry on subsequent spawn/ensure attempts
+  }
+}
+
+async function spawnPaneWithConflictRetry(paneId: string, cwd: string): Promise<Awaited<ReturnType<typeof spawnPane>>> {
+  try {
+    return await spawnPane({
+      paneId,
+      cwd,
+    });
+  } catch (error) {
+    if (!isAlreadyExistsError(error)) {
+      throw error;
+    }
+
+    try {
+      await closePane(paneId);
+    } catch {
+      // best effort cleanup before a single retry
+    }
+
+    return spawnPane({
+      paneId,
+      cwd,
+    });
+  }
+}
+
 function clampPaneCount(value: number): number {
   return Math.max(MIN_PANES, Math.min(MAX_PANES, value));
 }
@@ -376,6 +485,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return;
     }
 
+    clearAllPendingPaneInit();
+
     set({ bootstrapping: true });
 
     const persisted = await loadPersistedPayload();
@@ -475,6 +586,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const activeWorkspace = activeWorkspaceOf(get());
     if (activeWorkspace) {
       await closeRunningPanes(activeWorkspace);
+      clearPendingPaneInitForWorkspace(activeWorkspace.id);
     }
 
     set((state) => ({
@@ -520,6 +632,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (closingActive) {
       await closeRunningPanes(workspace);
     }
+    clearPendingPaneInitForWorkspace(workspaceId);
 
     const remaining = state.workspaces.filter((item) => item.id !== workspaceId);
     const nextActiveId = closingActive ? remaining[0]?.id ?? null : state.activeWorkspaceId;
@@ -555,6 +668,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const currentActive = activeWorkspaceOf(state);
     if (currentActive) {
       await closeRunningPanes(currentActive);
+      clearPendingPaneInitForWorkspace(currentActive.id);
     }
 
     set((previous) => ({
@@ -614,6 +728,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     removedPaneIds.forEach((paneId) => {
       delete nextPanes[paneId];
+      clearPendingPaneInit(activeWorkspace.id, paneId);
     });
 
     set((current) => ({
@@ -650,35 +765,44 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     const pane = workspace.panes[paneId];
-    if (!pane || pane.status === "running") {
+    if (!pane) {
       return;
     }
 
-    set((current) => ({
-      workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
-        const currentPane = target.panes[paneId];
-        if (!currentPane) {
-          return target;
-        }
-        return {
-          ...target,
-          panes: {
-            ...target.panes,
-            [paneId]: {
-              ...currentPane,
-              status: "idle",
-              error: undefined,
-            },
-          },
-        };
-      }),
-    }));
+    queuePendingPaneInit(workspaceId, paneId, options);
+    if (pane.status === "running") {
+      await flushPendingPaneInit(get, workspaceId, paneId);
+      return;
+    }
 
-    try {
-      const response = await spawnPane({
-        paneId,
-        cwd: workspace.worktreePath,
-      });
+    const key = paneRuntimeKey(workspaceId, paneId);
+    const inFlight = spawnInFlight.get(key);
+    if (inFlight) {
+      await inFlight;
+      await flushPendingPaneInit(get, workspaceId, paneId);
+      return;
+    }
+
+    const spawnTask = (async () => {
+      const latest = get();
+      if (latest.activeWorkspaceId !== workspaceId) {
+        return;
+      }
+
+      const targetWorkspace = latest.workspaces.find((item) => item.id === workspaceId);
+      if (!targetWorkspace) {
+        return;
+      }
+
+      const targetPane = targetWorkspace.panes[paneId];
+      if (!targetPane) {
+        return;
+      }
+
+      if (targetPane.status === "running") {
+        await flushPendingPaneInit(get, workspaceId, paneId);
+        return;
+      }
 
       set((current) => ({
         workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
@@ -692,9 +816,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
               ...target.panes,
               [paneId]: {
                 ...currentPane,
-                cwd: response.cwd,
-                shell: response.shell,
-                status: "running",
+                status: "idle",
                 error: undefined,
               },
             },
@@ -702,36 +824,60 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         }),
       }));
 
-      if (options?.initCommand && options.executeInit) {
-        const initCommand = options.initCommand;
-        setTimeout(() => {
-          void writePaneInput({
-            paneId,
-            data: initCommand,
-            execute: true,
-          });
-        }, 150);
-      }
-    } catch (error) {
-      set((current) => ({
-        workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
-          const currentPane = target.panes[paneId];
-          if (!currentPane) {
-            return target;
-          }
-          return {
-            ...target,
-            panes: {
-              ...target.panes,
-              [paneId]: {
-                ...currentPane,
-                status: "error",
-                error: String(error),
+      try {
+        const response = await spawnPaneWithConflictRetry(paneId, targetWorkspace.worktreePath);
+
+        set((current) => ({
+          workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
+            const currentPane = target.panes[paneId];
+            if (!currentPane) {
+              return target;
+            }
+            return {
+              ...target,
+              panes: {
+                ...target.panes,
+                [paneId]: {
+                  ...currentPane,
+                  cwd: response.cwd,
+                  shell: response.shell,
+                  status: "running",
+                  error: undefined,
+                },
               },
-            },
-          };
-        }),
-      }));
+            };
+          }),
+        }));
+
+        await flushPendingPaneInit(get, workspaceId, paneId);
+      } catch (error) {
+        set((current) => ({
+          workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
+            const currentPane = target.panes[paneId];
+            if (!currentPane) {
+              return target;
+            }
+            return {
+              ...target,
+              panes: {
+                ...target.panes,
+                [paneId]: {
+                  ...currentPane,
+                  status: "error",
+                  error: String(error),
+                },
+              },
+            };
+          }),
+        }));
+      }
+    })();
+
+    spawnInFlight.set(key, spawnTask);
+    try {
+      await spawnTask;
+    } finally {
+      spawnInFlight.delete(key);
     }
   },
 
@@ -880,6 +1026,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (activeWorkspace) {
       await closeRunningPanes(activeWorkspace);
     }
+    clearAllPendingPaneInit();
 
     const restored = sanitizeSession(snapshot.state);
 
