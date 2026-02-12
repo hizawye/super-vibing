@@ -60,6 +60,7 @@ describe("PaneGrid", () => {
     render(
       <PaneGrid
         workspaceId="workspace-1"
+        isActive
         paneIds={["pane-1", "pane-2"]}
         layouts={layouts}
         layoutMode="tiling"
@@ -85,6 +86,7 @@ describe("PaneGrid", () => {
     render(
       <PaneGrid
         workspaceId="workspace-1"
+        isActive
         paneIds={["pane-1", "pane-2"]}
         layouts={layouts}
         layoutMode="freeform"
@@ -112,6 +114,7 @@ describe("PaneGrid", () => {
     render(
       <PaneGrid
         workspaceId="workspace-1"
+        isActive
         paneIds={["pane-1", "pane-2"]}
         layouts={layouts}
         layoutMode="tiling"

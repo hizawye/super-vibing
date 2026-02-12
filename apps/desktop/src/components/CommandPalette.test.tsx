@@ -54,6 +54,9 @@ describe("CommandPalette", () => {
   const saveSnapshot = vi.fn(async () => {});
   const restoreSnapshot = vi.fn(async () => {});
   const runGlobalCommand = vi.fn(async () => []);
+  const openWorktreeManager = vi.fn(async () => {});
+  const refreshWorktrees = vi.fn(async () => {});
+  const importWorktreeAsWorkspace = vi.fn(async () => {});
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -84,6 +87,14 @@ describe("CommandPalette", () => {
         },
       ],
       echoInput: false,
+      worktreeManager: {
+        repoRoot: "/repo",
+        loading: false,
+        error: null,
+        entries: [],
+        lastLoadedAt: null,
+        lastActionMessage: null,
+      },
       setActiveWorkspace,
       setActiveWorkspacePaneCount,
       setEchoInput,
@@ -91,6 +102,9 @@ describe("CommandPalette", () => {
       saveSnapshot,
       restoreSnapshot,
       runGlobalCommand,
+      openWorktreeManager,
+      refreshWorktrees,
+      importWorktreeAsWorkspace,
     });
   });
 
@@ -133,6 +147,16 @@ describe("CommandPalette", () => {
     await user.click(screen.getByText("Restore Morning"));
 
     expect(restoreSnapshot).toHaveBeenCalledWith("snap-1");
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("opens worktree manager from palette action", async () => {
+    const user = userEvent.setup();
+    render(<CommandPalette open onClose={onClose} onOpenWorkspaceModal={onOpenWorkspaceModal} />);
+
+    await user.click(screen.getByText("Open worktree manager"));
+
+    expect(openWorktreeManager).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });
 });

@@ -22,7 +22,7 @@ export interface AgentAllocation {
   count: number;
 }
 
-export type AppSection = "terminal" | "kanban" | "agents" | "prompts" | "settings";
+export type AppSection = "terminal" | "worktrees" | "kanban" | "agents" | "prompts" | "settings";
 export type LayoutMode = "tiling" | "freeform";
 export type ThemeId = "apple-dark" | "apple-light" | "graphite" | "midnight" | "solarized" | "nord";
 export type DensityMode = "comfortable" | "compact";
@@ -148,10 +148,60 @@ export interface WorkspaceTab {
   worktreePath: string;
 }
 
-export interface CreateWorktreeRequest {
+export interface RepoContext {
+  isGitRepo: boolean;
+  repoRoot: string;
+  worktreePath: string;
+  branch: string;
+}
+
+export type WorktreeCreateMode = "newBranch" | "existingBranch";
+
+export interface WorktreeEntry {
+  id: string;
   repoRoot: string;
   branch: string;
-  baseBranch?: string;
+  worktreePath: string;
+  head: string;
+  isMainWorktree: boolean;
+  isDetached: boolean;
+  isLocked: boolean;
+  lockReason?: string;
+  isPrunable: boolean;
+  pruneReason?: string;
+  isDirty: boolean;
+}
+
+export interface CreateWorktreeRequest {
+  repoRoot: string;
+  mode: WorktreeCreateMode;
+  branch: string;
+  baseRef?: string;
+}
+
+export interface RemoveWorktreeRequest {
+  repoRoot: string;
+  worktreePath: string;
+  force: boolean;
+  deleteBranch: boolean;
+}
+
+export interface RemoveWorktreeResponse {
+  worktreePath: string;
+  branch: string;
+  branchDeleted: boolean;
+  warning?: string;
+}
+
+export interface PruneWorktreesRequest {
+  repoRoot: string;
+  dryRun: boolean;
+}
+
+export interface PruneWorktreesResponse {
+  dryRun: boolean;
+  paths: string[];
+  output: string;
 }
 
 export interface GlobalCommandRequest {
@@ -170,3 +220,31 @@ export interface RuntimeStats {
   activePanes: number;
   suspendedPanes: number;
 }
+
+export interface AutomationWorkspaceSnapshot {
+  workspaceId: string;
+  name: string;
+  repoRoot: string;
+  worktreePath: string;
+  runtimePaneIds: string[];
+}
+
+export interface AutomationReportRequest {
+  jobId: string;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+export type FrontendAutomationRequest =
+  | {
+      action: "create_panes";
+      jobId: string;
+      workspaceId: string;
+      paneCount: number;
+    }
+  | {
+      action: "import_worktree";
+      jobId: string;
+      worktreePath: string;
+    };

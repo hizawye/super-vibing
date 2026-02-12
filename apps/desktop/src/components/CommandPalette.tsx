@@ -30,6 +30,7 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const snapshots = useWorkspaceStore((state) => state.snapshots);
   const echoInput = useWorkspaceStore((state) => state.echoInput);
+  const worktreeManager = useWorkspaceStore((state) => state.worktreeManager);
 
   const setActiveWorkspace = useWorkspaceStore((state) => state.setActiveWorkspace);
   const setActiveWorkspacePaneCount = useWorkspaceStore((state) => state.setActiveWorkspacePaneCount);
@@ -38,6 +39,9 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
   const saveSnapshot = useWorkspaceStore((state) => state.saveSnapshot);
   const restoreSnapshot = useWorkspaceStore((state) => state.restoreSnapshot);
   const runGlobalCommand = useWorkspaceStore((state) => state.runGlobalCommand);
+  const openWorktreeManager = useWorkspaceStore((state) => state.openWorktreeManager);
+  const refreshWorktrees = useWorkspaceStore((state) => state.refreshWorktrees);
+  const importWorktreeAsWorkspace = useWorkspaceStore((state) => state.importWorktreeAsWorkspace);
 
   const entries = useMemo<PaletteEntry[]>(() => {
     const workspaceEntries = workspaces.map((workspace) => ({
@@ -84,6 +88,24 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
       },
     }));
 
+    const openWorkspaceKeys = new Set(
+      workspaces.map((workspace) => workspace.worktreePath.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()),
+    );
+    const worktreeEntries = worktreeManager.entries.slice(0, 30).map((entry) => {
+      const key = entry.worktreePath.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+      const isOpen = openWorkspaceKeys.has(key);
+      return {
+        id: `worktree-${entry.worktreePath}`,
+        section: "Worktrees",
+        label: `${isOpen ? "Switch to" : "Open"} ${entry.branch}`,
+        description: entry.worktreePath,
+        keywords: `${entry.branch} ${entry.worktreePath} worktree`,
+        run: async () => {
+          await importWorktreeAsWorkspace(entry.worktreePath);
+        },
+      };
+    });
+
     return [
       {
         id: "action-open-workspace-modal",
@@ -96,6 +118,37 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
           onOpenWorkspaceModal();
         },
       },
+      {
+        id: "action-open-worktree-manager",
+        section: "Worktrees",
+        label: "Open worktree manager",
+        description: "Open create/import/remove/prune controls",
+        keywords: "worktree manager section",
+        run: async () => {
+          await openWorktreeManager();
+        },
+      },
+      {
+        id: "action-refresh-worktrees",
+        section: "Worktrees",
+        label: "Refresh worktrees",
+        description: "Reload worktree list for active repository",
+        keywords: "worktree refresh sync",
+        run: async () => {
+          await refreshWorktrees();
+        },
+      },
+      {
+        id: "action-create-worktree",
+        section: "Worktrees",
+        label: "Create worktree",
+        description: "Open manager and use create form",
+        keywords: "worktree create branch",
+        run: async () => {
+          await openWorktreeManager();
+        },
+      },
+      ...worktreeEntries,
       ...workspaceEntries,
       ...paneEntries,
       {
@@ -125,6 +178,9 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
   }, [
     echoInput,
     onOpenWorkspaceModal,
+    openWorktreeManager,
+    importWorktreeAsWorkspace,
+    refreshWorktrees,
     restoreSnapshot,
     runGlobalCommand,
     saveSnapshot,
@@ -133,6 +189,7 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
     setActiveWorkspacePaneCount,
     setEchoInput,
     snapshots,
+    worktreeManager.entries,
     workspaces,
   ]);
 
@@ -178,7 +235,7 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
         currentSection = entry.section;
         output.push({
           type: "section",
-          id: `section-${entry.section}`,
+          id: `section-${entry.section}-${index}`,
           label: entry.section,
         });
       }

@@ -1,10 +1,12 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import type { Layout } from "react-grid-layout";
+import { listen } from "@tauri-apps/api/event";
 import { useShallow } from "zustand/react/shallow";
 import { AppSidebar, type WorkspaceNavView } from "./components/AppSidebar";
 import { EmptyStatePage } from "./components/EmptyStatePage";
 import { PaneGrid } from "./components/PaneGrid";
 import { TopChrome } from "./components/TopChrome";
+import { WorktreeManagerSection } from "./components/WorktreeManagerSection";
 import type { WorkspaceCreationInput } from "./components/NewWorkspaceModal";
 import {
   checkForPendingUpdate,
@@ -15,9 +17,10 @@ import {
   updatesSupported,
   type PendingAppUpdate,
 } from "./lib/updater";
+import { reportAutomationResult } from "./lib/tauri";
 import { useWorkspaceStore } from "./store/workspace";
 import { THEME_DEFINITIONS, THEME_IDS } from "./theme/themes";
-import type { AppSection, DensityMode, LayoutMode, ThemeId, WorkspaceBootSession } from "./types";
+import type { AppSection, DensityMode, FrontendAutomationRequest, LayoutMode, ThemeId, WorkspaceBootSession } from "./types";
 
 const NewWorkspaceModal = lazy(() =>
   import("./components/NewWorkspaceModal").then((module) => ({ default: module.NewWorkspaceModal })),
@@ -31,24 +34,21 @@ const SHORTCUT_GROUPS = [
     title: "Workspaces",
     shortcuts: [
       ["New workspace", "Ctrl/Cmd + N"],
-      ["Next workspace", "Ctrl/Cmd + ]"],
-      ["Previous workspace", "Ctrl/Cmd + ["],
-      ["Close workspace", "Ctrl/Cmd + W"],
+      ["Open command palette", "Ctrl/Cmd + P"],
     ],
   },
   {
-    title: "Panes",
+    title: "tmux Core",
     shortcuts: [
-      ["Move pane focus", "Ctrl/Cmd + Alt + Arrow"],
-      ["Increase pane layout", "Ctrl/Cmd + Shift + ]"],
-      ["Decrease pane layout", "Ctrl/Cmd + Shift + ["],
-      ["Zoom focused pane", "Ctrl/Cmd + Alt + Enter"],
-      ["Zoom pane (mouse)", "Double-click pane header"],
+      ["Prefix", "Ctrl + B"],
+      ["Split pane", "Prefix + % or \""],
+      ["Next/prev pane", "Prefix + N / P / O"],
+      ["Focus by index", "Prefix + 0..9"],
+      ["Move focus", "Prefix + Arrow"],
+      ["Resize (freeform)", "Prefix + Alt + Arrow"],
+      ["Zoom pane", "Prefix + Z"],
+      ["Close pane", "Prefix + X or &"],
     ],
-  },
-  {
-    title: "Launcher",
-    shortcuts: [["Open command palette", "Ctrl/Cmd + P"]],
   },
 ] as const;
 
@@ -64,6 +64,8 @@ interface ActiveWorkspaceView {
   zoomedPaneId: string | null;
   focusedPaneId: string | null;
 }
+
+interface TerminalWorkspaceView extends ActiveWorkspaceView {}
 
 const WORKSPACE_NAV_KEY_SEPARATOR = "\u0001";
 const LOCKED_SECTIONS: AppSection[] = ["kanban", "agents", "prompts"];
@@ -84,8 +86,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 interface AppShortcutContext {
-  activeSection: AppSection;
-  activeWorkspace: ActiveWorkspaceView | null;
   paletteOpen: boolean;
   newWorkspaceOpen: boolean;
   sidebarOpen: boolean;
@@ -93,9 +93,227 @@ interface AppShortcutContext {
   setSidebarOpen: (open: boolean) => void;
   setPaletteOpen: (open: boolean) => void;
   setNewWorkspaceOpen: (open: boolean) => void;
+}
+
+interface TmuxShortcutContext {
+  activeSection: AppSection;
+  activeWorkspace: ActiveWorkspaceView | null;
+  paletteOpen: boolean;
+  newWorkspaceOpen: boolean;
   setActiveWorkspacePaneCount: (count: number) => void;
+  setFocusedPane: (workspaceId: string, paneId: string) => void;
   moveFocusedPane: (workspaceId: string, direction: "left" | "right" | "up" | "down") => void;
+  resizeFocusedPaneByDelta: (workspaceId: string, dx: number, dy: number) => void;
   toggleActiveWorkspaceZoom: (paneId: string) => void;
+}
+
+export const TMUX_PREFIX_TIMEOUT_MS = 1000;
+
+function isTmuxEligibleContext(context: TmuxShortcutContext): boolean {
+  return context.activeSection === "terminal"
+    && Boolean(context.activeWorkspace)
+    && !context.paletteOpen
+    && !context.newWorkspaceOpen;
+}
+
+function isTmuxPrefixKey(event: KeyboardEvent): boolean {
+  return event.ctrlKey
+    && !event.metaKey
+    && !event.altKey
+    && !event.shiftKey
+    && event.key.toLowerCase() === "b";
+}
+
+function resolveFocusedPaneId(workspace: ActiveWorkspaceView): string | null {
+  return workspace.focusedPaneId ?? workspace.paneOrder[0] ?? null;
+}
+
+function cyclePaneId(paneOrder: string[], focusedPaneId: string | null, delta: number): string | null {
+  if (paneOrder.length === 0) {
+    return null;
+  }
+
+  const currentIndex = focusedPaneId ? paneOrder.indexOf(focusedPaneId) : -1;
+  const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+  const nextIndex = (baseIndex + delta + paneOrder.length) % paneOrder.length;
+  return paneOrder[nextIndex] ?? null;
+}
+
+function paneIndexFromTmuxKey(key: string): number | null {
+  if (!/^[0-9]$/.test(key)) {
+    return null;
+  }
+
+  const value = Number(key);
+  if (value === 0) {
+    return 9;
+  }
+
+  return value - 1;
+}
+
+function directionForArrowKey(key: string): "left" | "right" | "up" | "down" | null {
+  if (key === "ArrowLeft") {
+    return "left";
+  }
+  if (key === "ArrowRight") {
+    return "right";
+  }
+  if (key === "ArrowUp") {
+    return "up";
+  }
+  if (key === "ArrowDown") {
+    return "down";
+  }
+  return null;
+}
+
+function resizeDeltaForArrowKey(key: string): { dx: number; dy: number } | null {
+  if (key === "ArrowLeft") {
+    return { dx: -1, dy: 0 };
+  }
+  if (key === "ArrowRight") {
+    return { dx: 1, dy: 0 };
+  }
+  if (key === "ArrowUp") {
+    return { dx: 0, dy: -1 };
+  }
+  if (key === "ArrowDown") {
+    return { dx: 0, dy: 1 };
+  }
+  return null;
+}
+
+export function handleTmuxPrefixedKey(event: KeyboardEvent, context: TmuxShortcutContext): boolean {
+  const workspace = context.activeWorkspace;
+  if (!workspace) {
+    return false;
+  }
+
+  event.preventDefault();
+
+  const focusedPaneId = resolveFocusedPaneId(workspace);
+  const key = event.key;
+  const keyLower = key.toLowerCase();
+
+  if (event.altKey && !event.ctrlKey && !event.metaKey) {
+    const resize = resizeDeltaForArrowKey(key);
+    if (resize) {
+      context.resizeFocusedPaneByDelta(workspace.id, resize.dx, resize.dy);
+    }
+    return true;
+  }
+
+  if (event.ctrlKey || event.metaKey) {
+    return true;
+  }
+
+  if (key === "%" || key === "\"") {
+    context.setActiveWorkspacePaneCount(workspace.paneCount + 1);
+    return true;
+  }
+
+  if (keyLower === "c") {
+    context.setActiveWorkspacePaneCount(workspace.paneCount + 1);
+    return true;
+  }
+
+  if (keyLower === "x" || key === "&") {
+    context.setActiveWorkspacePaneCount(workspace.paneCount - 1);
+    return true;
+  }
+
+  if (keyLower === "z" && focusedPaneId) {
+    context.toggleActiveWorkspaceZoom(focusedPaneId);
+    return true;
+  }
+
+  if (keyLower === "n" || keyLower === "o") {
+    const nextPaneId = cyclePaneId(workspace.paneOrder, focusedPaneId, 1);
+    if (nextPaneId) {
+      context.setFocusedPane(workspace.id, nextPaneId);
+    }
+    return true;
+  }
+
+  if (keyLower === "p") {
+    const previousPaneId = cyclePaneId(workspace.paneOrder, focusedPaneId, -1);
+    if (previousPaneId) {
+      context.setFocusedPane(workspace.id, previousPaneId);
+    }
+    return true;
+  }
+
+  const paneIndex = paneIndexFromTmuxKey(key);
+  if (paneIndex !== null) {
+    const paneId = workspace.paneOrder[paneIndex];
+    if (paneId) {
+      context.setFocusedPane(workspace.id, paneId);
+    }
+    return true;
+  }
+
+  const direction = directionForArrowKey(key);
+  if (direction) {
+    context.moveFocusedPane(workspace.id, direction);
+    return true;
+  }
+
+  return true;
+}
+
+export function createTmuxPrefixController(timeoutMs = TMUX_PREFIX_TIMEOUT_MS) {
+  let armed = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const disarm = (): void => {
+    armed = false;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  const arm = (): void => {
+    disarm();
+    armed = true;
+    timer = setTimeout(() => {
+      armed = false;
+      timer = null;
+    }, timeoutMs);
+  };
+
+  return {
+    handleKeydown: (event: KeyboardEvent, context: TmuxShortcutContext): boolean => {
+      if (isEditableTarget(event.target)) {
+        return false;
+      }
+
+      if (isTmuxPrefixKey(event)) {
+        if (!isTmuxEligibleContext(context)) {
+          return false;
+        }
+        event.preventDefault();
+        arm();
+        return true;
+      }
+
+      if (!armed) {
+        return false;
+      }
+
+      disarm();
+      if (!isTmuxEligibleContext(context)) {
+        event.preventDefault();
+        return true;
+      }
+
+      return handleTmuxPrefixedKey(event, context);
+    },
+    dispose: (): void => {
+      disarm();
+    },
+  };
 }
 
 export function handleAppKeydown(event: KeyboardEvent, context: AppShortcutContext): void {
@@ -118,54 +336,6 @@ export function handleAppKeydown(event: KeyboardEvent, context: AppShortcutConte
     context.setNewWorkspaceOpen(false);
     context.setPaletteOpen(true);
     return;
-  }
-
-  if (
-    context.activeSection === "terminal"
-    && context.activeWorkspace
-    && !context.paletteOpen
-    && !context.newWorkspaceOpen
-    && (event.metaKey || event.ctrlKey)
-  ) {
-    if (event.shiftKey && !event.altKey && event.code === "BracketRight") {
-      event.preventDefault();
-      context.setActiveWorkspacePaneCount(context.activeWorkspace.paneCount + 1);
-      return;
-    }
-
-    if (event.shiftKey && !event.altKey && event.code === "BracketLeft") {
-      event.preventDefault();
-      context.setActiveWorkspacePaneCount(context.activeWorkspace.paneCount - 1);
-      return;
-    }
-
-    if (event.altKey && !event.shiftKey) {
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        context.moveFocusedPane(context.activeWorkspace.id, "left");
-        return;
-      }
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        context.moveFocusedPane(context.activeWorkspace.id, "right");
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        context.moveFocusedPane(context.activeWorkspace.id, "up");
-        return;
-      }
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        context.moveFocusedPane(context.activeWorkspace.id, "down");
-        return;
-      }
-      if (event.key === "Enter" && context.activeWorkspace.focusedPaneId) {
-        event.preventDefault();
-        context.toggleActiveWorkspaceZoom(context.activeWorkspace.focusedPaneId);
-        return;
-      }
-    }
   }
 
   if (event.key === "Escape") {
@@ -554,16 +724,15 @@ function App() {
     [workspaceNavKeys],
   );
 
-  const activeWorkspace = useWorkspaceStore(
-    useShallow((state) => {
-      if (!state.activeWorkspaceId) {
-        return null;
-      }
-      const workspace = state.workspaces.find((item) => item.id === state.activeWorkspaceId);
-      if (!workspace) {
-        return null;
-      }
-      return {
+  const { workspaceRuntimes, focusedPaneByWorkspace } = useWorkspaceStore(
+    useShallow((state) => ({
+      workspaceRuntimes: state.workspaces,
+      focusedPaneByWorkspace: state.focusedPaneByWorkspace,
+    })),
+  );
+  const terminalWorkspaces = useMemo<TerminalWorkspaceView[]>(
+    () =>
+      workspaceRuntimes.map((workspace) => ({
         id: workspace.id,
         name: workspace.name,
         branch: workspace.branch,
@@ -573,9 +742,17 @@ function App() {
         layouts: workspace.layouts,
         layoutMode: workspace.layoutMode,
         zoomedPaneId: workspace.zoomedPaneId,
-        focusedPaneId: state.focusedPaneByWorkspace[workspace.id] ?? workspace.zoomedPaneId ?? workspace.paneOrder[0] ?? null,
-      } satisfies ActiveWorkspaceView;
-    }),
+        focusedPaneId:
+          focusedPaneByWorkspace[workspace.id]
+          ?? workspace.zoomedPaneId
+          ?? workspace.paneOrder[0]
+          ?? null,
+      })),
+    [focusedPaneByWorkspace, workspaceRuntimes],
+  );
+  const activeWorkspace = useMemo<ActiveWorkspaceView | null>(
+    () => terminalWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
+    [activeWorkspaceId, terminalWorkspaces],
   );
 
   const activeWorkspaceBoot = useWorkspaceStore(
@@ -601,6 +778,18 @@ function App() {
     }),
   );
 
+  const worktreeManager = useWorkspaceStore(
+    useShallow((state) => ({
+      repoRoot: state.worktreeManager.repoRoot,
+      loading: state.worktreeManager.loading,
+      error: state.worktreeManager.error,
+      entries: state.worktreeManager.entries,
+      lastLoadedAt: state.worktreeManager.lastLoadedAt,
+      lastActionMessage: state.worktreeManager.lastActionMessage,
+      openWorkspacePaths: state.workspaces.map((workspace) => workspace.worktreePath),
+    })),
+  );
+
   const bootstrap = useWorkspaceStore((state) => state.bootstrap);
   const setActiveSection = useWorkspaceStore((state) => state.setActiveSection);
   const setTheme = useWorkspaceStore((state) => state.setTheme);
@@ -617,8 +806,15 @@ function App() {
   const toggleActiveWorkspaceZoom = useWorkspaceStore((state) => state.toggleActiveWorkspaceZoom);
   const setFocusedPane = useWorkspaceStore((state) => state.setFocusedPane);
   const moveFocusedPane = useWorkspaceStore((state) => state.moveFocusedPane);
+  const resizeFocusedPaneByDelta = useWorkspaceStore((state) => state.resizeFocusedPaneByDelta);
   const pauseWorkspaceBoot = useWorkspaceStore((state) => state.pauseWorkspaceBoot);
   const resumeWorkspaceBoot = useWorkspaceStore((state) => state.resumeWorkspaceBoot);
+  const openWorktreeManager = useWorkspaceStore((state) => state.openWorktreeManager);
+  const refreshWorktrees = useWorkspaceStore((state) => state.refreshWorktrees);
+  const createManagedWorktree = useWorkspaceStore((state) => state.createManagedWorktree);
+  const importWorktreeAsWorkspace = useWorkspaceStore((state) => state.importWorktreeAsWorkspace);
+  const removeManagedWorktree = useWorkspaceStore((state) => state.removeManagedWorktree);
+  const pruneManagedWorktrees = useWorkspaceStore((state) => state.pruneManagedWorktrees);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
@@ -636,10 +832,28 @@ function App() {
   }, [density, highContrastAssist, reduceMotion, themeId]);
 
   useEffect(() => {
+    const tmuxController = createTmuxPrefixController();
+
     const listener = (event: KeyboardEvent) => {
+      if (
+        tmuxController.handleKeydown(event, {
+          activeSection,
+          activeWorkspace,
+          paletteOpen,
+          newWorkspaceOpen,
+          setActiveWorkspacePaneCount: (count) => {
+            void setActiveWorkspacePaneCount(count);
+          },
+          setFocusedPane,
+          moveFocusedPane,
+          resizeFocusedPaneByDelta,
+          toggleActiveWorkspaceZoom,
+        })
+      ) {
+        return;
+      }
+
       handleAppKeydown(event, {
-        activeSection,
-        activeWorkspace,
         paletteOpen,
         newWorkspaceOpen,
         sidebarOpen,
@@ -647,27 +861,78 @@ function App() {
         setSidebarOpen,
         setPaletteOpen,
         setNewWorkspaceOpen,
-        setActiveWorkspacePaneCount: (count) => {
-          void setActiveWorkspacePaneCount(count);
-        },
-        moveFocusedPane,
-        toggleActiveWorkspaceZoom,
       });
     };
 
     window.addEventListener("keydown", listener);
-    return () => window.removeEventListener("keydown", listener);
+    return () => {
+      window.removeEventListener("keydown", listener);
+      tmuxController.dispose();
+    };
   }, [
     activeSection,
     activeWorkspace,
     moveFocusedPane,
     newWorkspaceOpen,
     paletteOpen,
+    resizeFocusedPaneByDelta,
     setActiveSection,
     setActiveWorkspacePaneCount,
+    setFocusedPane,
     setPaletteOpen,
     sidebarOpen,
     toggleActiveWorkspaceZoom,
+  ]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    void listen<FrontendAutomationRequest>("automation:request", async (event) => {
+      const payload = event.payload;
+
+      try {
+        if (payload.action === "create_panes") {
+          await setActiveWorkspace(payload.workspaceId);
+          await setActiveWorkspacePaneCount(payload.paneCount);
+          await reportAutomationResult({
+            jobId: payload.jobId,
+            ok: true,
+            result: {
+              workspaceId: payload.workspaceId,
+              paneCount: payload.paneCount,
+            },
+          });
+          return;
+        }
+
+        if (payload.action === "import_worktree") {
+          await importWorktreeAsWorkspace(payload.worktreePath);
+          await reportAutomationResult({
+            jobId: payload.jobId,
+            ok: true,
+            result: {
+              worktreePath: payload.worktreePath,
+            },
+          });
+        }
+      } catch (error) {
+        await reportAutomationResult({
+          jobId: payload.jobId,
+          ok: false,
+          error: String(error),
+        });
+      }
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [
+    importWorktreeAsWorkspace,
+    setActiveWorkspace,
+    setActiveWorkspacePaneCount,
   ]);
 
   const openWorkspaceModal = () => {
@@ -767,6 +1032,9 @@ function App() {
   }
 
   const isTerminalSection = activeSection === "terminal";
+  const openWorktreePathKeys = new Set(
+    worktreeManager.openWorkspacePaths.map((path) => path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()),
+  );
 
   return (
     <main className={`app-shell ${isTerminalSection ? "app-shell-terminal" : ""}`}>
@@ -781,7 +1049,11 @@ function App() {
             if (LOCKED_SECTIONS.includes(section)) {
               return;
             }
-            setActiveSection(section);
+            if (section === "worktrees") {
+              void openWorktreeManager();
+            } else {
+              setActiveSection(section);
+            }
             setSidebarOpen(false);
           }}
           onSelectWorkspace={(workspaceId) => {
@@ -806,20 +1078,41 @@ function App() {
             onOpenCommandPalette={openCommandPalette}
           />
 
-          {activeSection === "terminal" && activeWorkspace ? (
+          {activeSection === "terminal" && terminalWorkspaces.length > 0 ? (
             <section className="section-surface section-surface--body terminal-surface">
-              <div className="grid-shell">
-                <PaneGrid
-                  workspaceId={activeWorkspace.id}
-                  paneIds={activeWorkspace.paneOrder}
-                  layouts={activeWorkspace.layouts}
-                  layoutMode={activeWorkspace.layoutMode}
-                  zoomedPaneId={activeWorkspace.zoomedPaneId}
-                  focusedPaneId={activeWorkspace.focusedPaneId}
-                  onLayoutsChange={(next) => setActiveWorkspaceLayouts(next)}
-                  onToggleZoom={toggleActiveWorkspaceZoom}
-                  onPaneFocus={(paneId) => setFocusedPane(activeWorkspace.id, paneId)}
-                />
+              <div className="grid-shell workspace-grid-stack">
+                {terminalWorkspaces.map((workspace) => (
+                  <div
+                    key={workspace.id}
+                    className={`workspace-grid-panel ${workspace.id === activeWorkspaceId ? "is-active" : ""}`}
+                    aria-hidden={workspace.id !== activeWorkspaceId}
+                  >
+                    <PaneGrid
+                      workspaceId={workspace.id}
+                      isActive={workspace.id === activeWorkspaceId}
+                      paneIds={workspace.paneOrder}
+                      layouts={workspace.layouts}
+                      layoutMode={workspace.layoutMode}
+                      zoomedPaneId={workspace.zoomedPaneId}
+                      focusedPaneId={workspace.focusedPaneId}
+                      onLayoutsChange={(next) => {
+                        if (workspace.id === activeWorkspaceId) {
+                          setActiveWorkspaceLayouts(next);
+                        }
+                      }}
+                      onToggleZoom={(paneId) => {
+                        if (workspace.id === activeWorkspaceId) {
+                          toggleActiveWorkspaceZoom(paneId);
+                        }
+                      }}
+                      onPaneFocus={(paneId) => {
+                        if (workspace.id === activeWorkspaceId) {
+                          setFocusedPane(workspace.id, paneId);
+                        }
+                      }}
+                    />
+                  </div>
+                ))}
               </div>
             </section>
           ) : null}
@@ -854,6 +1147,27 @@ function App() {
               title="Prompts"
               subtitle="Store reusable prompt templates and route them to selected panes."
               actionLabel="New Prompt"
+            />
+          ) : null}
+
+          {activeSection === "worktrees" ? (
+            <WorktreeManagerSection
+              repoRoot={worktreeManager.repoRoot}
+              loading={worktreeManager.loading}
+              error={worktreeManager.error}
+              entries={worktreeManager.entries}
+              lastLoadedAt={worktreeManager.lastLoadedAt}
+              lastActionMessage={worktreeManager.lastActionMessage}
+              onRefresh={refreshWorktrees}
+              onCreate={createManagedWorktree}
+              onImport={importWorktreeAsWorkspace}
+              onRemove={removeManagedWorktree}
+              onPrune={pruneManagedWorktrees}
+              isWorktreeOpen={(worktreePath) =>
+                openWorktreePathKeys.has(
+                  worktreePath.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase(),
+                )
+              }
             />
           ) : null}
 

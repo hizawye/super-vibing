@@ -2,11 +2,17 @@ import { create } from "zustand";
 import type { Layout } from "react-grid-layout";
 import { findDirectionalPaneTarget, type PaneMoveDirection } from "../lib/pane-focus";
 import {
+  createWorktree as createWorktreeApi,
   closePane,
   getCurrentBranch,
   getDefaultCwd,
+  listWorktrees,
+  pruneWorktrees,
+  removeWorktree,
+  resolveRepoContext,
   resumePane,
   runGlobalCommand,
+  syncAutomationWorkspaces,
   spawnPane,
   suspendPane,
   writePaneInput,
@@ -25,10 +31,14 @@ import type {
   LegacySessionState,
   PaneCommandResult,
   PaneModel,
+  RepoContext,
   SessionState,
   Snapshot,
   ThemeId,
   UiPreferences,
+  AutomationWorkspaceSnapshot,
+  WorktreeCreateMode,
+  WorktreeEntry,
   WorkspaceBootSession,
   WorkspaceRuntime,
 } from "../types";
@@ -49,6 +59,28 @@ interface WorkspaceBootOptions {
   eligiblePaneIds?: string[];
 }
 
+interface WorktreeManagerState {
+  repoRoot: string | null;
+  loading: boolean;
+  error: string | null;
+  entries: WorktreeEntry[];
+  lastLoadedAt: string | null;
+  lastActionMessage: string | null;
+}
+
+interface ManagedWorktreeCreateInput {
+  mode: WorktreeCreateMode;
+  branch: string;
+  baseRef?: string;
+  openAfterCreate?: boolean;
+}
+
+interface ManagedWorktreeRemoveInput {
+  worktreePath: string;
+  force: boolean;
+  deleteBranch: boolean;
+}
+
 interface WorkspaceStore {
   initialized: boolean;
   bootstrapping: boolean;
@@ -66,6 +98,7 @@ interface WorkspaceStore {
   workspaceBootSessions: Record<string, WorkspaceBootSession>;
   snapshots: Snapshot[];
   blueprints: Blueprint[];
+  worktreeManager: WorktreeManagerState;
 
   bootstrap: () => Promise<void>;
   setActiveSection: (section: AppSection) => void;
@@ -94,20 +127,28 @@ interface WorkspaceStore {
   toggleActiveWorkspaceZoom: (paneId: string) => void;
   setFocusedPane: (workspaceId: string, paneId: string) => void;
   moveFocusedPane: (workspaceId: string, direction: PaneMoveDirection) => void;
+  resizeFocusedPaneByDelta: (workspaceId: string, dx: number, dy: number) => void;
   runGlobalCommand: (command: string, execute: boolean) => Promise<PaneCommandResult[]>;
   saveSnapshot: (name: string) => Promise<void>;
   restoreSnapshot: (snapshotId: string) => Promise<void>;
   createBlueprint: (name: string, workspacePaths: string[], autorunCommands: string[]) => Promise<void>;
   launchBlueprint: (blueprintId: string) => Promise<void>;
+  openWorktreeManager: () => Promise<void>;
+  refreshWorktrees: () => Promise<void>;
+  createManagedWorktree: (input: ManagedWorktreeCreateInput) => Promise<void>;
+  importWorktreeAsWorkspace: (worktreePath: string) => Promise<void>;
+  removeManagedWorktree: (input: ManagedWorktreeRemoveInput) => Promise<void>;
+  pruneManagedWorktrees: (dryRun: boolean) => Promise<void>;
   persistSession: () => Promise<void>;
 }
 
 const MAX_PANES = 16;
 const MIN_PANES = 1;
+const GRID_COLS = 12;
 const SPAWN_CONCURRENCY_LIMIT = 4;
 const PERSIST_DEBOUNCE_MS = 400;
-// Suspend inactive workspaces earlier to reclaim PTY/runtime memory.
-const INACTIVE_WORKSPACE_SUSPEND_MS = 120 * 1000;
+// Keep inactive workspaces alive longer before reclaiming PTY/runtime memory.
+const INACTIVE_WORKSPACE_SUSPEND_MS = 10 * 60 * 1000;
 const INPUT_BATCH_MS = 16;
 const AGENT_BOOT_PARALLELISM = 3;
 const AGENT_BOOT_STAGGER_MS = 150;
@@ -145,6 +186,67 @@ function sanitizeUiPreferences(preferences?: Partial<UiPreferences> | null): UiP
         : defaults.highContrastAssist,
     density: density === "compact" || density === "comfortable" ? density : defaults.density,
   };
+}
+
+function defaultWorktreeManagerState(): WorktreeManagerState {
+  return {
+    repoRoot: null,
+    loading: false,
+    error: null,
+    entries: [],
+    lastLoadedAt: null,
+    lastActionMessage: null,
+  };
+}
+
+function normalizePathKey(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+function buildAutomationWorkspaceSnapshots(workspaces: WorkspaceRuntime[]): AutomationWorkspaceSnapshot[] {
+  return workspaces.map((workspace) => ({
+    workspaceId: workspace.id,
+    name: workspace.name,
+    repoRoot: workspace.repoRoot,
+    worktreePath: workspace.worktreePath,
+    runtimePaneIds: workspace.paneOrder
+      .filter((paneId) => {
+        const status = workspace.panes[paneId]?.status;
+        return status === "running" || status === "spawning" || status === "suspended";
+      })
+      .map((paneId) => toRuntimePaneId(workspace.id, paneId)),
+  }));
+}
+
+async function syncAutomationRegistry(getState: () => WorkspaceStore): Promise<void> {
+  const state = getState();
+  await syncAutomationWorkspaces(buildAutomationWorkspaceSnapshots(state.workspaces));
+}
+
+function enqueueAutomationSync(getState: () => WorkspaceStore): void {
+  void syncAutomationRegistry(getState).catch(() => {
+    // best effort sync to backend automation bridge
+  });
+}
+
+async function resolveRepoContextSafe(cwd: string): Promise<RepoContext> {
+  try {
+    return await resolveRepoContext(cwd);
+  } catch {
+    let branch = "not-a-repo";
+    try {
+      branch = await getCurrentBranch(cwd);
+    } catch {
+      branch = "not-a-repo";
+    }
+
+    return {
+      isGitRepo: false,
+      repoRoot: cwd,
+      worktreePath: cwd,
+      branch,
+    };
+  }
 }
 
 interface PendingPaneInit {
@@ -727,6 +829,8 @@ function createWorkspaceRuntime(args: {
   id: string;
   name: string;
   directory: string;
+  repoRoot?: string;
+  worktreePath?: string;
   branch: string;
   layoutMode?: LayoutMode;
   paneCount: number;
@@ -758,9 +862,9 @@ function createWorkspaceRuntime(args: {
   return {
     id: args.id,
     name: args.name,
-    repoRoot: args.directory,
+    repoRoot: args.repoRoot ?? args.directory,
     branch: args.branch,
-    worktreePath: args.directory,
+    worktreePath: args.worktreePath ?? args.directory,
     layoutMode,
     paneCount,
     paneOrder,
@@ -844,6 +948,8 @@ function migrateLegacySession(session: LegacySessionState): SessionState {
       id: workspace.id,
       name: workspace.branch,
       directory: workspace.worktreePath,
+      repoRoot: workspace.repoRoot,
+      worktreePath: workspace.worktreePath,
       branch: workspace.branch,
       layoutMode: "tiling",
       paneCount,
@@ -881,6 +987,8 @@ function sanitizeSession(session: SessionState): SessionState {
       id: workspace.id,
       name: workspace.name,
       directory: workspace.worktreePath,
+      repoRoot: workspace.repoRoot,
+      worktreePath: workspace.worktreePath,
       branch: workspace.branch,
       layoutMode: isLayoutMode(workspace.layoutMode) ? workspace.layoutMode : "tiling",
       paneCount,
@@ -1370,6 +1478,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   workspaceBootSessions: {},
   snapshots: [],
   blueprints: [],
+  worktreeManager: defaultWorktreeManagerState(),
 
   bootstrap: async () => {
     const current = get();
@@ -1396,18 +1505,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     if (!session || session.workspaces.length === 0) {
       const cwd = await getDefaultCwd();
-      let branch = "not-a-repo";
-      try {
-        branch = await getCurrentBranch(cwd);
-      } catch {
-        branch = "not-a-repo";
-      }
+      const context = await resolveRepoContextSafe(cwd);
 
       const workspace = createWorkspaceRuntime({
         id: "workspace-main",
         name: "Workspace 1",
-        directory: cwd,
-        branch,
+        directory: context.worktreePath,
+        repoRoot: context.repoRoot,
+        worktreePath: context.worktreePath,
+        branch: context.branch,
         paneCount: 1,
       });
 
@@ -1433,9 +1539,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       terminalReadyPanesByWorkspace: {},
       snapshots: persisted.snapshots,
       blueprints: persisted.blueprints,
+      worktreeManager: defaultWorktreeManagerState(),
       initialized: true,
       bootstrapping: false,
     });
+    enqueueAutomationSync(get);
 
     const activeWorkspace = activeWorkspaceOf(get());
     if (activeWorkspace) {
@@ -1445,6 +1553,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       void get().startWorkspaceBoot(activeWorkspace.id, {
         eligiblePaneIds: collectEligibleLaunchPaneIds(activeWorkspace),
       });
+      void get().refreshWorktrees();
     }
 
     await flushPersist(get);
@@ -1486,12 +1595,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   createWorkspace: async (input: CreateWorkspaceInput) => {
     const directory = input.directory.trim() || (await getDefaultCwd());
-    let branch = "not-a-repo";
-    try {
-      branch = await getCurrentBranch(directory);
-    } catch {
-      branch = "not-a-repo";
-    }
+    const context = await resolveRepoContextSafe(directory);
 
     const workspaceId = `workspace-${crypto.randomUUID()}`;
     const name = input.name?.trim() || `Workspace ${get().workspaces.length + 1}`;
@@ -1500,8 +1604,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     let nextWorkspace = createWorkspaceRuntime({
       id: workspaceId,
       name,
-      directory,
-      branch,
+      directory: context.worktreePath,
+      repoRoot: context.repoRoot,
+      worktreePath: context.worktreePath,
+      branch: context.branch,
       paneCount: input.paneCount,
       agentAllocation: input.agentAllocation,
     });
@@ -1518,6 +1624,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         [nextWorkspace.id]: resolveFocusedPaneId(nextWorkspace),
       },
     }));
+    enqueueAutomationSync(get);
 
     clearSuspendTimer(nextWorkspace.id);
     if (previousActiveId && previousActiveId !== nextWorkspace.id) {
@@ -1531,6 +1638,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       await get().startWorkspaceBoot(nextWorkspace.id, {
         eligiblePaneIds: collectEligibleLaunchPaneIds(nextWorkspace),
       });
+      await get().refreshWorktrees();
     })();
 
     await flushPersist(get);
@@ -1581,6 +1689,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         ),
       };
     });
+    enqueueAutomationSync(get);
 
     if (closingActive && nextActiveId) {
       clearSuspendTimer(nextActiveId);
@@ -1592,6 +1701,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           ? collectEligibleLaunchPaneIds(nextActiveWorkspaceSnapshot)
           : undefined,
       });
+      await get().refreshWorktrees();
     }
 
     await flushPersist(get);
@@ -1611,6 +1721,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
       clearSuspendTimer(workspaceId);
       get().resumeWorkspaceBoot(workspaceId);
+      void get().refreshWorktrees();
       return;
     }
 
@@ -1642,6 +1753,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       scheduleWorkspaceSuspend(get, set, previousActiveId);
     }
 
+    await get().refreshWorktrees();
     await flushPersist(get);
   },
 
@@ -1731,6 +1843,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         })),
       };
     });
+    enqueueAutomationSync(get);
 
     const workspaceAfterResize = activeWorkspaceOf(get());
     const eligiblePaneIds = workspaceAfterResize
@@ -2003,6 +2116,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     } finally {
       spawnInFlight.delete(key);
     }
+    enqueueAutomationSync(get);
   },
 
   markPaneExited: (workspaceId: string, paneId: string, error?: string) => {
@@ -2035,6 +2149,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         };
       }),
     }));
+    enqueueAutomationSync(get);
     enqueuePersist(get);
   },
 
@@ -2178,6 +2293,56 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }));
   },
 
+  resizeFocusedPaneByDelta: (workspaceId: string, dx: number, dy: number) => {
+    if (dx === 0 && dy === 0) {
+      return;
+    }
+
+    const state = get();
+    const workspace = state.workspaces.find((item) => item.id === workspaceId);
+    if (!workspace || workspace.layoutMode !== "freeform") {
+      return;
+    }
+
+    const focusedPaneId = resolveFocusedPaneId(workspace, state.focusedPaneByWorkspace[workspaceId]);
+    if (!focusedPaneId) {
+      return;
+    }
+
+    const targetLayout = workspace.layouts.find((layout) => layout.i === focusedPaneId);
+    if (!targetLayout) {
+      return;
+    }
+
+    const minW = targetLayout.minW ?? 1;
+    const minH = targetLayout.minH ?? 1;
+    const maxW = Math.min(targetLayout.maxW ?? GRID_COLS, Math.max(minW, GRID_COLS - targetLayout.x));
+    const maxH = Math.max(minH, targetLayout.maxH ?? Number.MAX_SAFE_INTEGER);
+    const nextW = Math.max(minW, Math.min(maxW, targetLayout.w + dx));
+    const nextH = Math.max(minH, Math.min(maxH, targetLayout.h + dy));
+
+    if (nextW === targetLayout.w && nextH === targetLayout.h) {
+      return;
+    }
+
+    set((current) => ({
+      workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (item) => ({
+        ...item,
+        layouts: item.layouts.map((layout) =>
+          layout.i === focusedPaneId
+            ? {
+              ...layout,
+              w: nextW,
+              h: nextH,
+            }
+            : layout
+        ),
+        updatedAt: new Date().toISOString(),
+      })),
+    }));
+    enqueuePersist(get);
+  },
+
   runGlobalCommand: async (command: string, execute: boolean) => {
     const workspace = activeWorkspaceOf(get());
     if (!workspace || command.trim().length === 0) {
@@ -2246,7 +2411,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       highContrastAssist: restored.uiPreferences.highContrastAssist,
       density: restored.uiPreferences.density,
       workspaceBootSessions: {},
+      worktreeManager: defaultWorktreeManagerState(),
     });
+    enqueueAutomationSync(get);
 
     const nextActiveWorkspace = activeWorkspaceOf(get());
     if (nextActiveWorkspace) {
@@ -2257,6 +2424,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       void get().startWorkspaceBoot(nextActiveWorkspace.id, {
         eligiblePaneIds: collectEligibleLaunchPaneIds(nextActiveWorkspace),
       });
+      await get().refreshWorktrees();
     }
 
     await flushPersist(get);
@@ -2310,6 +2478,183 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     await flushPersist(get);
+  },
+
+  openWorktreeManager: async () => {
+    set({ activeSection: "worktrees" });
+    await get().refreshWorktrees();
+    enqueuePersist(get);
+  },
+
+  refreshWorktrees: async () => {
+    const state = get();
+    const activeWorkspace = activeWorkspaceOf(state);
+    if (!activeWorkspace) {
+      set((current) => ({
+        worktreeManager: {
+          ...current.worktreeManager,
+          repoRoot: null,
+          loading: false,
+          error: "No active workspace.",
+          entries: [],
+          lastActionMessage: null,
+        },
+      }));
+      return;
+    }
+
+    const context = await resolveRepoContextSafe(activeWorkspace.worktreePath);
+    if (!context.isGitRepo) {
+      set({
+        worktreeManager: {
+          repoRoot: null,
+          loading: false,
+          error: "Active workspace is not a git repository.",
+          entries: [],
+          lastLoadedAt: new Date().toISOString(),
+          lastActionMessage: null,
+        },
+      });
+      return;
+    }
+
+    set((current) => ({
+      worktreeManager: {
+        ...current.worktreeManager,
+        repoRoot: context.repoRoot,
+        loading: true,
+        error: null,
+      },
+    }));
+
+    try {
+      const entries = await listWorktrees(context.repoRoot);
+      set((current) => ({
+        worktreeManager: {
+          ...current.worktreeManager,
+          repoRoot: context.repoRoot,
+          loading: false,
+          error: null,
+          entries,
+          lastLoadedAt: new Date().toISOString(),
+        },
+      }));
+    } catch (error) {
+      set((current) => ({
+        worktreeManager: {
+          ...current.worktreeManager,
+          repoRoot: context.repoRoot,
+          loading: false,
+          error: String(error),
+          entries: [],
+          lastLoadedAt: new Date().toISOString(),
+        },
+      }));
+    }
+  },
+
+  createManagedWorktree: async (input: ManagedWorktreeCreateInput) => {
+    const state = get();
+    const repoRoot = state.worktreeManager.repoRoot;
+    if (!repoRoot) {
+      await get().refreshWorktrees();
+    }
+    const effectiveRepoRoot = get().worktreeManager.repoRoot;
+    if (!effectiveRepoRoot) {
+      throw new Error("No git repository available for worktree creation.");
+    }
+
+    const entry = await createWorktreeApi({
+      repoRoot: effectiveRepoRoot,
+      mode: input.mode,
+      branch: input.branch,
+      baseRef: input.baseRef,
+    });
+
+    await get().refreshWorktrees();
+    set((current) => ({
+      worktreeManager: {
+        ...current.worktreeManager,
+        lastActionMessage: `Created worktree ${entry.worktreePath}`,
+      },
+    }));
+
+    if (input.openAfterCreate !== false) {
+      await get().importWorktreeAsWorkspace(entry.worktreePath);
+    }
+  },
+
+  importWorktreeAsWorkspace: async (worktreePath: string) => {
+    const targetKey = normalizePathKey(worktreePath);
+    const existing = get().workspaces.find(
+      (workspace) => normalizePathKey(workspace.worktreePath) === targetKey,
+    );
+    if (existing) {
+      await get().setActiveWorkspace(existing.id);
+      return;
+    }
+
+    await get().createWorkspace({
+      name: "",
+      directory: worktreePath,
+      paneCount: 1,
+      agentAllocation: defaultAgentAllocation(),
+    });
+  },
+
+  removeManagedWorktree: async (input: ManagedWorktreeRemoveInput) => {
+    const state = get();
+    const repoRoot = state.worktreeManager.repoRoot;
+    if (!repoRoot) {
+      throw new Error("No git repository selected.");
+    }
+
+    const targetKey = normalizePathKey(input.worktreePath);
+    const openMatches = state.workspaces.filter(
+      (workspace) => normalizePathKey(workspace.worktreePath) === targetKey,
+    );
+    if (openMatches.length > 0 && state.workspaces.length <= openMatches.length) {
+      throw new Error("Cannot remove the only open workspace worktree.");
+    }
+
+    for (const workspace of openMatches) {
+      await get().closeWorkspace(workspace.id);
+    }
+
+    const response = await removeWorktree({
+      repoRoot,
+      worktreePath: input.worktreePath,
+      force: input.force,
+      deleteBranch: input.deleteBranch,
+    });
+
+    await get().refreshWorktrees();
+    set((current) => ({
+      worktreeManager: {
+        ...current.worktreeManager,
+        lastActionMessage: response.warning
+          ? `Removed worktree with warning: ${response.warning}`
+          : `Removed worktree ${response.worktreePath}`,
+      },
+    }));
+  },
+
+  pruneManagedWorktrees: async (dryRun: boolean) => {
+    const repoRoot = get().worktreeManager.repoRoot;
+    if (!repoRoot) {
+      throw new Error("No git repository selected.");
+    }
+
+    const result = await pruneWorktrees({ repoRoot, dryRun });
+    await get().refreshWorktrees();
+    set((current) => ({
+      worktreeManager: {
+        ...current.worktreeManager,
+        lastActionMessage: dryRun
+          ? `Dry-run prune found ${result.paths.length} paths`
+          : `Pruned ${result.paths.length} paths`,
+      },
+    }));
   },
 
   persistSession: async () => {

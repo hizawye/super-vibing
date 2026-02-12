@@ -63,6 +63,9 @@ describe("AppSidebar", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(onSelectSection).toHaveBeenCalledWith("settings");
 
+    await user.click(screen.getByRole("button", { name: "Worktrees" }));
+    expect(onSelectSection).toHaveBeenCalledWith("worktrees");
+
     await user.click(screen.getByRole("button", { name: /new workspace/i }));
     expect(onCreateWorkspace).toHaveBeenCalled();
 

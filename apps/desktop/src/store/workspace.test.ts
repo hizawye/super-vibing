@@ -8,12 +8,39 @@ import { toRuntimePaneId } from "../lib/panes";
 import { DEFAULT_THEME_ID } from "../theme/themes";
 
 vi.mock("../lib/tauri", () => ({
+  createWorktree: vi.fn(async () => ({
+    id: "wt-1",
+    repoRoot: "/repo",
+    branch: "feature/test",
+    worktreePath: "/repo/.worktrees/feature-test",
+    head: "abc123",
+    isMainWorktree: false,
+    isDetached: false,
+    isLocked: false,
+    isPrunable: false,
+    isDirty: false,
+  })),
   closePane: vi.fn(async () => {}),
   getCurrentBranch: vi.fn(async () => "main"),
   getDefaultCwd: vi.fn(async () => "/repo"),
   getRuntimeStats: vi.fn(async () => ({ activePanes: 0, suspendedPanes: 0 })),
+  listWorktrees: vi.fn(async () => []),
+  pruneWorktrees: vi.fn(async () => ({ dryRun: true, paths: [], output: "" })),
+  removeWorktree: vi.fn(async () => ({ worktreePath: "/repo/.worktrees/feature-test", branch: "feature/test", branchDeleted: false })),
+  resolveRepoContext: vi.fn(async (requestOrCwd?: unknown) => {
+    const cwd = typeof requestOrCwd === "string"
+      ? requestOrCwd
+      : "/repo";
+    return {
+      isGitRepo: true,
+      repoRoot: "/repo",
+      worktreePath: cwd,
+      branch: "main",
+    };
+  }),
   resumePane: vi.fn(async () => {}),
   runGlobalCommand: vi.fn(async () => []),
+  syncAutomationWorkspaces: vi.fn(async () => {}),
   spawnPane: vi.fn(async ({ paneId, cwd }: SpawnPaneRequest) => ({
     paneId,
     cwd: cwd ?? "/repo",
@@ -131,6 +158,14 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
     workspaceBootSessions: {},
     snapshots: [],
     blueprints: [],
+    worktreeManager: {
+      repoRoot: "/repo",
+      loading: false,
+      error: null,
+      entries: [],
+      lastLoadedAt: null,
+      lastActionMessage: null,
+    },
   });
 }
 
@@ -299,6 +334,38 @@ describe("workspace store", () => {
 
     const afterWorkspace = useWorkspaceStore.getState().workspaces[0];
     expect(afterWorkspace).toBe(beforeWorkspace);
+  });
+
+  it("resizes focused pane in free-form mode", () => {
+    const freeformWorkspace = workspace("workspace-main", "Workspace 1", 2, ["running", "running"], "/repo", "freeform");
+    freeformWorkspace.layouts = [
+      { i: "pane-1", x: 0, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
+      { i: "pane-2", x: 3, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
+    ];
+
+    resetStore({
+      workspaces: [freeformWorkspace],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    useWorkspaceStore.getState().setFocusedPane("workspace-main", "pane-1");
+    useWorkspaceStore.getState().resizeFocusedPaneByDelta("workspace-main", 1, -1);
+
+    const active = useWorkspaceStore.getState().workspaces[0];
+    expect(active.layouts.find((layout) => layout.i === "pane-1")).toMatchObject({ w: 4, h: 2 });
+  });
+
+  it("ignores focused pane resize in tiling mode", () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 2, ["running", "running"], "/repo", "tiling")],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    const before = useWorkspaceStore.getState().workspaces[0];
+    useWorkspaceStore.getState().resizeFocusedPaneByDelta("workspace-main", 1, 1);
+    const after = useWorkspaceStore.getState().workspaces[0];
+
+    expect(after.layouts).toEqual(before.layouts);
   });
 
   it("toggles active workspace zoom idempotently", () => {
@@ -890,5 +957,71 @@ describe("workspace store", () => {
         execute: true,
       });
     });
+  });
+
+  it("refreshes worktree manager entries for active repository", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["running"], "/repo")],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    vi.mocked(tauriApi.listWorktrees).mockResolvedValueOnce([
+      {
+        id: "wt-1",
+        repoRoot: "/repo",
+        branch: "feature/auth",
+        worktreePath: "/repo/.worktrees/feature-auth",
+        head: "abc123",
+        isMainWorktree: false,
+        isDetached: false,
+        isLocked: false,
+        isPrunable: false,
+        isDirty: false,
+      },
+    ]);
+
+    await useWorkspaceStore.getState().refreshWorktrees();
+
+    const state = useWorkspaceStore.getState();
+    expect(tauriApi.listWorktrees).toHaveBeenCalledWith("/repo");
+    expect(state.worktreeManager.repoRoot).toBe("/repo");
+    expect(state.worktreeManager.entries).toHaveLength(1);
+    expect(state.worktreeManager.entries[0]?.branch).toBe("feature/auth");
+  });
+
+  it("imports an existing worktree by switching instead of creating duplicate workspace", async () => {
+    resetStore({
+      workspaces: [
+        workspace("workspace-main", "Workspace 1", 1, ["running"], "/repo"),
+        workspace("workspace-auth", "Workspace Auth", 1, ["running"], "/repo/.worktrees/feature-auth"),
+      ],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await useWorkspaceStore.getState().importWorktreeAsWorkspace("/repo/.worktrees/feature-auth");
+
+    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("workspace-auth");
+  });
+
+  it("blocks worktree removal when it is the only open workspace", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["running"], "/repo")],
+      activeWorkspaceId: "workspace-main",
+    });
+    useWorkspaceStore.setState((state) => ({
+      worktreeManager: {
+        ...state.worktreeManager,
+        repoRoot: "/repo",
+      },
+    }));
+
+    await expect(
+      useWorkspaceStore.getState().removeManagedWorktree({
+        worktreePath: "/repo",
+        force: false,
+        deleteBranch: false,
+      }),
+    ).rejects.toThrow("Cannot remove the only open workspace worktree.");
+    expect(tauriApi.removeWorktree).not.toHaveBeenCalled();
   });
 });

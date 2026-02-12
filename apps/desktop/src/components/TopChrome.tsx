@@ -15,6 +15,8 @@ function titleForSection(section: AppSection): string {
   switch (section) {
     case "terminal":
       return "Terminal";
+    case "worktrees":
+      return "Worktrees";
     case "kanban":
       return "Kanban";
     case "agents":
@@ -35,6 +37,10 @@ function subtitleForSection(section: AppSection, workspaceName: string | null): 
 
   if (section === "settings") {
     return "Appearance, accessibility, and shortcuts";
+  }
+
+  if (section === "worktrees") {
+    return "Create, import, and clean up git worktrees";
   }
 
   return "Coming soon";

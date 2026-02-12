@@ -29,6 +29,7 @@ interface AppSidebarProps {
 
 const PRIMARY_SECTIONS: SectionItem[] = [
   { id: "terminal", label: "Terminal", icon: ">_" },
+  { id: "worktrees", label: "Worktrees", icon: "WT" },
   { id: "kanban", label: "Kanban", icon: "KB", locked: true, hint: "PRO" },
   { id: "agents", label: "Agents", icon: "AI", locked: true, hint: "PRO" },
   { id: "prompts", label: "Prompts", icon: "PR", locked: true, hint: "PRO" },

@@ -1,14 +1,21 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
+  AutomationReportRequest,
+  AutomationWorkspaceSnapshot,
   CreateWorktreeRequest,
   GlobalCommandRequest,
   PaneCommandResult,
   PaneEvent,
+  PruneWorktreesRequest,
+  PruneWorktreesResponse,
+  RemoveWorktreeRequest,
+  RemoveWorktreeResponse,
   ResizePaneRequest,
+  RepoContext,
   RuntimeStats,
   SpawnPaneRequest,
   SpawnPaneResponse,
-  WorkspaceTab,
+  WorktreeEntry,
   WritePaneInputRequest,
 } from "../types";
 
@@ -77,12 +84,24 @@ export async function resumePane(paneId: string): Promise<void> {
   await invoke("resume_pane", { request: { paneId } });
 }
 
-export async function createWorktree(request: CreateWorktreeRequest): Promise<WorkspaceTab> {
-  return invoke<WorkspaceTab>("create_worktree", { request });
+export async function resolveRepoContext(cwd: string): Promise<RepoContext> {
+  return invoke<RepoContext>("resolve_repo_context", { request: { cwd } });
 }
 
-export async function listWorktrees(repoRoot: string): Promise<WorkspaceTab[]> {
-  return invoke<WorkspaceTab[]>("list_worktrees", { request: { repoRoot } });
+export async function createWorktree(request: CreateWorktreeRequest): Promise<WorktreeEntry> {
+  return invoke<WorktreeEntry>("create_worktree", { request });
+}
+
+export async function listWorktrees(repoRoot: string): Promise<WorktreeEntry[]> {
+  return invoke<WorktreeEntry[]>("list_worktrees", { request: { repoRoot } });
+}
+
+export async function removeWorktree(request: RemoveWorktreeRequest): Promise<RemoveWorktreeResponse> {
+  return invoke<RemoveWorktreeResponse>("remove_worktree", { request });
+}
+
+export async function pruneWorktrees(request: PruneWorktreesRequest): Promise<PruneWorktreesResponse> {
+  return invoke<PruneWorktreesResponse>("prune_worktrees", { request });
 }
 
 export async function runGlobalCommand(
@@ -97,4 +116,12 @@ export async function getRuntimeStats(): Promise<RuntimeStats> {
 
 export async function restartApp(): Promise<void> {
   await invoke("restart_app");
+}
+
+export async function syncAutomationWorkspaces(workspaces: AutomationWorkspaceSnapshot[]): Promise<void> {
+  await invoke("sync_automation_workspaces", { request: { workspaces } });
+}
+
+export async function reportAutomationResult(request: AutomationReportRequest): Promise<void> {
+  await invoke("automation_report", { request });
 }

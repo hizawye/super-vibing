@@ -9,6 +9,7 @@ import { resolveTerminalTheme } from "../theme/themes";
 interface TerminalPaneProps {
   workspaceId: string;
   paneId: string;
+  isActive?: boolean;
   onFocusPane?: (paneId: string) => void;
 }
 
@@ -16,7 +17,16 @@ const PROMPTABLE_INPUT_REGEX = /^[\x20-\x7E]$/;
 const OUTPUT_FLUSH_THRESHOLD_BYTES = 32 * 1024;
 const RESIZE_DEBOUNCE_MS = 50;
 
-export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneProps) {
+function isCopyShortcut(event: KeyboardEvent): boolean {
+  return event.type === "keydown"
+    && event.ctrlKey
+    && event.shiftKey
+    && !event.altKey
+    && !event.metaKey
+    && event.key.toLowerCase() === "c";
+}
+
+export function TerminalPane({ workspaceId, paneId, isActive = true, onFocusPane }: TerminalPaneProps) {
   const runtimePaneId = toRuntimePaneId(workspaceId, paneId);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -26,6 +36,8 @@ export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneP
   const outputFlushRafRef = useRef<number | null>(null);
   const resizeTimerRef = useRef<number | null>(null);
   const onFocusPaneRef = useRef(onFocusPane);
+  const isPaneActiveRef = useRef(isActive);
+  const refitAndResizeRef = useRef<(() => void) | null>(null);
 
   const ensurePaneSpawned = useWorkspaceStore((state) => state.ensurePaneSpawned);
   const markPaneTerminalReady = useWorkspaceStore((state) => state.markPaneTerminalReady);
@@ -42,6 +54,13 @@ export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneP
   }, [onFocusPane]);
 
   useEffect(() => {
+    isPaneActiveRef.current = isActive;
+    if (isActive) {
+      refitAndResizeRef.current?.();
+    }
+  }, [isActive]);
+
+  useEffect(() => {
     void ensurePaneSpawned(workspaceId, paneId);
   }, [ensurePaneSpawned, paneId, workspaceId]);
 
@@ -50,11 +69,12 @@ export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneP
       return;
     }
 
-    let isActive = true;
+    let isMounted = true;
     let resizeObserver: ResizeObserver | null = null;
     let disposeInput: { dispose: () => void } | null = null;
     let unsubscribe: (() => void) | null = null;
     let terminal: Terminal | null = null;
+    let postOpenRefitRafId: number | null = null;
 
     const startTerminal = async (): Promise<void> => {
       const [{ Terminal }, { FitAddon }] = await Promise.all([
@@ -62,7 +82,7 @@ export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneP
         import("@xterm/addon-fit"),
       ]);
 
-      if (!isActive || !containerRef.current || terminalRef.current) {
+      if (!isMounted || !containerRef.current || terminalRef.current) {
         return;
       }
 
@@ -124,6 +144,12 @@ export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneP
         }
       };
 
+      const refitAndResize = (): void => {
+        void resizeToBackend();
+      };
+
+      refitAndResizeRef.current = refitAndResize;
+
       const scheduleResizeToBackend = (): void => {
         if (resizeTimerRef.current !== null) {
           window.clearTimeout(resizeTimerRef.current);
@@ -135,10 +161,28 @@ export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneP
         }, RESIZE_DEBOUNCE_MS);
       };
 
-      resizeObserver = new ResizeObserver(() => {
-        scheduleResizeToBackend();
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(() => {
+          scheduleResizeToBackend();
+        });
+        resizeObserver.observe(containerRef.current);
+      }
+
+      terminal.attachCustomKeyEventHandler((event) => {
+        if (!isCopyShortcut(event)) {
+          return true;
+        }
+
+        const selection = terminal?.getSelection() ?? "";
+        if (selection.length > 0 && navigator.clipboard?.writeText) {
+          void navigator.clipboard.writeText(selection).catch(() => {
+            // no-op: clipboard write can fail in restricted environments
+          });
+        }
+
+        event.preventDefault();
+        return false;
       });
-      resizeObserver.observe(containerRef.current);
 
       disposeInput = terminal.onData((data) => {
         void sendInputFromPane(workspaceId, paneId, data);
@@ -196,23 +240,47 @@ export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneP
       });
 
       markPaneTerminalReady(workspaceId, paneId);
-      void resizeToBackend();
+      refitAndResize();
+
+      postOpenRefitRafId = window.requestAnimationFrame(() => {
+        postOpenRefitRafId = null;
+        if (!isMounted || !isPaneActiveRef.current) {
+          return;
+        }
+        refitAndResize();
+      });
+
+      const fontSet = (document as Document & { fonts?: FontFaceSet }).fonts;
+      if (fontSet?.ready) {
+        void fontSet.ready.then(() => {
+          if (!isMounted || !isPaneActiveRef.current) {
+            return;
+          }
+          refitAndResize();
+        }).catch(() => {
+          // no-op: proceed with current metrics when fonts API fails
+        });
+      }
     };
 
     void startTerminal();
 
     return () => {
-      isActive = false;
+      isMounted = false;
       unsubscribe?.();
       disposeInput?.dispose();
       if (resizeTimerRef.current !== null) {
         window.clearTimeout(resizeTimerRef.current);
+      }
+      if (postOpenRefitRafId !== null) {
+        window.cancelAnimationFrame(postOpenRefitRafId);
       }
       if (outputFlushRafRef.current !== null) {
         window.cancelAnimationFrame(outputFlushRafRef.current);
       }
       outputFlushRafRef.current = null;
       outputBufferRef.current = "";
+      refitAndResizeRef.current = null;
       resizeObserver?.disconnect();
       terminal?.dispose();
       terminalRef.current = null;

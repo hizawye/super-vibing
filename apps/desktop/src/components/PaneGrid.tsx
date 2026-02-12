@@ -11,6 +11,7 @@ const MIN_ROW_HEIGHT = 32;
 
 interface PaneGridProps {
   workspaceId: string;
+  isActive: boolean;
   paneIds: string[];
   layouts: Layout[];
   layoutMode: LayoutMode;
@@ -23,6 +24,7 @@ interface PaneGridProps {
 
 export function PaneGrid({
   workspaceId,
+  isActive,
   paneIds,
   layouts,
   layoutMode,
@@ -77,7 +79,12 @@ export function PaneGrid({
             onDoubleClick={() => onToggleZoom(zoomedPaneId)}
             onMouseDown={() => onPaneFocus(zoomedPaneId)}
           />
-          <TerminalPane workspaceId={workspaceId} paneId={zoomedPaneId} onFocusPane={onPaneFocus} />
+          <TerminalPane
+            workspaceId={workspaceId}
+            paneId={zoomedPaneId}
+            isActive={isActive}
+            onFocusPane={onPaneFocus}
+          />
         </div>
       </div>
     );
@@ -106,7 +113,7 @@ export function PaneGrid({
               onDoubleClick={() => onToggleZoom(paneId)}
               onMouseDown={() => onPaneFocus(paneId)}
             />
-            <TerminalPane workspaceId={workspaceId} paneId={paneId} onFocusPane={onPaneFocus} />
+            <TerminalPane workspaceId={workspaceId} paneId={paneId} isActive={isActive} onFocusPane={onPaneFocus} />
           </div>
         ))}
       </FluidGridLayout>

@@ -33,4 +33,12 @@ describe("soft UI style contract", () => {
     expect(softUi).not.toMatch(/border-left:\s*1px/);
     expect(softUi).not.toMatch(/border-right:\s*1px/);
   });
+
+  it("keeps pane cards and drag placeholders with sharp corners", () => {
+    const softUi = readSoftUiOverride();
+    expect(softUi).toMatch(/\.pane-card\s*\{[\s\S]*?border-radius:\s*0;/);
+    expect(softUi).toMatch(
+      /\.layout\s+\.react-grid-item\.react-grid-placeholder\s*\{[\s\S]*?border-radius:\s*0;/,
+    );
+  });
 });
