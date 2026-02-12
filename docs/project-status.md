@@ -1,33 +1,29 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (soft-ui-minimalism-2.0-v0.1.4)
+- Last Updated: 2026-02-12 (workflow-fix-soft-ui-v0.1.5)
 
 - Current progress:
-  - Implemented frontend redesign for Soft UI (Minimalism 2.0) in desktop app styles:
-    - removed hard border/stroke segmentation from core layout and control surfaces via override layer,
-    - introduced `canvas` + subtle pane elevation tokens (`--canvas-base`, `--pane-elev-1`, `--pane-elev-2`),
-    - made top chrome borderless and separated by tint-only treatment (`--chrome-tint`),
-    - switched layout rhythm to open spacing with `--space-structural: 24px`,
-    - updated hover/focus interaction to soft reveal fills/shadows (no 1px structural borders).
-  - Preserved all existing theme presets and remapped them to the elevation-based surface model.
-  - Added style contract tests (`src/styles.soft-ui.test.ts`) to guard:
-    - required Soft UI tokens,
-    - top chrome tint + borderless rule,
-    - no `1px` border reintroduction inside Soft UI override section.
-  - Bumped release metadata to `0.1.4` for tag/version parity:
+  - Fixed failed `CI`/`Release` runs introduced by Soft UI contract test placement:
+    - moved contract test from `apps/desktop/src/styles.soft-ui.test.ts` to `apps/desktop/tests/styles.soft-ui.test.ts`,
+    - kept CSS contract assertions while removing Node-dependent files from frontend `tsc --noEmit` scope.
+  - Fixed release workflow tauri-action input mismatch:
+    - replaced invalid `uploadUpdaterJson` with supported `includeUpdaterJson: true` in `.github/workflows/release.yml`.
+  - Bumped release metadata to `0.1.5` for clean tag/version parity:
     - `package.json`,
     - `apps/desktop/package.json`,
     - `apps/desktop/src-tauri/tauri.conf.json`.
 
 - Verification:
+  - `pnpm --filter @supervibing/desktop typecheck`
+  - `pnpm --filter @supervibing/desktop build`
   - `pnpm --filter @supervibing/desktop test -- run` (44 tests passing)
-  - `GITHUB_REF_NAME=v0.1.4 ./scripts/verify-release-version.sh` (parity verified)
+  - `GITHUB_REF_NAME=v0.1.5 ./scripts/verify-release-version.sh` (parity verified)
 
 - Blockers/Bugs:
-  - No functional blockers found in automated tests.
-  - Visual QA on real desktop/mobile viewport is still recommended to validate perceived depth and spacing balance.
+  - No local blockers after typecheck/build/test pass.
+  - GitHub Actions re-run for `v0.1.5` still required to confirm remote workflow success end-to-end.
 
 - Next immediate starting point:
-  - Push commit and tag `v0.1.4`.
-  - Run a manual visual pass on terminal, sidebar, settings, command palette, and modals across theme presets.
-  - Tune per-theme elevation/tint contrast if any preset appears too flat or too strong.
+  - Commit and push workflow/test/version fixes.
+  - Push release tag `v0.1.5`.
+  - Confirm `CI` and `Release` workflows pass for the new tag.

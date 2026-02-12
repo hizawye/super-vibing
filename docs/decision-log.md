@@ -360,3 +360,13 @@ Modal/palette readability kept via a faint translucent overlay panel.
 **Rationale:** Produces a cleaner Notion-like open layout while keeping panes and controls scannable without reintroducing hard edges.
 **Consequences:** Visual hierarchy now depends on tone, spacing, and shadow; style regressions are guarded by `styles.soft-ui.test.ts`.
 **Alternatives Considered:** Keeping single-layer fully flat styling and keeping prior border-based pane delineation.
+
+## [2026-02-12] - CI/Release Fix for Soft UI Contract Test and Tauri Action Input
+**Context:** After tagging `v0.1.4`, both `CI` and `Release` workflows failed: frontend typecheck/build included a Node-dependent test under `src/`, and release logged an unsupported tauri-action input.
+**Decision:** Stabilize workflow compatibility with two changes:
+- moved Soft UI CSS contract test from `apps/desktop/src/styles.soft-ui.test.ts` to `apps/desktop/tests/styles.soft-ui.test.ts` so browser-focused `tsc --noEmit` does not typecheck Node globals/modules used only in tests,
+- removed unsupported `uploadUpdaterJson` input and set supported `includeUpdaterJson: true` in `.github/workflows/release.yml`,
+- bumped app/release metadata to `0.1.5` for a clean replacement tag.
+**Rationale:** Keeps strict frontend type boundaries intact, preserves deterministic CSS contract checks, and aligns release workflow inputs with the current `tauri-apps/tauri-action@v0.6.0` schema.
+**Consequences:** Typecheck/build no longer fail on Node test APIs; release workflow avoids invalid-input warning and remains updater-artifact enabled.
+**Alternatives Considered:** Adding Node typings to frontend tsconfig and excluding all `*.test.ts` from typecheck.
