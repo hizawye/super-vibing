@@ -336,3 +336,14 @@ Modal/palette readability kept via a faint translucent overlay panel.
 **Rationale:** Restores interactive terminal behavior without overriding valid custom terminal settings.
 **Consequences:** Pane processes now start with a usable terminal type even when the host launcher provides `TERM=dumb`; custom `TERM` values remain compatible.
 **Alternatives Considered:** Forcing `xterm-256color` always and documenting a user-only environment workaround.
+
+## [2026-02-12] - Enforce Release Tag/Version Parity For Updater Reliability
+**Context:** The in-app `Check for updates` flow appeared broken because published updater metadata (`latest.json`) reported version `0.1.0` while release tag `v0.1.2` existed. Clients on `0.1.0` therefore saw no newer version.
+**Decision:** Make release version parity explicit and enforceable:
+- bump app version metadata to `0.1.3` (`tauri.conf.json`, desktop `package.json`, workspace `package.json`),
+- add `scripts/verify-release-version.sh` to require `GITHUB_REF_NAME` tag format `vX.Y.Z` and exact match with Tauri config version,
+- run the guard in release workflow before publish,
+- improve updater error messaging so network/signature/metadata issues are surfaced in Settings.
+**Rationale:** Prevents silent metadata drift between tags and shipped updater manifests while making user-visible updater failures actionable.
+**Consequences:** Tag pushes fail fast when version metadata is stale; future releases keep updater JSON version aligned with tag semantics.
+**Alternatives Considered:** Manual release checklist without enforcement and tag-only derivation with runtime mutation.

@@ -1,26 +1,35 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (pane-term-normalization)
+- Last Updated: 2026-02-12 (updater-version-parity-0.1.3)
 
 - Current progress:
-  - Implemented backend pane terminal env normalization in `apps/desktop/src-tauri/src/lib.rs`:
-    - added `resolve_pane_term` helper,
-    - `spawn_pane` now sets `TERM` explicitly on the spawned PTY command,
-    - missing/empty/`dumb` -> `xterm-256color`,
-    - valid non-empty values are preserved.
-  - Added backend unit tests for `resolve_pane_term` covering:
-    - missing/empty values,
-    - case-insensitive `dumb`,
-    - preservation of valid values (`screen-256color`, `xterm-kitty`).
+  - Root-caused non-working `Check for updates` behavior to release metadata drift:
+    - GitHub `latest.json` was served from `v0.1.2` assets but reported `version: 0.1.0`,
+    - updater therefore treated installed `0.1.0` as current.
+  - Implemented release parity guardrails:
+    - added `scripts/verify-release-version.sh`,
+    - validates tag format (`vX.Y.Z`) and strict equality with `apps/desktop/src-tauri/tauri.conf.json` version,
+    - release workflow now runs guard before publish and installs `jq`.
+  - Aligned version metadata to `0.1.3`:
+    - `apps/desktop/src-tauri/tauri.conf.json`,
+    - `apps/desktop/package.json`,
+    - root `package.json`.
+  - Improved updater UX in Settings:
+    - added updater error normalization for network/signature/metadata parse failures,
+    - `Check for updates` now surfaces actionable messages instead of generic failure text.
+  - Added frontend tests for updater behavior in Settings section.
 
 - Verification:
-  - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml`
+  - `pnpm --filter @supervibing/desktop test -- run`
+  - `GITHUB_REF_NAME=v0.1.3 ./scripts/verify-release-version.sh`
+  - Negative parity check confirms mismatch fails as expected:
+    - `GITHUB_REF_NAME=v0.1.2 ./scripts/verify-release-version.sh` -> mismatch error
 
 - Blockers/Bugs:
-  - None in local backend validation.
-  - Manual app-level smoke test still pending to confirm pane startup UX in packaged/runtime environments.
+  - Corrective release tag `v0.1.3` is not published yet.
+  - Until `v0.1.3` release artifacts exist, older installs may still report up-to-date due to stale published metadata.
 
 - Next immediate starting point:
-  - Run desktop app smoke test with agent pane startup (Codex/Starship):
-    - confirm warning about `TERM=dumb` no longer appears,
-    - confirm Codex interactive TUI starts without degraded terminal warning.
+  - Commit and push updater parity changes.
+  - Create and push tag `v0.1.3`.
+  - Confirm published `latest.json` now reports `"version": "0.1.3"` and retest in-app updater flow from an older build.
