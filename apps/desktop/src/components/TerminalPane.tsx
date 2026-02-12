@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type { Terminal } from "xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import { toRuntimePaneId } from "../lib/panes";
@@ -11,6 +12,13 @@ interface TerminalPaneProps {
 }
 
 const PROMPTABLE_INPUT_REGEX = /^[\x20-\x7E]$/;
+const OUTPUT_FLUSH_THRESHOLD_BYTES = 32 * 1024;
+const RESIZE_DEBOUNCE_MS = 50;
+
+interface PaneView {
+  title: string;
+  status: string;
+}
 
 export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
   const runtimePaneId = toRuntimePaneId(workspaceId, paneId);
@@ -18,11 +26,20 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const inputBufferRef = useRef("");
+  const outputBufferRef = useRef("");
+  const outputFlushRafRef = useRef<number | null>(null);
+  const resizeTimerRef = useRef<number | null>(null);
 
-  const pane = useWorkspaceStore((state) => {
-    const workspace = state.workspaces.find((item) => item.id === workspaceId);
-    return workspace?.panes[paneId];
-  });
+  const pane = useWorkspaceStore(
+    useShallow((state) => {
+      const workspace = state.workspaces.find((item) => item.id === workspaceId);
+      const current = workspace?.panes[paneId];
+      return {
+        title: current?.title ?? paneId,
+        status: current?.status ?? "idle",
+      } satisfies PaneView;
+    }),
+  );
   const ensurePaneSpawned = useWorkspaceStore((state) => state.ensurePaneSpawned);
   const markPaneExited = useWorkspaceStore((state) => state.markPaneExited);
   const updatePaneLastCommand = useWorkspaceStore((state) => state.updatePaneLastCommand);
@@ -90,6 +107,32 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
 
+      const flushBufferedOutput = (): void => {
+        const currentTerminal = terminalRef.current;
+        if (!currentTerminal) {
+          outputBufferRef.current = "";
+          return;
+        }
+
+        if (!outputBufferRef.current) {
+          return;
+        }
+
+        currentTerminal.write(outputBufferRef.current);
+        outputBufferRef.current = "";
+      };
+
+      const scheduleOutputFlush = (): void => {
+        if (outputFlushRafRef.current !== null) {
+          return;
+        }
+
+        outputFlushRafRef.current = window.requestAnimationFrame(() => {
+          outputFlushRafRef.current = null;
+          flushBufferedOutput();
+        });
+      };
+
       const resizeToBackend = async (): Promise<void> => {
         fitAddon.fit();
         if (terminal && terminal.rows > 0 && terminal.cols > 0) {
@@ -105,8 +148,19 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
         }
       };
 
+      const scheduleResizeToBackend = (): void => {
+        if (resizeTimerRef.current !== null) {
+          window.clearTimeout(resizeTimerRef.current);
+        }
+
+        resizeTimerRef.current = window.setTimeout(() => {
+          resizeTimerRef.current = null;
+          void resizeToBackend();
+        }, RESIZE_DEBOUNCE_MS);
+      };
+
       resizeObserver = new ResizeObserver(() => {
-        void resizeToBackend();
+        scheduleResizeToBackend();
       });
       resizeObserver.observe(containerRef.current);
 
@@ -138,17 +192,29 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
         }
 
         if (event.kind === "output") {
-          terminalRef.current.write(event.payload);
+          outputBufferRef.current += event.payload;
+          if (outputBufferRef.current.length >= OUTPUT_FLUSH_THRESHOLD_BYTES) {
+            if (outputFlushRafRef.current !== null) {
+              window.cancelAnimationFrame(outputFlushRafRef.current);
+              outputFlushRafRef.current = null;
+            }
+            flushBufferedOutput();
+            return;
+          }
+
+          scheduleOutputFlush();
           return;
         }
 
         if (event.kind === "error") {
+          flushBufferedOutput();
           terminalRef.current.writeln(`\r\n[super-vibing] ${event.payload}`);
           markPaneExited(workspaceId, paneId, event.payload);
           return;
         }
 
         if (event.kind === "exit") {
+          flushBufferedOutput();
           markPaneExited(workspaceId, paneId);
         }
       });
@@ -162,6 +228,14 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
       isActive = false;
       unsubscribe?.();
       disposeInput?.dispose();
+      if (resizeTimerRef.current !== null) {
+        window.clearTimeout(resizeTimerRef.current);
+      }
+      if (outputFlushRafRef.current !== null) {
+        window.cancelAnimationFrame(outputFlushRafRef.current);
+      }
+      outputFlushRafRef.current = null;
+      outputBufferRef.current = "";
       resizeObserver?.disconnect();
       terminal?.dispose();
       terminalRef.current = null;
@@ -172,8 +246,8 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
   return (
     <div className="terminal-shell">
       <div className="terminal-meta">
-        <span>{pane?.title ?? paneId}</span>
-        <span className="terminal-status">{pane?.status ?? "idle"}</span>
+        <span>{pane.title}</span>
+        <span className="terminal-status">{pane.status}</span>
       </div>
       <div className="terminal-body" ref={containerRef} />
     </div>

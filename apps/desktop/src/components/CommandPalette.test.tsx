@@ -22,6 +22,7 @@ function workspace(id: string, name: string, branch: string, path: string): Work
     repoRoot: path,
     branch,
     worktreePath: path,
+    layoutMode: "tiling",
     paneCount: 1,
     paneOrder: ["pane-1"],
     panes: {

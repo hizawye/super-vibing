@@ -1,8 +1,14 @@
-import type { AppSection, WorkspaceRuntime } from "../types";
+import type { AppSection } from "../types";
+
+export interface WorkspaceTabView {
+  id: string;
+  name: string;
+  paneCount: number;
+}
 
 interface TopChromeProps {
   activeSection: AppSection;
-  workspaces: WorkspaceRuntime[];
+  workspaces: WorkspaceTabView[];
   activeWorkspaceId: string | null;
   onSectionButtonClick: () => void;
   onSelectWorkspace: (workspaceId: string) => void;

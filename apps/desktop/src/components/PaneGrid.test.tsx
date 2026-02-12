@@ -8,13 +8,19 @@ vi.mock("react-grid-layout", () => {
     children,
     onLayoutChange,
     layout,
+    isDraggable = true,
+    isResizable = true,
   }: {
     children: ReactNode;
     onLayoutChange?: (layout: Array<Record<string, unknown>>) => void;
     layout: Array<Record<string, unknown>>;
+    isDraggable?: boolean;
+    isResizable?: boolean;
   }) => (
     <div
       data-testid="mock-grid"
+      data-draggable={String(isDraggable)}
+      data-resizable={String(isResizable)}
       onClick={() => {
         onLayoutChange?.(layout);
       }}
@@ -33,6 +39,21 @@ vi.mock("./TerminalPane", () => ({
   TerminalPane: ({ paneId }: { paneId: string }) => <div data-testid={`terminal-${paneId}`} />,
 }));
 
+vi.mock("../store/workspace", () => ({
+  useWorkspaceStore: <T,>(selector: (state: { workspaces: Array<{ id: string; panes: Record<string, { title: string }> }> }) => T): T =>
+    selector({
+      workspaces: [
+        {
+          id: "workspace-1",
+          panes: {
+            "pane-1": { title: "pane-1" },
+            "pane-2": { title: "pane-2" },
+          },
+        },
+      ],
+    }),
+}));
+
 describe("PaneGrid", () => {
   const layouts = [
     { i: "pane-1", x: 0, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
@@ -47,8 +68,8 @@ describe("PaneGrid", () => {
       <PaneGrid
         workspaceId="workspace-1"
         paneIds={["pane-1", "pane-2"]}
-        paneTitles={{ "pane-1": "pane-1", "pane-2": "pane-2" }}
         layouts={layouts}
+        layoutMode="tiling"
         zoomedPaneId="pane-2"
         onLayoutsChange={onLayoutsChange}
         onToggleZoom={onToggleZoom}
@@ -70,8 +91,8 @@ describe("PaneGrid", () => {
       <PaneGrid
         workspaceId="workspace-1"
         paneIds={["pane-1", "pane-2"]}
-        paneTitles={{ "pane-1": "pane-1", "pane-2": "pane-2" }}
         layouts={layouts}
+        layoutMode="freeform"
         zoomedPaneId={null}
         onLayoutsChange={onLayoutsChange}
         onToggleZoom={onToggleZoom}
@@ -86,5 +107,22 @@ describe("PaneGrid", () => {
 
     fireEvent.doubleClick(screen.getByText("pane-1"));
     expect(onToggleZoom).toHaveBeenCalledWith("pane-1");
+  });
+
+  it("disables drag and resize in tiling mode", () => {
+    render(
+      <PaneGrid
+        workspaceId="workspace-1"
+        paneIds={["pane-1", "pane-2"]}
+        layouts={layouts}
+        layoutMode="tiling"
+        zoomedPaneId={null}
+        onLayoutsChange={vi.fn()}
+        onToggleZoom={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-draggable", "false");
+    expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-resizable", "false");
   });
 });

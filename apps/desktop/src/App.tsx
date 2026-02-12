@@ -1,9 +1,12 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import type { Layout } from "react-grid-layout";
+import { useShallow } from "zustand/react/shallow";
 import { PaneGrid } from "./components/PaneGrid";
-import { TopChrome } from "./components/TopChrome";
+import { TopChrome, type WorkspaceTabView } from "./components/TopChrome";
 import { EmptyStatePage } from "./components/EmptyStatePage";
 import type { WorkspaceCreationInput } from "./components/NewWorkspaceModal";
 import { useWorkspaceStore } from "./store/workspace";
+import type { LayoutMode, WorkspaceBootSession } from "./types";
 
 const SectionMenu = lazy(() =>
   import("./components/SectionMenu").then((module) => ({ default: module.SectionMenu })),
@@ -40,6 +43,20 @@ const SHORTCUT_GROUPS = [
   },
 ] as const;
 
+interface ActiveWorkspaceView {
+  id: string;
+  name: string;
+  branch: string;
+  worktreePath: string;
+  paneCount: number;
+  paneOrder: string[];
+  layouts: Layout[];
+  layoutMode: LayoutMode;
+  zoomedPaneId: string | null;
+}
+
+const WORKSPACE_TAB_KEY_SEPARATOR = "\u0001";
+
 function SettingsSection() {
   return (
     <section className="section-surface">
@@ -68,13 +85,84 @@ function SettingsSection() {
 }
 
 function App() {
-  const initialized = useWorkspaceStore((state) => state.initialized);
-  const bootstrapping = useWorkspaceStore((state) => state.bootstrapping);
-  const activeSection = useWorkspaceStore((state) => state.activeSection);
-  const echoInput = useWorkspaceStore((state) => state.echoInput);
-  const paletteOpen = useWorkspaceStore((state) => state.paletteOpen);
-  const workspaces = useWorkspaceStore((state) => state.workspaces);
-  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const { initialized, bootstrapping, activeSection, echoInput, paletteOpen, activeWorkspaceId } = useWorkspaceStore(
+    useShallow((state) => ({
+      initialized: state.initialized,
+      bootstrapping: state.bootstrapping,
+      activeSection: state.activeSection,
+      echoInput: state.echoInput,
+      paletteOpen: state.paletteOpen,
+      activeWorkspaceId: state.activeWorkspaceId,
+    })),
+  );
+
+  const workspaceTabKeys = useWorkspaceStore(
+    useShallow((state) =>
+      state.workspaces.map(
+        (workspace) =>
+          `${workspace.id}${WORKSPACE_TAB_KEY_SEPARATOR}${workspace.name}${WORKSPACE_TAB_KEY_SEPARATOR}${workspace.paneCount}`,
+      ),
+    ),
+  );
+
+  const workspaceTabs = useMemo<WorkspaceTabView[]>(
+    () =>
+      workspaceTabKeys.map((value) => {
+        const [id, name, paneCount] = value.split(WORKSPACE_TAB_KEY_SEPARATOR);
+        return {
+          id,
+          name,
+          paneCount: Number(paneCount),
+        };
+      }),
+    [workspaceTabKeys],
+  );
+
+  const activeWorkspace = useWorkspaceStore(
+    useShallow((state) => {
+      if (!state.activeWorkspaceId) {
+        return null;
+      }
+      const workspace = state.workspaces.find((item) => item.id === state.activeWorkspaceId);
+      if (!workspace) {
+        return null;
+      }
+      return {
+        id: workspace.id,
+        name: workspace.name,
+        branch: workspace.branch,
+        worktreePath: workspace.worktreePath,
+        paneCount: workspace.paneCount,
+        paneOrder: workspace.paneOrder,
+        layouts: workspace.layouts,
+        layoutMode: workspace.layoutMode,
+        zoomedPaneId: workspace.zoomedPaneId,
+      } satisfies ActiveWorkspaceView;
+    }),
+  );
+
+  const activeWorkspaceBoot = useWorkspaceStore(
+    useShallow((state) => {
+      if (!state.activeWorkspaceId) {
+        return null;
+      }
+      const session = state.workspaceBootSessions[state.activeWorkspaceId];
+      if (!session) {
+        return null;
+      }
+      return {
+        workspaceId: session.workspaceId,
+        totalAgents: session.totalAgents,
+        queued: session.queued,
+        running: session.running,
+        completed: session.completed,
+        failed: session.failed,
+        status: session.status,
+        startedAt: session.startedAt,
+        updatedAt: session.updatedAt,
+      } satisfies WorkspaceBootSession;
+    }),
+  );
 
   const bootstrap = useWorkspaceStore((state) => state.bootstrap);
   const setActiveSection = useWorkspaceStore((state) => state.setActiveSection);
@@ -84,29 +172,15 @@ function App() {
   const closeWorkspace = useWorkspaceStore((state) => state.closeWorkspace);
   const setActiveWorkspace = useWorkspaceStore((state) => state.setActiveWorkspace);
   const setActiveWorkspacePaneCount = useWorkspaceStore((state) => state.setActiveWorkspacePaneCount);
+  const setActiveWorkspaceLayoutMode = useWorkspaceStore((state) => state.setActiveWorkspaceLayoutMode);
   const setActiveWorkspaceLayouts = useWorkspaceStore((state) => state.setActiveWorkspaceLayouts);
   const toggleActiveWorkspaceZoom = useWorkspaceStore((state) => state.toggleActiveWorkspaceZoom);
-  const runGlobalCommand = useWorkspaceStore((state) => state.runGlobalCommand);
   const saveSnapshot = useWorkspaceStore((state) => state.saveSnapshot);
+  const pauseWorkspaceBoot = useWorkspaceStore((state) => state.pauseWorkspaceBoot);
+  const resumeWorkspaceBoot = useWorkspaceStore((state) => state.resumeWorkspaceBoot);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
-  const [globalCommand, setGlobalCommand] = useState("");
-  const [executeCommand, setExecuteCommand] = useState(true);
-
-  const activeWorkspace = useMemo(
-    () => workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
-    [activeWorkspaceId, workspaces],
-  );
-
-  const paneTitles = useMemo(() => {
-    if (!activeWorkspace) {
-      return {};
-    }
-    return Object.fromEntries(
-      activeWorkspace.paneOrder.map((paneId) => [paneId, activeWorkspace.panes[paneId]?.title ?? paneId]),
-    );
-  }, [activeWorkspace]);
 
   useEffect(() => {
     void bootstrap();
@@ -152,7 +226,7 @@ function App() {
     <main className="app-shell">
       <TopChrome
         activeSection={activeSection}
-        workspaces={workspaces}
+        workspaces={workspaceTabs}
         activeWorkspaceId={activeWorkspaceId}
         onSectionButtonClick={() => setMenuOpen((current) => !current)}
         onSelectWorkspace={(workspaceId) => {
@@ -179,6 +253,30 @@ function App() {
               <label className="compact-label" htmlFor="pane-count">
                 Panes {activeWorkspace.paneCount}
               </label>
+              <div className="pane-stepper" role="group" aria-label="Pane count quick controls">
+                <button
+                  type="button"
+                  className="subtle-btn pane-stepper-btn"
+                  onClick={() => {
+                    void setActiveWorkspacePaneCount(activeWorkspace.paneCount - 1);
+                  }}
+                  disabled={activeWorkspace.paneCount <= 1}
+                  aria-label="Decrease pane count"
+                >
+                  -
+                </button>
+                <button
+                  type="button"
+                  className="subtle-btn pane-stepper-btn"
+                  onClick={() => {
+                    void setActiveWorkspacePaneCount(activeWorkspace.paneCount + 1);
+                  }}
+                  disabled={activeWorkspace.paneCount >= 16}
+                  aria-label="Increase pane count"
+                >
+                  +
+                </button>
+              </div>
               <input
                 id="pane-count"
                 type="range"
@@ -189,6 +287,22 @@ function App() {
                   void setActiveWorkspacePaneCount(Number(event.currentTarget.value));
                 }}
               />
+              <div className="layout-mode-toggle" role="group" aria-label="Layout mode">
+                <button
+                  type="button"
+                  className={`layout-mode-btn ${activeWorkspace.layoutMode === "tiling" ? "active" : ""}`}
+                  onClick={() => setActiveWorkspaceLayoutMode("tiling")}
+                >
+                  Tiling
+                </button>
+                <button
+                  type="button"
+                  className={`layout-mode-btn ${activeWorkspace.layoutMode === "freeform" ? "active" : ""}`}
+                  onClick={() => setActiveWorkspaceLayoutMode("freeform")}
+                >
+                  Free-form
+                </button>
+              </div>
               <label className="check-label">
                 <input
                   type="checkbox"
@@ -207,42 +321,41 @@ function App() {
               >
                 Save snapshot
               </button>
+              {activeWorkspaceBoot ? (
+                <>
+                  <span className="compact-label">
+                    Boot {activeWorkspaceBoot.completed}/{activeWorkspaceBoot.totalAgents}
+                    {activeWorkspaceBoot.failed > 0 ? ` · failed ${activeWorkspaceBoot.failed}` : ""}
+                  </span>
+                  {activeWorkspaceBoot.status === "running" ? (
+                    <button
+                      type="button"
+                      className="subtle-btn"
+                      onClick={() => pauseWorkspaceBoot(activeWorkspace.id)}
+                    >
+                      Pause boot
+                    </button>
+                  ) : null}
+                  {activeWorkspaceBoot.status === "paused" ? (
+                    <button
+                      type="button"
+                      className="subtle-btn"
+                      onClick={() => resumeWorkspaceBoot(activeWorkspace.id)}
+                    >
+                      Resume boot
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </header>
-
-          <div className="command-row">
-            <input
-              className="text-input"
-              placeholder="Run in all panes"
-              value={globalCommand}
-              onChange={(event) => setGlobalCommand(event.currentTarget.value)}
-            />
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={executeCommand}
-                onChange={(event) => setExecuteCommand(event.currentTarget.checked)}
-              />
-              Execute
-            </label>
-            <button
-              type="button"
-              className="primary-btn"
-              onClick={() => {
-                void runGlobalCommand(globalCommand, executeCommand);
-                setGlobalCommand("");
-              }}
-            >
-              Run
-            </button>
-          </div>
 
           <div className="grid-shell">
             <PaneGrid
               workspaceId={activeWorkspace.id}
               paneIds={activeWorkspace.paneOrder}
-              paneTitles={paneTitles}
               layouts={activeWorkspace.layouts}
+              layoutMode={activeWorkspace.layoutMode}
               zoomedPaneId={activeWorkspace.zoomedPaneId}
               onLayoutsChange={(next) => setActiveWorkspaceLayouts(next)}
               onToggleZoom={toggleActiveWorkspaceZoom}
