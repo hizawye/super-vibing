@@ -62,3 +62,10 @@
 **Rationale:** Removes timing-dependent behavior and prevents command-loss when spawn callers race.
 **Consequences:** Store logic is more stateful (`spawnInFlight` + `pendingPaneInit`) but startup behavior is deterministic and test-covered.
 **Alternatives Considered:** Increasing fixed delays, relying on backend init write only, and removing pane-mount spawn checks.
+
+## [2026-02-12] - Reopen Workspace Agent Auto-Run
+**Context:** Agent commands launched correctly on workspace creation but did not auto-run after app restart when reopening persisted workspaces.
+**Decision:** Reuse the workspace launch plan (`agentAllocation` + `paneOrder`) for all workspace activation paths (bootstrap, switch, close->next active, pane count changes, snapshot restore), not just creation.
+**Rationale:** Keeps agent startup behavior consistent whenever panes are respawned for an active workspace.
+**Consequences:** Reopening a workspace now reissues assigned agent commands in mapped panes; behavior is covered with store tests for reopen/boot/restore flows.
+**Alternatives Considered:** Auto-run only on initial creation, or adding separate persisted per-pane command fields.
