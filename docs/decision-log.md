@@ -325,3 +325,14 @@ Modal/palette readability kept via a faint translucent overlay panel.
 **Rationale:** Establishes a reproducible signed-release workflow while giving end users a direct in-app update path.
 **Consequences:** Release publishing now depends on signing secrets and matching updater keypair; Settings now includes update lifecycle state management.
 **Alternatives Considered:** Manual GitHub uploads without updater metadata and external-only update instructions.
+
+## [2026-02-12] - Normalize Pane `TERM` When Host Environment Is `dumb`
+**Context:** Agent CLIs launched in workspace panes inherited `TERM=dumb` from the app process, causing startup warnings and disabling interactive TUI features (notably Codex and Starship).
+**Decision:** Normalize pane terminal type only when invalid:
+- in backend `spawn_pane`, resolve `TERM` from process env and set command env explicitly,
+- map missing/empty/`dumb` values to `xterm-256color`,
+- preserve all other non-empty terminal values unchanged,
+- add unit tests for normalization behavior.
+**Rationale:** Restores interactive terminal behavior without overriding valid custom terminal settings.
+**Consequences:** Pane processes now start with a usable terminal type even when the host launcher provides `TERM=dumb`; custom `TERM` values remain compatible.
+**Alternatives Considered:** Forcing `xterm-256color` always and documenting a user-only environment workaround.
