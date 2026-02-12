@@ -678,8 +678,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const response = await spawnPane({
         paneId,
         cwd: workspace.worktreePath,
-        initCommand: options?.initCommand,
-        executeInit: options?.executeInit,
       });
 
       set((current) => ({
@@ -703,6 +701,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           };
         }),
       }));
+
+      if (options?.initCommand && options.executeInit) {
+        const initCommand = options.initCommand;
+        setTimeout(() => {
+          void writePaneInput({
+            paneId,
+            data: initCommand,
+            execute: true,
+          });
+        }, 150);
+      }
     } catch (error) {
       set((current) => ({
         workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {

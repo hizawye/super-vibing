@@ -179,16 +179,12 @@ describe("workspace store", () => {
       1,
       expect.objectContaining({
         paneId: "pane-1",
-        initCommand: "claude",
-        executeInit: true,
       }),
     );
     expect(tauriApi.spawnPane).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         paneId: "pane-2",
-        initCommand: undefined,
-        executeInit: false,
       }),
     );
   });
