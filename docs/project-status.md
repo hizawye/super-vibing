@@ -1,35 +1,90 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (release-v0.1.8-terminal-ready-gate)
+- Last Updated: 2026-02-12 (tmux-prefix-shortcuts-core)
 
 - Current progress:
-  - Reproduced Codex startup failure in terminal context:
-    - exact error: `Error: The cursor position could not be read within a normal duration`.
-    - confirmed CLI emits cursor-position query (`ESC[6n`) and fails when terminal response path is not ready.
-  - Implemented terminal-readiness gate for agent auto-launch:
-    - added runtime `terminalReadyPanesByWorkspace` state plus readiness waiters in `apps/desktop/src/store/workspace.ts`,
-    - gated pending init flush + boot queue command dispatch on pane readiness,
-    - added store actions `markPaneTerminalReady` and `markPaneTerminalNotReady`,
-    - wired `TerminalPane` mount/unmount lifecycle to mark readiness in `apps/desktop/src/components/TerminalPane.tsx`,
-    - cleared readiness state on pane/workspace removal and snapshot/bootstrap resets.
-  - Added regressions in `apps/desktop/src/store/workspace.test.ts`:
-    - new test asserting init commands wait for terminal-ready signal,
-    - updated reopen/bootstrap/snapshot and spawn/init tests for readiness-gated behavior.
-  - Bumped release parity metadata to `0.1.8`:
-    - `package.json`,
-    - `apps/desktop/package.json`,
-    - `apps/desktop/src-tauri/tauri.conf.json`.
+  - Worktree manager system remains in place across backend/store/UI with enriched worktree metadata and safe lifecycle actions.
+  - Added local automation bridge in `apps/desktop/src-tauri/src/lib.rs`:
+    - HTTP listener on `127.0.0.1:47631`,
+    - endpoints `GET /v1/health`, `GET /v1/workspaces`, `POST /v1/commands`, `GET /v1/jobs/:jobId`,
+    - queued async job processing for:
+      - `create_panes`,
+      - `create_worktree`,
+      - `create_branch`,
+      - `run_command`.
+  - Added frontend handshake for UI-owned automation actions in `apps/desktop/src/App.tsx`:
+    - listens to `automation:request`,
+    - applies `create_panes` / `import_worktree`,
+    - reports completion/failure with `automation_report`.
+  - Added workspace runtime snapshot sync from Zustand to backend in `apps/desktop/src/store/workspace.ts`:
+    - `syncAutomationWorkspaces` called during bootstrap/workspace lifecycle/pane lifecycle changes.
+  - Patched backend reliability path so pending frontend acks are cleaned up on emit failure and timeout.
+  - Added global Codex skill at `~/.codex/skills/supervibing-automation`:
+    - `SKILL.md` with usage workflow and troubleshooting,
+    - `scripts/supervibing_automation.py` wrapper CLI for health/workspaces/job and bridge command actions,
+    - `agents/openai.yaml` for UI metadata.
+  - Wrapper defaults are aligned with product decisions:
+    - submit-and-wait by default,
+    - optional `--no-wait`,
+    - health-check-only app lifecycle (no auto-start).
+  - Extended inactive workspace lifetime in `apps/desktop/src/store/workspace.ts`:
+    - `INACTIVE_WORKSPACE_SUSPEND_MS` increased from `120s` to `10m` to keep workspaces alive longer before auto-suspend.
+  - Fixed workspace-switch terminal clearing in frontend:
+    - `apps/desktop/src/App.tsx` now keeps all workspace `PaneGrid` instances mounted in Terminal section,
+    - inactive workspace grids are hidden (not unmounted), preserving xterm buffer state,
+    - `apps/desktop/src/styles.css` adds stacked grid panel visibility classes.
+  - Fixed terminal copy + initial glyph spacing issues in frontend:
+    - `apps/desktop/src/components/TerminalPane.tsx` now handles `Ctrl+Shift+C` via xterm custom key handler and copies current selection to clipboard,
+    - empty-selection copy chord is consumed as no-op (no terminal input),
+    - startup now performs staged refit/resize (open, next frame, fonts-ready) and refits again when a hidden workspace pane becomes active,
+    - `apps/desktop/src/App.tsx` + `apps/desktop/src/components/PaneGrid.tsx` pass active visibility state to `TerminalPane`.
+  - Added tmux-style core shortcut profile in frontend:
+    - `apps/desktop/src/App.tsx` now uses a `Ctrl+B` prefix controller with a `1000ms` timeout and tmux-like pane mappings (`%`, `"`, `c`, `n`, `p`, `o`, `0..9`, arrows, `z`, `x`, `&`, `Alt+Arrow`),
+    - legacy non-tmux pane hotkeys were removed from the global app shortcut handler; global app keys (`Ctrl/Cmd+N`, `Ctrl/Cmd+P`, `Escape`) remain,
+    - Settings shortcut list now reflects tmux core bindings.
+  - Added keyboard resize support for focused panes in freeform mode:
+    - `apps/desktop/src/store/workspace.ts` includes `resizeFocusedPaneByDelta(workspaceId, dx, dy)` used by tmux `prefix+Alt+Arrow`,
+    - resize is no-op outside freeform mode.
 
 - Verification:
+  - `cargo test -q` (in `apps/desktop/src-tauri`) ✅
+    - Rust tests passed (10/10).
+  - `cargo check -q` (in `apps/desktop/src-tauri`) ✅
   - `pnpm --filter @supervibing/desktop typecheck` ✅
-  - `pnpm --filter @supervibing/desktop test -- --run src/store/workspace.test.ts` ✅
-    - all desktop tests passed in this run (58/58).
-  - `./scripts/verify-release-version.sh v0.1.8` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/store/workspace.test.ts src/components/CommandPalette.test.tsx src/components/AppSidebar.test.tsx tests/styles.soft-ui.test.ts` ✅
+    - desktop tests passed (63/63 in run scope).
+  - `python3 ~/.codex/skills/supervibing-automation/scripts/supervibing_automation.py --help` ✅
+  - `python3 ~/.codex/skills/supervibing-automation/scripts/supervibing_automation.py create-worktree --help` ✅
+  - `python3 ~/.codex/skills/supervibing-automation/scripts/supervibing_automation.py --json health` executed and returned `connection refused` (expected while app bridge is not running) ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/store/workspace.test.ts` ✅
+    - workspace/store and related desktop tests passed (63/63 in run scope).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/components/PaneGrid.test.tsx src/components/AppSidebar.test.tsx src/components/CommandPalette.test.tsx` ✅
+    - desktop tests passed (63/63 in run scope).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/components/PaneGrid.test.tsx src/components/TerminalPane.test.tsx` ✅
+    - desktop tests passed (68/68 in run scope).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/store/workspace.test.ts` ✅
+    - desktop tests passed (77/77 in run scope).
 
 - Blockers/Bugs:
-  - None currently identified for this fix path.
+  - No functional blockers identified.
+  - Automation bridge currently relies on localhost binding without auth; acceptable for local-only automation, but token-based guard may be needed for stricter host-hardening.
+  - Non-fatal shell startup warnings (`fnm/starship` permission and nvm prefix warnings) continue in command output and do not affect build/test outcomes.
+  - Live skill smoke tests for `workspaces`/job execution are blocked until SuperVibing desktop is running and serving the automation port.
 
 - Next immediate starting point:
-  - Push `main`.
-  - Create and push tag `v0.1.8`.
-  - Verify `CI` and `Release` workflow completion.
+  - Manually verify tmux prefix workflow in active pane (`Ctrl+B` then `%`, `"`, `n/p/o`, `0..9`, arrows, `z`, `x`, `&`) and confirm expected pane actions.
+  - Manually verify `Ctrl+B` timeout behavior (prefixed key ignored after ~1s if no second key is pressed).
+  - Manually verify freeform-only resizing via `Ctrl+B` + `Alt+Arrow`.
+  - Manually verify `Ctrl+Shift+C` copy behavior inside active pane terminals (selection and empty-selection no-op cases).
+  - Manually verify new workspace first-pane glyph spacing stays correct without requiring second-pane creation.
+  - Manually verify terminal history/scrollback persists when switching between 2+ active workspaces repeatedly.
+  - Manually verify workspace switching UX with the new 10-minute suspend window.
+  - Launch SuperVibing desktop and run full skill smoke tests:
+    - `python3 ~/.codex/skills/supervibing-automation/scripts/supervibing_automation.py --json health`,
+    - `python3 ~/.codex/skills/supervibing-automation/scripts/supervibing_automation.py --json workspaces`,
+    - submit each action (`create-panes`, `create-worktree`, `create-branch`, `run-command`) and verify waited job outcomes.
+  - Optionally add automation endpoint auth token and request signing if cross-user hardening is required.
+  - Stage and commit backend/frontend/docs changes once manual flow is validated.

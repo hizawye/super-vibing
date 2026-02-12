@@ -426,3 +426,96 @@ Ran parity guard: `./scripts/verify-release-version.sh v0.1.8`.
 **Rationale:** Keeps release history immutable and preserves enforced tag/version updater parity.
 **Consequences:** Next release tag should be `v0.1.8` for this fix set.
 **Alternatives Considered:** Reusing existing `v0.1.7` tag.
+
+## [2026-02-12] - Sharp Pane Edges in Grid and Zoom Views
+**Context:** Pane corners remained rounded in the active Soft UI override layer, which conflicted with the requested sharp pane geometry.
+**Decision:** Normalize pane corners to square for pane-specific surfaces:
+- set `.pane-card` border radius to `0` in both base and Soft UI override layers,
+- set `.layout .react-grid-item.react-grid-placeholder` border radius to `0` in both base and Soft UI override layers,
+- add a style contract assertion in `apps/desktop/tests/styles.soft-ui.test.ts` to lock sharp pane/placeholder corners.
+**Rationale:** Ensures pane edges are visually sharp in normal grid and zoomed states without broad restyling of non-pane UI surfaces.
+**Consequences:** Pane cards and drag placeholders are now consistently square; other UI elements keep their existing radius styling.
+**Alternatives Considered:** Changing only `.pane-card` and leaving placeholder radius rounded.
+
+## [2026-02-12] - Worktree Manager System (Create, Import, Remove, Prune)
+**Context:** Existing worktree support only exposed `create_worktree` and `list_worktrees` backend commands, with no first-class lifecycle management in the app UI/store and no startup-safe discovery/import flow.
+**Decision:** Implement a sidebar-first Worktree Manager with palette hooks and expanded backend command surface:
+- added backend commands `resolve_repo_context`, `remove_worktree`, and `prune_worktrees`,
+- upgraded `create_worktree` and `list_worktrees` responses to richer metadata (head/main/detached/locked/prunable/dirty),
+- introduced store-managed worktree lifecycle actions (`openWorktreeManager`, `refreshWorktrees`, `createManagedWorktree`, `importWorktreeAsWorkspace`, `removeManagedWorktree`, `pruneManagedWorktrees`),
+- added new `Worktrees` app section and dedicated manager component for safe create/import/remove/prune UX,
+- integrated command palette with worktree manager actions and discovered worktree open/switch entries.
+**Rationale:** Makes worktree operations explicit, safe, and workflow-native while preserving manual cleanup control and avoiding automatic workspace fan-out.
+**Consequences:** Store/runtime flow is more stateful with per-repo manager state; backend now performs additional git metadata checks; UI gains a new section and action surface.
+**Alternatives Considered:** Palette-only worktree actions, backend-only API expansion, and auto-opening all discovered worktrees on startup.
+
+## [2026-02-12] - Local Automation Bridge for External CLI Control
+**Context:** External orchestrators need to command SuperVibing directly (create panes/worktrees/branches and send commands) without coupling to internal frontend store APIs.
+**Decision:** Add a localhost automation bridge with async job processing and frontend event handoff:
+- start a local HTTP server at `127.0.0.1:47631` in the Tauri backend,
+- expose `GET /v1/health`, `GET /v1/workspaces`, `POST /v1/commands`, `GET /v1/jobs/:jobId`,
+- queue submitted commands and process them in a background worker with tracked job lifecycle (`queued`, `running`, `succeeded`, `failed`),
+- add frontend-backend handshake (`automation:request` event + `automation_report` command) for UI-owned actions such as pane-count changes and worktree import,
+- sync open workspace/pane runtime snapshots from Zustand to backend (`sync_automation_workspaces`) so external jobs can target stable workspace IDs.
+**Rationale:** Provides a clear, language-agnostic automation surface for other local apps while preserving existing Tauri command boundaries and frontend ownership of workspace orchestration.
+**Consequences:** App now hosts a local command endpoint and maintains transient automation job/workspace registries in memory; external clients must poll job status for completion outcomes.
+**Alternatives Considered:** Direct IPC-only plugin integration, filesystem queue polling, and exposing raw internal Tauri command names to third-party callers.
+
+## [2026-02-12] - Global Codex Skill for SuperVibing Automation Commands
+**Context:** After adding the local automation bridge, users still needed a reusable Codex-side interface for issuing commands from CLI or other orchestrators without repeatedly hand-writing `curl` payloads and polling logic.
+**Decision:** Create a global user-scope skill at `~/.codex/skills/supervibing-automation` with:
+- `SKILL.md` usage guide and command recipes,
+- `scripts/supervibing_automation.py` wrapper CLI for `health`, `workspaces`, `job`, `create-panes`, `create-worktree`, `create-branch`, and `run-command`,
+- default submit-and-wait behavior with optional `--no-wait`,
+- explicit health-check-only lifecycle (no app auto-start),
+- `agents/openai.yaml` metadata for skill discovery.
+**Rationale:** Standardizes how Codex and terminal callers invoke the bridge, reduces payload errors, and makes job handling deterministic.
+**Consequences:** Automation usage is now script-driven and consistent across sessions; runtime success still depends on the desktop app being active and serving `127.0.0.1:47631`.
+**Alternatives Considered:** Raw `curl` snippets only and repo-local-only skill distribution.
+
+## [2026-02-12] - Extend Inactive Workspace Lifetime Before Auto-Suspend
+**Context:** Inactive workspace panes were suspending after `120s`, which was too aggressive for context switching workflows and made workspaces feel short-lived.
+**Decision:** Increase `INACTIVE_WORKSPACE_SUSPEND_MS` in `apps/desktop/src/store/workspace.ts` from `120 * 1000` to `10 * 60 * 1000` (10 minutes).
+**Rationale:** Keeps workspace terminals active longer while still retaining eventual memory reclamation via auto-suspend.
+**Consequences:** Higher short-term runtime memory usage when many workspaces are left inactive; fewer unnecessary suspend/resume cycles.
+**Alternatives Considered:** Disabling auto-suspend entirely and making suspend timeout user-configurable in Settings.
+
+## [2026-02-12] - Preserve Terminal Buffers When Switching Workspaces
+**Context:** Switching between workspaces remounted `TerminalPane` components, which disposed xterm instances and visually cleared terminal history on return.
+**Decision:** Keep per-workspace terminal grids mounted while in Terminal section:
+- render a stacked `PaneGrid` per workspace in `apps/desktop/src/App.tsx`,
+- hide inactive workspace grids via CSS (`workspace-grid-panel`) instead of unmounting,
+- gate grid callbacks so only the active workspace can mutate layouts/zoom/focus.
+**Rationale:** Preserves xterm in-memory buffer and viewport state across workspace switches without changing backend PTY ownership.
+**Consequences:** Slightly higher frontend memory/DOM footprint while multiple workspaces are open; terminal state remains stable when switching tabs.
+**Alternatives Considered:** Replaying buffered backend output on remount and disabling workspace switching unmount behavior at the store layer.
+
+## [2026-02-12] - Add Terminal Copy Shortcut + Active-Visibility Refit
+**Context:** Inside pane terminals, `Ctrl+Shift+C` did not copy selected output reliably, and newly created workspaces could render terminal glyphs with incorrect spacing until a later pane/layout change triggered a refit.
+**Decision:** Update frontend terminal runtime behavior:
+- add xterm custom key handling in `apps/desktop/src/components/TerminalPane.tsx` to consume `Ctrl+Shift+C` and copy current selection to the clipboard,
+- keep empty-selection behavior as a no-op (do not emit terminal input),
+- add multi-stage terminal refit/resize on startup (immediate + next frame + fonts-ready),
+- pass active workspace visibility state (`isActive`) from `App.tsx` through `PaneGrid.tsx` to `TerminalPane.tsx`,
+- trigger a refit/resize when a pane transitions from inactive to active visibility.
+**Rationale:** Ensures expected terminal copy ergonomics and removes first-render font/cell measurement drift caused by hidden-pane initialization timing.
+**Consequences:** Slightly more frontend resize calls during pane startup/activation; no backend API changes.
+**Alternatives Considered:** Handling copy only at global app keydown layer, and relying solely on `ResizeObserver` without explicit activation-triggered refit.
+
+## [2026-02-12] - Add tmux Prefix Shortcut Layer for Pane Control
+**Context:** Pane shortcuts used custom `Ctrl/Cmd+Alt` bindings that did not match tmux muscle-memory flows requested by users.
+**Decision:** Introduce a tmux-style prefix controller in `apps/desktop/src/App.tsx`:
+- add `Ctrl+B` prefix handling with a `1000ms` armed timeout,
+- map core prefixed commands to pane operations:
+  - split/add pane: `%`, `"`, `c`,
+  - cycle/focus pane: `n`, `p`, `o`, `0..9`,
+  - directional focus: arrow keys,
+  - zoom toggle: `z`,
+  - close/decrease pane count: `x`, `&`,
+  - freeform resize: `Alt+Arrow`,
+- keep existing global app shortcuts (`Ctrl/Cmd+N`, `Ctrl/Cmd+P`, `Escape` overlays),
+- add store action `resizeFocusedPaneByDelta` in `apps/desktop/src/store/workspace.ts` for keyboard-driven focused-pane resize in freeform mode only,
+- update shortcut documentation surfaced in Settings and add regression coverage in `App.shortcuts.test.ts` and `workspace.test.ts`.
+**Rationale:** Aligns pane keyboard workflow with tmux defaults while preserving existing global app navigation ergonomics.
+**Consequences:** Non-tmux pane shortcuts are removed from global handler; tmux prefix state is now part of keyboard event flow.
+**Alternatives Considered:** Keeping legacy pane shortcuts in parallel, and implementing full tmux command/copy-mode emulation in one pass.

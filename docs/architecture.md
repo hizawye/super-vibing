@@ -26,11 +26,29 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 - Grid engine: `react-grid-layout`, supporting 1..16 panes.
 - Zoom mode: pane-level maximize/restore on double-click.
 - Terminal rendering: Xterm.js + fit addon per pane component.
+- Keyboard model:
+  - global app shortcuts remain available (`Ctrl/Cmd+N`, `Ctrl/Cmd+P`, `Escape`),
+  - tmux-style pane shortcuts are handled by a frontend prefix controller (`Ctrl+B`, 1000ms armed timeout),
+  - prefix mappings route to pane count/focus/zoom/resize actions, with resize gated to `freeform` layout mode.
 
 ## Git manager
-- `create_worktree` shells out to `git worktree add` and returns new workspace tab metadata.
-- `list_worktrees` exposes porcelain-parsed worktree state.
+- `resolve_repo_context` resolves canonical repo/worktree context for a cwd and gracefully reports non-git paths.
+- `create_worktree` supports `newBranch` and `existingBranch` modes and returns enriched worktree metadata.
+- `list_worktrees` exposes porcelain-parsed worktree state with lock/prune/dirty/main flags.
+- `remove_worktree` enforces safe removal semantics (main-worktree guard, optional force and branch delete).
+- `prune_worktrees` supports dry-run and apply cleanup paths.
 - Top app bar displays active branch/worktree context.
+
+## Automation bridge
+- Rust backend starts a local-only HTTP listener on `127.0.0.1:47631`.
+- API surface:
+  - `GET /v1/health`,
+  - `GET /v1/workspaces`,
+  - `POST /v1/commands`,
+  - `GET /v1/jobs/:jobId`.
+- Commands are queued and processed by a background worker with persisted in-memory job state (`queued/running/succeeded/failed`).
+- Frontend remains source-of-truth for open workspace/pane runtime mapping and syncs snapshots through `sync_automation_workspaces`.
+- Backend dispatches UI-bound actions (`create_panes`, `import_worktree`) through Tauri events (`automation:request`) and waits for explicit frontend ack (`automation_report`) with timeout handling.
 
 ## Persistence
 - Tauri plugin-store (`@tauri-apps/plugin-store` + `tauri-plugin-store`) stores:
