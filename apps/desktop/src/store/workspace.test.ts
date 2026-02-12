@@ -219,6 +219,79 @@ describe("workspace store", () => {
     });
   });
 
+  it("runs init command for all assigned panes when concurrent spawns mark later panes running", async () => {
+    const workspaceMain = workspace("workspace-main", "Workspace 1", 1, ["running"]);
+    const workspaceTwo = workspace("workspace-two", "Workspace 2", 4, ["idle", "idle", "idle", "idle"]);
+    workspaceTwo.agentAllocation = allocation({ profile: "codex", enabled: true, count: 4 });
+
+    resetStore({
+      workspaces: [workspaceMain, workspaceTwo],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    let injected = false;
+    vi.mocked(tauriApi.spawnPane).mockImplementation(async ({ paneId, cwd }) => {
+      if (paneId === "pane-1" && !injected) {
+        injected = true;
+        await Promise.all([
+          useWorkspaceStore.getState().ensurePaneSpawned("workspace-two", "pane-2"),
+          useWorkspaceStore.getState().ensurePaneSpawned("workspace-two", "pane-3"),
+          useWorkspaceStore.getState().ensurePaneSpawned("workspace-two", "pane-4"),
+        ]);
+      }
+
+      return {
+        paneId,
+        cwd: cwd ?? "/repo",
+        shell: "/bin/bash",
+      };
+    });
+
+    await useWorkspaceStore.getState().setActiveWorkspace("workspace-two");
+
+    expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(4);
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-1",
+      data: "codex",
+      execute: true,
+    });
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-2",
+      data: "codex",
+      execute: true,
+    });
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-3",
+      data: "codex",
+      execute: true,
+    });
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-4",
+      data: "codex",
+      execute: true,
+    });
+  });
+
+  it("does not re-run init for panes already running at activation start", async () => {
+    const workspaceMain = workspace("workspace-main", "Workspace 1", 1, ["running"]);
+    const workspaceTwo = workspace("workspace-two", "Workspace 2", 2, ["running", "idle"]);
+    workspaceTwo.agentAllocation = allocation({ profile: "codex", enabled: true, count: 2 });
+
+    resetStore({
+      workspaces: [workspaceMain, workspaceTwo],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await useWorkspaceStore.getState().setActiveWorkspace("workspace-two");
+
+    expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(1);
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: "pane-2",
+      data: "codex",
+      execute: true,
+    });
+  });
+
   it("runs assigned agent command after bootstrap from persisted session", async () => {
     const restoredWorkspace = workspace("workspace-main", "Workspace 1", 1, ["idle"]);
     restoredWorkspace.agentAllocation = allocation({ profile: "claude", enabled: true, count: 1 });

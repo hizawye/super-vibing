@@ -479,6 +479,9 @@ async function spawnWorkspacePanes(
   }
 
   const launchPlan = withAgentInit ? buildLaunchPlan(workspace.paneOrder, workspace.agentAllocation) : undefined;
+  const initialStatuses = new Map(
+    workspace.paneOrder.map((paneId) => [paneId, workspace.panes[paneId]?.status ?? "idle"]),
+  );
 
   for (const paneId of workspace.paneOrder) {
     const latest = getState();
@@ -487,9 +490,8 @@ async function spawnWorkspacePanes(
       return;
     }
 
-    const pane = latestWorkspace.panes[paneId];
     const launch = launchPlan?.get(paneId);
-    const shouldInit = Boolean(launch && pane && pane.status !== "running");
+    const shouldInit = Boolean(launch && initialStatuses.get(paneId) !== "running");
 
     await latest.ensurePaneSpawned(
       workspaceId,
