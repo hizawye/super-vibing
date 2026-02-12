@@ -131,3 +131,36 @@
 **Rationale:** Simplifies terminal surface UX and ensures pane grid consumes available vertical space without hidden overflow at dense layouts.
 **Consequences:** Terminal header + grid now occupy the full section; row heights are responsive to window height and layout density instead of fixed `110px`.
 **Alternatives Considered:** Keeping inline run bar with compact styling, or enabling section scroll for clipped panes.
+
+## [2026-02-12] - Global Flat UI Pass (Square Geometry + Compact Spacing)
+**Context:** The interface looked over-boxed with repeated rounded card treatments, and pane density made the app feel visually noisy.
+**Decision:** Apply a global flat visual pass:
+- remove rounded corners from core surfaces and controls,
+- collapse major shell/card spacing,
+- keep pane tiles edge-to-edge by setting grid margin to zero,
+- flatten nested card backgrounds to simpler line-based framing.
+**Rationale:** Reduces visual clutter, aligns with terminal-first tooling aesthetics, and makes pane-heavy layouts feel cleaner.
+**Consequences:** UI is denser and more rigid; visual hierarchy now relies more on separators, typography, and color contrast than card silhouettes.
+**Alternatives Considered:** Pane-only styling changes, and keeping rounded cards with lighter shadows/gaps.
+
+## [2026-02-12] - Brutalist Monochrome Refinement
+**Context:** After flattening geometry and spacing, the UI still had decorative gradients/blur/shadow that diluted the intended hard-edged style.
+**Decision:** Apply a second-pass brutalist refinement:
+- move core surfaces to solid monochrome backgrounds,
+- standardize borders/separators to a narrow line palette,
+- flatten secondary controls to transparent backgrounds,
+- remove overlay blur and heavy modal shadows.
+**Rationale:** Produces a stricter, cleaner visual language with less ornament and clearer structural hierarchy.
+**Consequences:** The app feels more utilitarian and dense; interaction emphasis depends more on contrast and line rhythm.
+**Alternatives Considered:** Keep gradients while only removing curvature, and use stronger shadows to separate sections.
+
+## [2026-02-12] - Brutalist Contrast Tuning
+**Context:** The monochrome pass reduced visual noise, but some controls/states became too subtle under dense terminal layouts.
+**Decision:** Raise contrast for interaction-critical elements:
+- stronger borders on secondary controls/list rows,
+- brighter active-state backgrounds for tabs/menu/palette/layout selectors,
+- clearer active/inactive tab text separation,
+- slightly brighter label/meta text.
+**Rationale:** Preserve the flat/brutalist aesthetic without sacrificing scanability and state clarity.
+**Consequences:** Slightly higher visual intensity; interaction states are now easier to identify at a glance.
+**Alternatives Considered:** Reintroducing shadows/blur, and reverting to gradient-heavy surfaces.
