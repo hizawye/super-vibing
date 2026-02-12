@@ -57,6 +57,7 @@ vi.mock("../lib/persistence", () => ({
     snapshots: [],
     blueprints: [],
   })),
+  resetPersistedPayload: vi.fn(async () => {}),
   saveBlueprints: vi.fn(async () => {}),
   saveSessionState: vi.fn(async () => {}),
   saveSnapshots: vi.fn(async () => {}),
@@ -142,6 +143,7 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
   useWorkspaceStore.setState({
     initialized: true,
     bootstrapping: false,
+    startupError: null,
     activeSection: overrides.activeSection ?? "terminal",
     paletteOpen: false,
     echoInput: overrides.echoInput ?? false,
@@ -219,6 +221,7 @@ describe("workspace store", () => {
     useWorkspaceStore.setState({
       initialized: false,
       bootstrapping: false,
+      startupError: null,
       activeSection: "terminal",
       paletteOpen: false,
       echoInput: false,
@@ -242,6 +245,47 @@ describe("workspace store", () => {
     expect(state.reduceMotion).toBe(false);
     expect(state.highContrastAssist).toBe(false);
     expect(state.density).toBe("comfortable");
+  });
+
+  it("stores startup error and exits bootstrap mode when bootstrap fails", async () => {
+    vi.mocked(persistence.loadPersistedPayload).mockRejectedValueOnce(new Error("corrupt session"));
+
+    useWorkspaceStore.setState({
+      initialized: false,
+      bootstrapping: false,
+      startupError: null,
+      workspaces: [],
+      activeWorkspaceId: null,
+    });
+
+    await useWorkspaceStore.getState().bootstrap();
+
+    const state = useWorkspaceStore.getState();
+    expect(state.initialized).toBe(false);
+    expect(state.bootstrapping).toBe(false);
+    expect(state.startupError).toContain("corrupt session");
+  });
+
+  it("resets persisted state and reboots with default workspace", async () => {
+    vi.mocked(persistence.loadPersistedPayload).mockResolvedValueOnce({
+      version: 2,
+      snapshots: [],
+      blueprints: [],
+    });
+
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["running"])],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await useWorkspaceStore.getState().resetLocalStateAndRebootstrap();
+
+    const state = useWorkspaceStore.getState();
+    expect(persistence.resetPersistedPayload).toHaveBeenCalledTimes(1);
+    expect(state.initialized).toBe(true);
+    expect(state.startupError).toBeNull();
+    expect(state.workspaces).toHaveLength(1);
+    expect(state.workspaces[0]?.id).toBe("workspace-main");
   });
 
   it("persists ui preferences in serialized session state", async () => {

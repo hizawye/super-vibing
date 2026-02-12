@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { AppSidebar, type WorkspaceNavView } from "./components/AppSidebar";
 import { EmptyStatePage } from "./components/EmptyStatePage";
 import { PaneGrid } from "./components/PaneGrid";
+import { StartupCrashScreen } from "./components/StartupCrashScreen";
 import { TopChrome } from "./components/TopChrome";
 import { WorktreeManagerSection } from "./components/WorktreeManagerSection";
 import type { WorkspaceCreationInput } from "./components/NewWorkspaceModal";
@@ -70,6 +71,7 @@ interface TerminalWorkspaceView extends ActiveWorkspaceView {}
 const WORKSPACE_NAV_KEY_SEPARATOR = "\u0001";
 const LOCKED_SECTIONS: AppSection[] = ["kanban", "agents", "prompts"];
 type UpdateStatus = "idle" | "checking" | "available" | "installing" | "installed" | "upToDate" | "error";
+type WorkspaceStoreState = ReturnType<typeof useWorkspaceStore.getState>;
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!target) {
@@ -372,6 +374,21 @@ interface SettingsSectionProps {
   onReduceMotionChange: (enabled: boolean) => void;
   onHighContrastAssistChange: (enabled: boolean) => void;
   onDensityChange: (density: DensityMode) => void;
+}
+
+export function selectWorktreeManagerCore(state: WorkspaceStoreState) {
+  return {
+    repoRoot: state.worktreeManager.repoRoot,
+    loading: state.worktreeManager.loading,
+    error: state.worktreeManager.error,
+    entries: state.worktreeManager.entries,
+    lastLoadedAt: state.worktreeManager.lastLoadedAt,
+    lastActionMessage: state.worktreeManager.lastActionMessage,
+  };
+}
+
+export function selectOpenWorkspacePaths(state: WorkspaceStoreState): string[] {
+  return state.workspaces.map((workspace) => workspace.worktreePath);
 }
 
 export function SettingsSection({
@@ -681,6 +698,7 @@ function App() {
   const {
     initialized,
     bootstrapping,
+    startupError,
     activeSection,
     paletteOpen,
     activeWorkspaceId,
@@ -692,6 +710,7 @@ function App() {
     useShallow((state) => ({
       initialized: state.initialized,
       bootstrapping: state.bootstrapping,
+      startupError: state.startupError,
       activeSection: state.activeSection,
       paletteOpen: state.paletteOpen,
       activeWorkspaceId: state.activeWorkspaceId,
@@ -778,19 +797,12 @@ function App() {
     }),
   );
 
-  const worktreeManager = useWorkspaceStore(
-    useShallow((state) => ({
-      repoRoot: state.worktreeManager.repoRoot,
-      loading: state.worktreeManager.loading,
-      error: state.worktreeManager.error,
-      entries: state.worktreeManager.entries,
-      lastLoadedAt: state.worktreeManager.lastLoadedAt,
-      lastActionMessage: state.worktreeManager.lastActionMessage,
-      openWorkspacePaths: state.workspaces.map((workspace) => workspace.worktreePath),
-    })),
-  );
+  const worktreeManager = useWorkspaceStore(useShallow(selectWorktreeManagerCore));
+  const openWorkspacePaths = useWorkspaceStore(useShallow(selectOpenWorkspacePaths));
 
   const bootstrap = useWorkspaceStore((state) => state.bootstrap);
+  const clearStartupError = useWorkspaceStore((state) => state.clearStartupError);
+  const resetLocalStateAndRebootstrap = useWorkspaceStore((state) => state.resetLocalStateAndRebootstrap);
   const setActiveSection = useWorkspaceStore((state) => state.setActiveSection);
   const setTheme = useWorkspaceStore((state) => state.setTheme);
   const setReduceMotion = useWorkspaceStore((state) => state.setReduceMotion);
@@ -1023,6 +1035,25 @@ function App() {
 
   const terminalSubtitle = null;
 
+  if (startupError) {
+    return (
+      <main className="app-shell app-loading">
+        <StartupCrashScreen
+          title="Startup failed"
+          message="SuperVibing hit an error during startup. You can retry or reset local app state."
+          details={startupError}
+          onRetry={() => {
+            clearStartupError();
+            void bootstrap();
+          }}
+          onResetLocalData={() => {
+            void resetLocalStateAndRebootstrap();
+          }}
+        />
+      </main>
+    );
+  }
+
   if (!initialized || bootstrapping) {
     return (
       <main className="app-shell app-loading">
@@ -1033,7 +1064,7 @@ function App() {
 
   const isTerminalSection = activeSection === "terminal";
   const openWorktreePathKeys = new Set(
-    worktreeManager.openWorkspacePaths.map((path) => path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()),
+    openWorkspacePaths.map((path) => path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()),
   );
 
   return (

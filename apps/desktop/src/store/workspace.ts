@@ -19,7 +19,13 @@ import {
 } from "../lib/tauri";
 import { toRuntimePaneId } from "../lib/panes";
 import { generateTilingLayouts } from "../lib/tiling";
-import { loadPersistedPayload, saveBlueprints, saveSessionState, saveSnapshots } from "../lib/persistence";
+import {
+  loadPersistedPayload,
+  resetPersistedPayload,
+  saveBlueprints,
+  saveSessionState,
+  saveSnapshots,
+} from "../lib/persistence";
 import { DEFAULT_THEME_ID, isThemeId } from "../theme/themes";
 import type {
   AgentAllocation,
@@ -84,6 +90,7 @@ interface ManagedWorktreeRemoveInput {
 interface WorkspaceStore {
   initialized: boolean;
   bootstrapping: boolean;
+  startupError: string | null;
   activeSection: AppSection;
   paletteOpen: boolean;
   echoInput: boolean;
@@ -101,6 +108,8 @@ interface WorkspaceStore {
   worktreeManager: WorktreeManagerState;
 
   bootstrap: () => Promise<void>;
+  clearStartupError: () => void;
+  resetLocalStateAndRebootstrap: () => Promise<void>;
   setActiveSection: (section: AppSection) => void;
   setPaletteOpen: (open: boolean) => void;
   setEchoInput: (enabled: boolean) => void;
@@ -170,6 +179,21 @@ function defaultUiPreferences(): UiPreferences {
     highContrastAssist: false,
     density: "comfortable",
   };
+}
+
+function formatStartupError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (message.length > 0) {
+      return message;
+    }
+  }
+
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error.trim();
+  }
+
+  return "Failed to initialize SuperVibing.";
 }
 
 function sanitizeUiPreferences(preferences?: Partial<UiPreferences> | null): UiPreferences {
@@ -1464,6 +1488,7 @@ async function runWorkspaceBootQueue(
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   initialized: false,
   bootstrapping: false,
+  startupError: null,
   activeSection: "terminal",
   paletteOpen: false,
   echoInput: false,
@@ -1491,72 +1516,124 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     clearAllWorkspaceBoot(set);
     paneTerminalReadyWaiters.clear();
 
-    set({ bootstrapping: true });
-
-    const persisted = await loadPersistedPayload();
-    const persistedSession = persisted.session;
-
-    let session: SessionState | null = null;
-    if (persistedSession) {
-      session = isLegacySessionState(persistedSession)
-        ? migrateLegacySession(persistedSession)
-        : sanitizeSession(persistedSession);
-    }
-
-    if (!session || session.workspaces.length === 0) {
-      const cwd = await getDefaultCwd();
-      const context = await resolveRepoContextSafe(cwd);
-
-      const workspace = createWorkspaceRuntime({
-        id: "workspace-main",
-        name: "Workspace 1",
-        directory: context.worktreePath,
-        repoRoot: context.repoRoot,
-        worktreePath: context.worktreePath,
-        branch: context.branch,
-        paneCount: 1,
-      });
-
-      session = {
-        workspaces: [workspace],
-        activeWorkspaceId: workspace.id,
-        activeSection: "terminal",
-        echoInput: false,
-        uiPreferences: defaultUiPreferences(),
-      };
-    }
-
     set({
-      activeSection: session.activeSection,
-      echoInput: session.echoInput,
-      themeId: session.uiPreferences.theme,
-      reduceMotion: session.uiPreferences.reduceMotion,
-      highContrastAssist: session.uiPreferences.highContrastAssist,
-      density: session.uiPreferences.density,
-      workspaces: session.workspaces,
-      activeWorkspaceId: session.activeWorkspaceId,
-      focusedPaneByWorkspace: buildFocusedPaneMap(session.workspaces),
-      terminalReadyPanesByWorkspace: {},
-      snapshots: persisted.snapshots,
-      blueprints: persisted.blueprints,
-      worktreeManager: defaultWorktreeManagerState(),
-      initialized: true,
-      bootstrapping: false,
+      bootstrapping: true,
+      startupError: null,
     });
-    enqueueAutomationSync(get);
 
-    const activeWorkspace = activeWorkspaceOf(get());
-    if (activeWorkspace) {
-      clearSuspendTimer(activeWorkspace.id);
-      await spawnWorkspacePanes(get, activeWorkspace.id, false);
-      get().resumeWorkspaceBoot(activeWorkspace.id);
-      void get().startWorkspaceBoot(activeWorkspace.id, {
-        eligiblePaneIds: collectEligibleLaunchPaneIds(activeWorkspace),
+    try {
+      const persisted = await loadPersistedPayload();
+      const persistedSession = persisted.session;
+
+      let session: SessionState | null = null;
+      if (persistedSession) {
+        session = isLegacySessionState(persistedSession)
+          ? migrateLegacySession(persistedSession)
+          : sanitizeSession(persistedSession);
+      }
+
+      if (!session || session.workspaces.length === 0) {
+        const cwd = await getDefaultCwd();
+        const context = await resolveRepoContextSafe(cwd);
+
+        const workspace = createWorkspaceRuntime({
+          id: "workspace-main",
+          name: "Workspace 1",
+          directory: context.worktreePath,
+          repoRoot: context.repoRoot,
+          worktreePath: context.worktreePath,
+          branch: context.branch,
+          paneCount: 1,
+        });
+
+        session = {
+          workspaces: [workspace],
+          activeWorkspaceId: workspace.id,
+          activeSection: "terminal",
+          echoInput: false,
+          uiPreferences: defaultUiPreferences(),
+        };
+      }
+
+      set({
+        activeSection: session.activeSection,
+        echoInput: session.echoInput,
+        themeId: session.uiPreferences.theme,
+        reduceMotion: session.uiPreferences.reduceMotion,
+        highContrastAssist: session.uiPreferences.highContrastAssist,
+        density: session.uiPreferences.density,
+        workspaces: session.workspaces,
+        activeWorkspaceId: session.activeWorkspaceId,
+        focusedPaneByWorkspace: buildFocusedPaneMap(session.workspaces),
+        terminalReadyPanesByWorkspace: {},
+        snapshots: persisted.snapshots,
+        blueprints: persisted.blueprints,
+        worktreeManager: defaultWorktreeManagerState(),
+        initialized: true,
+        bootstrapping: false,
+        startupError: null,
       });
-      void get().refreshWorktrees();
-    }
+      enqueueAutomationSync(get);
 
-    await flushPersist(get);
+      const activeWorkspace = activeWorkspaceOf(get());
+      if (activeWorkspace) {
+        clearSuspendTimer(activeWorkspace.id);
+        await spawnWorkspacePanes(get, activeWorkspace.id, false);
+        get().resumeWorkspaceBoot(activeWorkspace.id);
+        void get().startWorkspaceBoot(activeWorkspace.id, {
+          eligiblePaneIds: collectEligibleLaunchPaneIds(activeWorkspace),
+        });
+        void get().refreshWorktrees();
+      }
+
+      await flushPersist(get);
+    } catch (error) {
+      set({
+        initialized: false,
+        bootstrapping: false,
+        startupError: formatStartupError(error),
+      });
+    }
+  },
+
+  clearStartupError: () => {
+    set({ startupError: null });
+  },
+
+  resetLocalStateAndRebootstrap: async () => {
+    clearAllPendingPaneInit();
+    clearAllSuspendTimers();
+    clearAllWorkspaceBoot(set);
+    spawnInFlight.clear();
+    paneTerminalReadyWaiters.clear();
+    paneInputBuffers.clear();
+    paneInputFlushes.clear();
+    paneInputTimers.forEach((timer) => clearTimeout(timer));
+    paneInputTimers.clear();
+
+    await resetPersistedPayload();
+    set({
+      initialized: false,
+      bootstrapping: false,
+      startupError: null,
+      activeSection: "terminal",
+      paletteOpen: false,
+      echoInput: false,
+      themeId: DEFAULT_THEME_ID,
+      reduceMotion: false,
+      highContrastAssist: false,
+      density: "comfortable",
+      workspaces: [],
+      activeWorkspaceId: null,
+      focusedPaneByWorkspace: {},
+      terminalReadyPanesByWorkspace: {},
+      workspaceBootSessions: {},
+      snapshots: [],
+      blueprints: [],
+      worktreeManager: defaultWorktreeManagerState(),
+    });
+
+    await get().bootstrap();
   },
 
   setActiveSection: (section: AppSection) => {

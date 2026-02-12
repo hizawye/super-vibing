@@ -56,3 +56,9 @@ export async function saveBlueprints(blueprints: Blueprint[]): Promise<void> {
   await store.set("blueprints", blueprints);
   await store.save();
 }
+
+export async function resetPersistedPayload(): Promise<void> {
+  const store = await getStore();
+  await store.reset();
+  await store.save();
+}
