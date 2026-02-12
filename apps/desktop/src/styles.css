@@ -814,3 +814,331 @@ input[type="range"] {
     width: auto;
   }
 }
+
+/* Flat UI pass: remove rounded-card look and collapse excess spacing. */
+.app-shell {
+  gap: 0;
+  padding: 0;
+}
+
+.top-chrome {
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  padding: 6px 8px;
+  gap: 6px;
+}
+
+.top-chrome-left {
+  gap: 4px;
+}
+
+.brand-dot,
+.section-pill,
+.workspace-tab-shell,
+.workspace-tab-count,
+.workspace-add,
+.chrome-icon-btn,
+.toolbar-btn,
+.subtle-btn,
+.primary-btn,
+.layout-mode-toggle,
+.text-input,
+.pane-card,
+.empty-icon,
+.shortcuts-group,
+.shortcut-row kbd,
+.palette-modal,
+.palette-item,
+.palette-empty,
+.section-menu,
+.section-menu-item,
+.section-menu-item small,
+.workspace-modal,
+.modal-close,
+.workspace-modal-section,
+.layout-card,
+.expand-toggle,
+.agent-row,
+.stepper-btn {
+  border-radius: 0;
+}
+
+.workspace-tabs {
+  gap: 0;
+}
+
+.workspace-tab {
+  gap: 4px;
+  padding: 6px 10px;
+}
+
+.section-surface {
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: linear-gradient(180deg, rgba(7, 10, 18, 0.94), rgba(5, 8, 15, 0.94));
+}
+
+.terminal-head {
+  padding: 8px;
+  gap: 8px;
+}
+
+.terminal-controls {
+  gap: 4px;
+}
+
+.check-label {
+  gap: 4px;
+}
+
+.subtle-btn,
+.toolbar-btn {
+  padding: 5px 8px;
+}
+
+.primary-btn {
+  padding: 6px 9px;
+}
+
+.grid-shell {
+  padding: 0;
+  background: transparent;
+}
+
+.pane-card {
+  background: transparent;
+}
+
+.pane-header {
+  gap: 6px;
+  padding: 4px 6px;
+}
+
+.terminal-meta {
+  padding: 3px 6px;
+}
+
+.zoom-grid {
+  padding: 0;
+}
+
+.section-head {
+  padding: 8px;
+}
+
+.shortcuts-shell {
+  padding: 0;
+  gap: 0;
+}
+
+.shortcuts-group {
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  background: transparent;
+}
+
+.shortcuts-group h3,
+.shortcut-row {
+  padding: 8px;
+}
+
+.palette-modal {
+  gap: 0;
+  padding: 8px;
+}
+
+.palette-footer {
+  gap: 6px;
+}
+
+.section-menu {
+  padding: 6px;
+}
+
+.section-menu-item {
+  padding: 6px;
+}
+
+.workspace-modal {
+  padding: 10px;
+  gap: 6px;
+}
+
+.workspace-modal-section {
+  padding: 8px;
+  gap: 6px;
+  background: transparent;
+}
+
+.layout-grid,
+.directory-row,
+.agent-panel,
+.agent-panel-toolbar,
+.agent-list,
+.count-stepper,
+.workspace-modal-actions {
+  gap: 4px;
+}
+
+/* Brutalist refinement: solid monochrome surfaces, minimal effects. */
+:root {
+  --bg-0: #04070f;
+  --bg-1: #060b16;
+  --bg-2: #0a1221;
+  --bg-3: #0d1628;
+  --line-soft: #1a2946;
+  --line-strong: #28406a;
+  --text-main: #d7e5ff;
+  --text-dim: #90a4c8;
+  --accent: #4a86f3;
+  --accent-soft: #2a4f8f;
+}
+
+html,
+body,
+#root {
+  background: var(--bg-0);
+}
+
+.top-chrome,
+.section-surface,
+.grid-shell,
+.pane-card,
+.palette-modal,
+.workspace-modal,
+.section-menu,
+.workspace-modal-section,
+.shortcuts-group,
+.palette-item,
+.layout-card,
+.agent-row,
+.expand-toggle {
+  background: var(--bg-1);
+}
+
+.workspace-tab-shell,
+.workspace-tab-shell.active {
+  background: var(--bg-1);
+  border-color: var(--line-soft);
+}
+
+.workspace-tab-shell.active {
+  border-color: var(--accent);
+}
+
+.section-pill,
+.workspace-add,
+.chrome-icon-btn,
+.subtle-btn,
+.toolbar-btn {
+  background: transparent;
+}
+
+.subtle-btn,
+.toolbar-btn,
+.layout-mode-toggle,
+.layout-mode-btn,
+.text-input,
+.section-menu-item,
+.palette-item,
+.layout-card,
+.agent-row,
+.expand-toggle {
+  border-color: var(--line-soft);
+}
+
+.primary-btn {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.palette-overlay,
+.section-menu-overlay,
+.workspace-modal-overlay {
+  backdrop-filter: none;
+}
+
+.palette-modal {
+  box-shadow: none;
+}
+
+.terminal-head,
+.section-head,
+.pane-header,
+.terminal-meta,
+.palette-footer {
+  border-color: var(--line-soft);
+}
+
+/* Contrast tuning for flat/brutalist theme. */
+.workspace-tab-shell.active {
+  background: var(--bg-2);
+}
+
+.workspace-tab-shell .workspace-tab {
+  color: #b9c9e6;
+}
+
+.workspace-tab-shell.active .workspace-tab {
+  color: #eef4ff;
+}
+
+.workspace-tab-close {
+  color: #b2c3e1;
+}
+
+.section-pill,
+.workspace-add,
+.chrome-icon-btn,
+.subtle-btn,
+.toolbar-btn,
+.layout-mode-btn,
+.section-menu-item,
+.palette-item,
+.layout-card,
+.expand-toggle,
+.agent-row {
+  background: var(--bg-2);
+  border-color: var(--line-strong);
+  color: var(--text-main);
+}
+
+.section-pill:hover,
+.workspace-add:hover,
+.chrome-icon-btn:hover,
+.subtle-btn:hover,
+.toolbar-btn:hover,
+.layout-mode-btn:hover,
+.section-menu-item:hover,
+.palette-item:hover,
+.layout-card:hover,
+.expand-toggle:hover,
+.agent-row:hover {
+  border-color: var(--accent-soft);
+  background: #0e1a31;
+}
+
+.compact-label,
+.check-label,
+.input-label {
+  color: #c0d2f1;
+}
+
+.pane-header,
+.terminal-meta,
+.palette-footer {
+  color: #a9bddf;
+}
+
+.layout-mode-btn.active,
+.section-menu-item.active,
+.palette-item.active,
+.layout-card.active {
+  border-color: var(--accent);
+  background: rgba(74, 134, 243, 0.22);
+  color: #eef4ff;
+}

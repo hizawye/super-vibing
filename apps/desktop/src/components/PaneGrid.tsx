@@ -5,7 +5,7 @@ import { useWorkspaceStore } from "../store/workspace";
 import { TerminalPane } from "./TerminalPane";
 
 const FluidGridLayout = WidthProvider(GridLayout);
-const GRID_MARGIN: [number, number] = [12, 12];
+const GRID_MARGIN: [number, number] = [0, 0];
 const DEFAULT_ROW_HEIGHT = 110;
 const MIN_ROW_HEIGHT = 32;
 

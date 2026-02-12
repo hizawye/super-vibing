@@ -8,12 +8,14 @@ vi.mock("react-grid-layout", () => {
     children,
     onLayoutChange,
     layout,
+    margin,
     isDraggable = true,
     isResizable = true,
   }: {
     children: ReactNode;
     onLayoutChange?: (layout: Array<Record<string, unknown>>) => void;
     layout: Array<Record<string, unknown>>;
+    margin?: [number, number];
     isDraggable?: boolean;
     isResizable?: boolean;
   }) => (
@@ -21,6 +23,7 @@ vi.mock("react-grid-layout", () => {
       data-testid="mock-grid"
       data-draggable={String(isDraggable)}
       data-resizable={String(isResizable)}
+      data-margin={JSON.stringify(margin ?? null)}
       onClick={() => {
         onLayoutChange?.(layout);
       }}
@@ -101,6 +104,7 @@ describe("PaneGrid", () => {
 
     expect(screen.getByTestId("terminal-pane-1")).toBeInTheDocument();
     expect(screen.getByTestId("terminal-pane-2")).toBeInTheDocument();
+    expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-margin", "[0,0]");
 
     fireEvent.click(screen.getByTestId("mock-grid"));
     expect(onLayoutsChange).toHaveBeenCalledWith(layouts);
