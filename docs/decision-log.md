@@ -519,3 +519,26 @@ Ran parity guard: `./scripts/verify-release-version.sh v0.1.8`.
 **Rationale:** Aligns pane keyboard workflow with tmux defaults while preserving existing global app navigation ergonomics.
 **Consequences:** Non-tmux pane shortcuts are removed from global handler; tmux prefix state is now part of keyboard event flow.
 **Alternatives Considered:** Keeping legacy pane shortcuts in parallel, and implementing full tmux command/copy-mode emulation in one pass.
+
+## [2026-02-12] - Startup Crash Recovery + Local State Reset Path
+**Context:** App launch could flash and end in a black screen when startup or render failed, leaving users without an in-app recovery path.
+**Decision:** Add layered startup resilience in frontend/store:
+- wrap root render with `StartupErrorBoundary` and recovery fallback UI,
+- add startup failure capture in workspace bootstrap (`startupError` with bootstrap `try/catch`),
+- add local-state recovery action `resetLocalStateAndRebootstrap`,
+- add persistence reset API in `src/lib/persistence.ts` using plugin-store `reset()` + `save()`,
+- log startup `error`/`unhandledrejection` events with `[startup]` prefix for debugging.
+**Rationale:** Ensures startup failures are visible and recoverable without terminal intervention, while preserving quick retry and actionable diagnostics.
+**Consequences:** Startup flow now has explicit failure states and reset affordances; local reset may clear saved session/snapshot/blueprint state by design.
+**Alternatives Considered:** Silent auto-reset, log-only failure handling, and relying solely on external debug tooling.
+
+## [2026-02-12] - React 19 Selector Stability Hardening for Zustand Subscriptions
+**Context:** Browser console showed React external-store stack traces (`getRootForUpdatedFiber`, `forceStoreRerender`, `updateStoreInstance`) and occasional black-screen startup behavior, indicating unstable selector outputs in `useSyncExternalStore` subscription flow.
+**Decision:** Refactor `App.tsx` selector wiring to remove nested derived arrays from `useShallow` object selectors:
+- extract `selectWorktreeManagerCore` for stable worktree-manager fields,
+- extract `selectOpenWorkspacePaths` as an independent selector,
+- stop returning `openWorkspacePaths: state.workspaces.map(...)` inside the `worktreeManager` object selector.
+Added regression tests in `apps/desktop/src/App.selectors.test.ts` to document and prevent the prior unstable selector shape.
+**Rationale:** React 19 is stricter about snapshot stability; separating derived arrays from object selectors avoids false-positive selection changes and rerender thrashing.
+**Consequences:** App store subscriptions are more deterministic under frequent updates; selector intent is explicit and test-covered.
+**Alternatives Considered:** Keeping existing selector shape and suppressing runtime noise, or downgrading React instead of fixing selector semantics.

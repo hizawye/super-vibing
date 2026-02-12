@@ -1,5 +1,26 @@
 # Changelog
 
+## [2026-02-12] - React Selector Stability Fix for Startup Loop
+### Fixed
+- Fixed a React 19 external-store rerender loop risk by removing nested derived arrays from a `useShallow` object selector in `apps/desktop/src/App.tsx`.
+- Split selector logic into `selectWorktreeManagerCore` and `selectOpenWorkspacePaths` so snapshot comparisons remain stable.
+
+### Added
+- Added selector regression tests in `apps/desktop/src/App.selectors.test.ts` to document and guard against the prior unstable selector shape.
+
+## [2026-02-12] - Startup Crash Recovery and Black-Screen Diagnostics
+### Added
+- Added `StartupErrorBoundary` fallback around app root render to surface render-time crashes with recovery actions.
+- Added `StartupCrashScreen` with `Retry`, `Reset local data`, and optional error detail view.
+- Added store startup failure state (`startupError`) and recovery actions (`clearStartupError`, `resetLocalStateAndRebootstrap`).
+- Added persistence reset helper (`resetPersistedPayload`) using plugin-store reset/save flow.
+- Added startup regression tests for boundary fallback and persistence reset behavior.
+
+### Changed
+- Hardened workspace bootstrap to always clear bootstrapping state and capture initialization errors instead of leaving a black/blank UI.
+- Added startup error logging hooks for window `error` and `unhandledrejection` events.
+- Updated architecture/project status docs with Linux WebKit compositor diagnostics.
+
 ## [2026-02-12] - Terminal UX and tmux Core Shortcut Refresh
 ### Added
 - Added tmux-style core pane shortcut layer with `Ctrl+B` prefix and mapped pane actions (`%`, `"`, `c`, `n`, `p`, `o`, `0..9`, arrows, `z`, `x`, `&`, `Alt+Arrow`).

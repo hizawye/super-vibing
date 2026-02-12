@@ -1,6 +1,6 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (tmux-prefix-shortcuts-core)
+- Last Updated: 2026-02-12 (react-selector-stability-fix)
 
 - Current progress:
   - Worktree manager system remains in place across backend/store/UI with enriched worktree metadata and safe lifecycle actions.
@@ -45,6 +45,22 @@
   - Added keyboard resize support for focused panes in freeform mode:
     - `apps/desktop/src/store/workspace.ts` includes `resizeFocusedPaneByDelta(workspaceId, dx, dy)` used by tmux `prefix+Alt+Arrow`,
     - resize is no-op outside freeform mode.
+  - Added startup crash recovery and renderer failure guardrails:
+    - frontend root is wrapped by `StartupErrorBoundary` in `apps/desktop/src/main.tsx`,
+    - startup/runtime global listeners now log `[startup]` `error` and `unhandledrejection` events,
+    - new recovery UI `apps/desktop/src/components/StartupCrashScreen.tsx` provides `Retry`, `Reset local data`, and detail toggle.
+  - Hardened bootstrap failure handling in `apps/desktop/src/store/workspace.ts`:
+    - added `startupError` state and fail-safe bootstrap `try/catch`,
+    - added `clearStartupError` and `resetLocalStateAndRebootstrap`,
+    - added persistence reset API `resetPersistedPayload` in `apps/desktop/src/lib/persistence.ts`.
+  - Added regression coverage for startup recovery:
+    - `apps/desktop/src/components/StartupErrorBoundary.test.tsx`,
+    - `apps/desktop/src/lib/persistence.test.ts`,
+    - extended `apps/desktop/src/store/workspace.test.ts` with bootstrap failure and reset+rebootstrap scenarios.
+  - Fixed React external-store rerender loop risk in frontend selector wiring:
+    - `apps/desktop/src/App.tsx` now separates worktree manager core selector from derived open-workspace paths selector,
+    - removed nested inline `.map()` output from a `useShallow` object selector to keep snapshot comparisons stable under React 19,
+    - added selector stability regressions in `apps/desktop/src/App.selectors.test.ts`.
 
 - Verification:
   - `cargo test -q` (in `apps/desktop/src-tauri`) ✅
@@ -67,24 +83,31 @@
   - `pnpm --filter @supervibing/desktop typecheck` ✅
   - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/store/workspace.test.ts` ✅
     - desktop tests passed (77/77 in run scope).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/store/workspace.test.ts src/components/StartupErrorBoundary.test.tsx src/lib/persistence.test.ts` ✅
+    - desktop tests passed (82/82 in run scope).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/App.selectors.test.ts src/App.shortcuts.test.ts src/store/workspace.test.ts` ✅
+    - desktop tests passed (85/85 in run scope).
+  - `timeout 35s pnpm tauri:dev` ✅
+    - Vite + Tauri dev app launched cleanly without immediate startup panic in terminal output.
 
 - Blockers/Bugs:
   - No functional blockers identified.
+  - User-reported React stack flood (`forceStoreRerender/updateStoreInstance`) is addressed in selector wiring; browser-console confirmation in the reporter environment is still pending.
+  - Packaged-app Linux compositor compatibility still depends on host WebKit/GPU stack; diagnostics documented in `docs/architecture.md`.
   - Automation bridge currently relies on localhost binding without auth; acceptable for local-only automation, but token-based guard may be needed for stricter host-hardening.
   - Non-fatal shell startup warnings (`fnm/starship` permission and nvm prefix warnings) continue in command output and do not affect build/test outcomes.
   - Live skill smoke tests for `workspaces`/job execution are blocked until SuperVibing desktop is running and serving the automation port.
 
 - Next immediate starting point:
-  - Manually verify tmux prefix workflow in active pane (`Ctrl+B` then `%`, `"`, `n/p/o`, `0..9`, arrows, `z`, `x`, `&`) and confirm expected pane actions.
-  - Manually verify `Ctrl+B` timeout behavior (prefixed key ignored after ~1s if no second key is pressed).
-  - Manually verify freeform-only resizing via `Ctrl+B` + `Alt+Arrow`.
-  - Manually verify `Ctrl+Shift+C` copy behavior inside active pane terminals (selection and empty-selection no-op cases).
-  - Manually verify new workspace first-pane glyph spacing stays correct without requiring second-pane creation.
-  - Manually verify terminal history/scrollback persists when switching between 2+ active workspaces repeatedly.
-  - Manually verify workspace switching UX with the new 10-minute suspend window.
-  - Launch SuperVibing desktop and run full skill smoke tests:
-    - `python3 ~/.codex/skills/supervibing-automation/scripts/supervibing_automation.py --json health`,
-    - `python3 ~/.codex/skills/supervibing-automation/scripts/supervibing_automation.py --json workspaces`,
-    - submit each action (`create-panes`, `create-worktree`, `create-branch`, `run-command`) and verify waited job outcomes.
-  - Optionally add automation endpoint auth token and request signing if cross-user hardening is required.
-  - Stage and commit backend/frontend/docs changes once manual flow is validated.
+  - Reproduce the previously failing startup path in the reporter environment and confirm browser console no longer shows the `getRootForUpdatedFiber` / `forceStoreRerender` stack.
+  - Manually verify startup recovery UX in packaged and dev launch paths:
+    - force bootstrap failure and confirm crash screen with Retry/Reset actions,
+    - confirm Reset recovers to default workspace after clearing local store.
+  - Run Linux compositor diagnostics for black-screen reports:
+    - `pnpm tauri:debug`,
+    - `WEBKIT_DISABLE_DMABUF_RENDERER=1 pnpm tauri:debug`,
+    - `WEBKIT_DISABLE_COMPOSITING_MODE=1 pnpm tauri:debug`.
+  - Re-run manual tmux/terminal/workspace checks after startup recovery patch to confirm no regressions.
+  - Launch SuperVibing desktop and run full automation skill smoke tests once app is active.

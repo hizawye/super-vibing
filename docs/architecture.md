@@ -21,6 +21,9 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 ## State model
 - Zustand store (`src/store/workspace.ts`) stores pane count/order/layouts, pane metadata, workspace tabs, and UI modes.
 - Store actions coordinate spawn/close/broadcast/worktree and session persistence.
+- React 19 selector stability rule:
+  - avoid nested derived arrays/objects inside `useShallow` object selectors,
+  - prefer split selectors (`core object` + `derived array`) or derive with `useMemo` after selection.
 
 ## UI model
 - Grid engine: `react-grid-layout`, supporting 1..16 panes.
@@ -55,6 +58,22 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
   - last session state,
   - named snapshots,
   - quick-launch blueprints.
+- Store reset path uses plugin-store `reset()` + `save()` to recover from corrupt startup state.
+
+## Startup resilience
+- App root is wrapped in a render error boundary (`StartupErrorBoundary`) and logs startup failures to console (`[startup]` prefix).
+- Workspace bootstrap in Zustand is fail-safe:
+  - startup errors are captured in `startupError`,
+  - boot flag is always cleared on failure,
+  - UI renders a recovery surface with `Retry` and `Reset local data`.
+- Recovery action `resetLocalStateAndRebootstrap` clears persisted local state and re-runs bootstrap from defaults.
+
+## Linux WebKit diagnostics
+- For renderer flash/black-screen incidents, validate startup with:
+  - `pnpm tauri:debug`,
+  - `WEBKIT_DISABLE_DMABUF_RENDERER=1 pnpm tauri:debug`,
+  - `WEBKIT_DISABLE_COMPOSITING_MODE=1 pnpm tauri:debug`.
+- If env-var launch recovers rendering, classify as compositor/GPU host issue; otherwise treat as app startup/runtime failure.
 
 ## Validation and CI
 - Frontend test harness: Vitest + Testing Library + jsdom (`apps/desktop/vitest.config.ts`).
