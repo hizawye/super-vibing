@@ -55,3 +55,10 @@
 **Rationale:** Ensures the shell is ready to accept the command; avoids dropped writes during early PTY startup.
 **Consequences:** Slight delay before agent starts; backend init support remains unused but available.
 **Alternatives Considered:** Using a first-output trigger, or relying only on backend init writes.
+
+## [2026-02-12] - Deterministic Pane Spawn and Init Command Delivery
+**Context:** Codex/Claude launches were still intermittently failing when creating new workspaces due to concurrent `ensurePaneSpawned` calls from workspace creation and pane mount lifecycle.
+**Decision:** Add per-pane in-flight spawn deduplication, persist pending init commands across concurrent callers, flush init command exactly once after running state, and retry once on `pane already exists` conflicts.
+**Rationale:** Removes timing-dependent behavior and prevents command-loss when spawn callers race.
+**Consequences:** Store logic is more stateful (`spawnInFlight` + `pendingPaneInit`) but startup behavior is deterministic and test-covered.
+**Alternatives Considered:** Increasing fixed delays, relying on backend init write only, and removing pane-mount spawn checks.
