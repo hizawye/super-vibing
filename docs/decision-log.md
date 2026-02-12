@@ -313,3 +313,15 @@ Modal/palette readability kept via a faint translucent overlay panel.
 **Rationale:** Reclaims memory earlier, lowers idle render/subscription cost, and trims unnecessary UI/runtime overhead without changing product behavior.
 **Consequences:** Inactive workspaces suspend sooner; terminal panes retain less scrollback history; code surface is smaller and easier to maintain.
 **Alternatives Considered:** Aggressive lifecycle changes (auto-closing inactive panes) and large store architecture rewrites.
+
+## [2026-02-12] - Tag-Driven GitHub Releases with In-App Updater Controls
+**Context:** The desktop app needed a production release path on GitHub plus a user-facing way to check/install updates from Settings.
+**Decision:** Implement a signed updater pipeline and app-side update controls:
+- added `.github/workflows/release.yml` triggered by `v*.*.*` tags on Linux,
+- enforced presence of `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in CI,
+- enabled `bundle.createUpdaterArtifacts` and configured updater endpoint/public key,
+- registered `tauri-plugin-updater` in Rust and granted `updater:default` capability,
+- added Settings “App Updates” flow (`check` -> `install` prompt -> `restart now`).
+**Rationale:** Establishes a reproducible signed-release workflow while giving end users a direct in-app update path.
+**Consequences:** Release publishing now depends on signing secrets and matching updater keypair; Settings now includes update lifecycle state management.
+**Alternatives Considered:** Manual GitHub uploads without updater metadata and external-only update instructions.
