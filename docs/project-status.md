@@ -1,8 +1,17 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (agent-startup-defaults-shortcuts-and-automation-hardening)
+- Last Updated: 2026-02-12 (release-parity-hardening-and-v0.1.11-recovery)
 
 - Current progress:
+  - Hardened release/version pipeline guardrails:
+    - `scripts/verify-release-version.sh` now validates parity across root/desktop/tauri manifests plus release tag,
+    - failure output now reports all detected versions and a direct remediation command.
+  - Added automated release-prep helper:
+    - new `scripts/prepare-release-version.sh`,
+    - root pnpm commands `release:prepare` and `release:verify` for local/CI parity consistency.
+  - Updated release workflow parity step in `.github/workflows/release.yml` to invoke `pnpm run release:verify -- <tag>`.
+  - Applied release recovery metadata alignment:
+    - `package.json`, `apps/desktop/package.json`, and `apps/desktop/src-tauri/tauri.conf.json` are now set to version `0.1.11`.
   - Worktree manager system remains in place across backend/store/UI with enriched worktree metadata and safe lifecycle actions.
   - Added local automation bridge in `apps/desktop/src-tauri/src/lib.rs`:
     - HTTP listener on `127.0.0.1:47631`,
@@ -77,6 +86,10 @@
     - completed-job retention cap to bound in-memory automation job growth.
 
 - Verification:
+  - `pnpm run release:verify -- v0.1.10` ✅ (before version bump, parity passed at `0.1.10`)
+  - `pnpm run release:verify -- v0.1.11` ✅ expected fail before bump (mismatch surfaced with remediation hint)
+  - `pnpm run release:prepare -- 0.1.11` ✅
+  - `pnpm run release:verify -- v0.1.11` ✅ (after version bump)
   - `cargo test -q` (in `apps/desktop/src-tauri`) ✅
     - Rust tests passed (10/10).
   - `cargo check -q` (in `apps/desktop/src-tauri`) ✅
@@ -113,6 +126,7 @@
   - `cargo check -q` (in `apps/desktop/src-tauri`) ✅
 
 - Blockers/Bugs:
+  - `v0.1.11` release tag was previously published with stale `0.1.10` metadata and failed release parity; recovery uses force-repointed tag strategy.
   - No functional blockers identified.
   - User-reported React stack flood (`forceStoreRerender/updateStoreInstance`) is addressed in selector wiring; browser-console confirmation in the reporter environment is still pending.
   - Packaged-app Linux compositor compatibility still depends on host WebKit/GPU stack; diagnostics documented in `docs/architecture.md`.
@@ -121,6 +135,11 @@
   - Live skill smoke tests for `workspaces`/job execution are blocked until SuperVibing desktop is running and serving the automation port.
 
 - Next immediate starting point:
+  - Push release parity/tooling changes and force-update annotated tag `v0.1.11`, then confirm `Release` workflow success on corrected tag.
+  - After release success, formalize release checklist around:
+    - `pnpm run release:prepare -- X.Y.Z`,
+    - commit/version review,
+    - tag/push and workflow monitoring.
   - Manual UX pass:
     - verify settings-edited startup commands are applied for new workspaces and imports,
     - verify app/tmux shortcuts while cursor is inside active xterm pane in a real desktop run.

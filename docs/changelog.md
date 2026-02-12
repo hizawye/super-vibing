@@ -1,5 +1,18 @@
 # Changelog
 
+## [2026-02-12] - Release Workflow Parity Hardening and v0.1.11 Recovery
+### Added
+- Added `scripts/prepare-release-version.sh` and root pnpm command `release:prepare` to update release versions in all app manifests (`package.json`, `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`) in one step.
+- Added root pnpm command `release:verify` for local/CI parity checks.
+
+### Changed
+- Strengthened `scripts/verify-release-version.sh` to enforce parity across all three manifest version sources (not only Tauri config).
+- Improved release parity failure output with explicit detected-version diagnostics and direct remediation command hints.
+- Updated release workflow parity step to use `pnpm run release:verify -- <tag>` for consistent local/CI behavior.
+
+### Fixed
+- Fixed failed `v0.1.11` release parity by aligning all release manifest versions to `0.1.11`.
+
 ## [2026-02-12] - Agent Startup Defaults, Terminal Shortcut Scope, and Automation Hardening
 ### Added
 - Added global per-agent startup command defaults (`claude`, `codex`, `gemini`, `cursor`, `opencode`) in Settings and persisted session state.

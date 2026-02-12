@@ -87,3 +87,8 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 - Frontend test harness: Vitest + Testing Library + jsdom (`apps/desktop/vitest.config.ts`).
 - Rust unit tests validate parser/sanitizer/cwd helpers.
 - CI (`.github/workflows/ci.yml`) runs frontend typecheck/tests/build and rust check/tests on push/PR.
+- Release workflow (`.github/workflows/release.yml`) enforces strict tag/version parity before publish.
+- Release parity gate validates all version sources (`package.json`, `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`) and fails fast on drift.
+- Release preparation is codified through pnpm scripts:
+  - `pnpm run release:prepare -- X.Y.Z` to atomically bump all version sources,
+  - `pnpm run release:verify -- vX.Y.Z` to validate parity before tagging/push.

@@ -7,6 +7,23 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-12] - Multi-Manifest Release Parity Gate + pnpm Release Preparation
+**Context:** `Release` for tag `v0.1.11` failed in CI because tag/app versions drifted (`v0.1.11` vs manifest `0.1.10`), and parity checks only read `tauri.conf.json`.
+**Decision:** Harden release parity and prep flow:
+- enforce parity across all release version sources (`package.json`, `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`),
+- add `scripts/prepare-release-version.sh` and pnpm `release:prepare` to atomically bump all manifest versions,
+- run parity in workflow via `pnpm run release:verify -- <tag>` for local/CI parity behavior consistency.
+**Rationale:** Prevents hidden version drift between manifests and release tags while making the recovery path explicit and repeatable.
+**Consequences:** Release pipeline fails fast on any version source mismatch; release prep becomes a single scripted command instead of manual multi-file edits.
+**Alternatives Considered:** Keeping single-source (`tauri.conf`) parity checks and relying on manual checklist discipline.
+
+## [2026-02-12] - Forced `v0.1.11` Tag Recovery
+**Context:** A failed `v0.1.11` tag already existed on origin and user requested force-fix recovery rather than shipping a new `v0.1.12`.
+**Decision:** Align manifest versions to `0.1.11`, then recreate and force-push annotated tag `v0.1.11` to the corrected commit.
+**Rationale:** Preserves requested visible version number while unblocking the release workflow with parity-compliant metadata.
+**Consequences:** Tag history for `v0.1.11` is rewritten; consumers must treat existing local `v0.1.11` refs as stale and refetch.
+**Alternatives Considered:** Immutable-tag policy with new `v0.1.12` release.
+
 ## [2026-02-12] - Global Agent Startup Defaults in Settings
 **Context:** Agent startup commands (Claude/Codex/etc.) were static defaults and not user-editable from the runtime app settings.
 **Decision:** Add persistent global `agentStartupDefaults` in frontend session state, expose editable settings controls, and apply these defaults to newly created/imported workspaces.
