@@ -48,8 +48,12 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Verify tag matches app version
-        run: ./scripts/verify-release-version.sh
+      - name: Verify tag matches app versions
+        run: |
+          pnpm run release:verify -- "${{ github.ref_name }}" || {
+            echo "fix locally with: pnpm run release:prepare -- ${GITHUB_REF_NAME#v}" >&2
+            exit 1
+          }
 
       - name: Validate updater signing secrets
         run: |
