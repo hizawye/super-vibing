@@ -5,6 +5,7 @@ import type {
   PaneCommandResult,
   PaneEvent,
   ResizePaneRequest,
+  RuntimeStats,
   SpawnPaneRequest,
   SpawnPaneResponse,
   WorkspaceTab,
@@ -68,6 +69,14 @@ export async function closePane(paneId: string): Promise<void> {
   await invoke("close_pane", { request: { paneId } });
 }
 
+export async function suspendPane(paneId: string): Promise<void> {
+  await invoke("suspend_pane", { request: { paneId } });
+}
+
+export async function resumePane(paneId: string): Promise<void> {
+  await invoke("resume_pane", { request: { paneId } });
+}
+
 export async function createWorktree(request: CreateWorktreeRequest): Promise<WorkspaceTab> {
   return invoke<WorkspaceTab>("create_worktree", { request });
 }
@@ -80,4 +89,8 @@ export async function runGlobalCommand(
   request: GlobalCommandRequest,
 ): Promise<PaneCommandResult[]> {
   return invoke<PaneCommandResult[]>("run_global_command", { request });
+}
+
+export async function getRuntimeStats(): Promise<RuntimeStats> {
+  return invoke<RuntimeStats>("get_runtime_stats");
 }

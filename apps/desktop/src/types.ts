@@ -1,6 +1,6 @@
 import type { Layout } from "react-grid-layout";
 
-export type PaneStatus = "idle" | "running" | "closed" | "error";
+export type PaneStatus = "idle" | "spawning" | "running" | "suspended" | "closed" | "error";
 
 export interface PaneModel {
   id: string;
@@ -23,6 +23,7 @@ export interface AgentAllocation {
 }
 
 export type AppSection = "terminal" | "kanban" | "agents" | "prompts" | "settings";
+export type LayoutMode = "tiling" | "freeform";
 
 export interface WorkspaceRuntime {
   id: string;
@@ -30,6 +31,7 @@ export interface WorkspaceRuntime {
   repoRoot: string;
   branch: string;
   worktreePath: string;
+  layoutMode: LayoutMode;
   paneCount: number;
   paneOrder: string[];
   panes: Record<string, PaneModel>;
@@ -37,6 +39,20 @@ export interface WorkspaceRuntime {
   zoomedPaneId: string | null;
   agentAllocation: AgentAllocation[];
   createdAt: string;
+  updatedAt: string;
+}
+
+export type WorkspaceBootStatus = "idle" | "running" | "paused" | "completed" | "failed" | "canceled";
+
+export interface WorkspaceBootSession {
+  workspaceId: string;
+  totalAgents: number;
+  queued: number;
+  running: number;
+  completed: number;
+  failed: number;
+  status: WorkspaceBootStatus;
+  startedAt: string;
   updatedAt: string;
 }
 
@@ -138,4 +154,9 @@ export interface PaneCommandResult {
   paneId: string;
   ok: boolean;
   error?: string;
+}
+
+export interface RuntimeStats {
+  activePanes: number;
+  suspendedPanes: number;
 }

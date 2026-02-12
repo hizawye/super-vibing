@@ -6,7 +6,10 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tauri::{ipc::Channel, State};
 use tokio::sync::{Mutex, RwLock};
@@ -67,6 +70,7 @@ struct PaneRuntime {
     writer: Mutex<Box<dyn Write + Send>>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     child: Mutex<Box<dyn Child + Send>>,
+    suspended: AtomicBool,
 }
 
 struct AppState {
@@ -123,6 +127,12 @@ struct ClosePaneRequest {
     pane_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SuspendPaneRequest {
+    pane_id: String,
+}
+
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PtyEvent {
@@ -174,6 +184,13 @@ struct PaneCommandResult {
     pane_id: String,
     ok: bool,
     error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeStats {
+    active_panes: usize,
+    suspended_panes: usize,
 }
 
 #[tauri::command]
@@ -252,6 +269,7 @@ async fn spawn_pane(
         writer: Mutex::new(writer),
         master: Mutex::new(pty_pair.master),
         child: Mutex::new(child),
+        suspended: AtomicBool::new(false),
     });
 
     let inserted = {
@@ -385,6 +403,93 @@ async fn close_pane(state: State<'_, AppState>, request: ClosePaneRequest) -> Re
         .map_err(|err| AppError::pty(format!("failed to kill pane process: {err}")).to_string())
 }
 
+#[cfg(unix)]
+fn signal_process(pid: u32, signal: i32) -> Result<(), String> {
+    let status = unsafe { libc::kill(pid as libc::pid_t, signal) };
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(AppError::system(format!("failed to signal process {pid}: {}", std::io::Error::last_os_error())).to_string())
+    }
+}
+
+#[tauri::command]
+async fn suspend_pane(
+    state: State<'_, AppState>,
+    request: SuspendPaneRequest,
+) -> Result<(), String> {
+    let pane = {
+        let panes = state.panes.read().await;
+        panes.get(&request.pane_id).cloned().ok_or_else(|| {
+            AppError::not_found(format!("pane `{}` does not exist", request.pane_id)).to_string()
+        })?
+    };
+
+    let pid = {
+        let child = pane.child.lock().await;
+        child.process_id().ok_or_else(|| {
+            AppError::system(format!("pane `{}` has no process id", request.pane_id)).to_string()
+        })?
+    };
+
+    #[cfg(unix)]
+    {
+        signal_process(pid, libc::SIGSTOP)?;
+    }
+    #[cfg(not(unix))]
+    {
+        return Err(AppError::system("suspend is not supported on this platform").to_string());
+    }
+
+    pane.suspended.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+async fn resume_pane(
+    state: State<'_, AppState>,
+    request: SuspendPaneRequest,
+) -> Result<(), String> {
+    let pane = {
+        let panes = state.panes.read().await;
+        panes.get(&request.pane_id).cloned().ok_or_else(|| {
+            AppError::not_found(format!("pane `{}` does not exist", request.pane_id)).to_string()
+        })?
+    };
+
+    let pid = {
+        let child = pane.child.lock().await;
+        child.process_id().ok_or_else(|| {
+            AppError::system(format!("pane `{}` has no process id", request.pane_id)).to_string()
+        })?
+    };
+
+    #[cfg(unix)]
+    {
+        signal_process(pid, libc::SIGCONT)?;
+    }
+    #[cfg(not(unix))]
+    {
+        return Err(AppError::system("resume is not supported on this platform").to_string());
+    }
+
+    pane.suspended.store(false, Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_runtime_stats(state: State<'_, AppState>) -> Result<RuntimeStats, String> {
+    let panes = state.panes.read().await;
+    let suspended_panes = panes
+        .values()
+        .filter(|pane| pane.suspended.load(Ordering::Relaxed))
+        .count();
+    Ok(RuntimeStats {
+        active_panes: panes.len(),
+        suspended_panes,
+    })
+}
+
 #[tauri::command]
 async fn run_global_command(
     state: State<'_, AppState>,
@@ -406,6 +511,15 @@ async fn run_global_command(
             });
             continue;
         };
+
+        if pane.suspended.load(Ordering::Relaxed) {
+            results.push(PaneCommandResult {
+                pane_id,
+                ok: false,
+                error: Some("pane is suspended".to_string()),
+            });
+            continue;
+        }
 
         let mut writer = pane.writer.lock().await;
         let write_result = (|| -> Result<(), String> {
@@ -686,7 +800,10 @@ pub fn run() {
             write_pane_input,
             resize_pane,
             close_pane,
+            suspend_pane,
+            resume_pane,
             run_global_command,
+            get_runtime_stats,
             create_worktree,
             list_worktrees
         ])
