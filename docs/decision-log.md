@@ -76,3 +76,10 @@
 **Rationale:** Prevents concurrent mount-triggered spawns from flipping later panes to `running` before loop iteration and accidentally skipping init.
 **Consequences:** All assigned panes receive exactly one init command even under concurrent spawn timing; added regressions for the 4-pane race and no-rerun-on-initially-running panes.
 **Alternatives Considered:** Forcing sequential spawn locks at UI level, and always reissuing init regardless of initial pane status.
+
+## [2026-02-12] - Persistent Terminals Across Workspace Switching
+**Context:** Users expected VS Code-like behavior where switching workspace tabs keeps terminal sessions alive instead of killing and respawning them.
+**Decision:** Stop closing active workspace panes on tab switch and namespace backend pane IDs as `${workspaceId}::${paneId}` so multiple workspaces can keep `pane-1`/`pane-2` alive concurrently without collisions.
+**Rationale:** Preserves interactive session state across workspace switches while avoiding backend `pane already exists` conflicts caused by shared logical pane IDs.
+**Consequences:** Runtime memory/CPU can grow with the number of open workspaces; input/event/backend operations now use runtime pane IDs and map results back to logical pane IDs for UI consistency.
+**Alternatives Considered:** Keep only active workspace alive (current behavior) and bounded LRU keep-alive.
