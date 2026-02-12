@@ -404,3 +404,25 @@ Modal/palette readability kept via a faint translucent overlay panel.
 **Rationale:** Preserves immutable release history while satisfying the guarded release invariant (`tag == tauri version`).
 **Consequences:** `v0.1.6` remains failed/historical; subsequent release should use `v0.1.7` and pass parity gate.
 **Alternatives Considered:** Deleting/re-pointing remote `v0.1.6` tag.
+
+## [2026-02-12] - Gate Agent Auto-Launch on Terminal Readiness
+**Context:** On app restart, Codex auto-launch in pane terminals could fail with `The cursor position could not be read within a normal duration` because command execution started before frontend terminal mount/listener readiness.
+**Decision:** Introduce runtime terminal-readiness gating in workspace orchestration:
+- track per-workspace/pane readiness in store runtime state,
+- add explicit `markPaneTerminalReady` / `markPaneTerminalNotReady` lifecycle actions from `TerminalPane`,
+- block pending init flushes and boot-queue command writes until ready (with bounded wait + existing retry path),
+- clear readiness metadata on pane/workspace teardown and snapshot/bootstrap resets.
+**Rationale:** Prevents interactive CLI startup races without disabling agent auto-launch behavior.
+**Consequences:** Agent init commands are delayed until pane terminal is mounted; startup sequencing is slightly more stateful but deterministic and test-covered.
+**Alternatives Considered:** Fixed startup delays and disabling auto-launch after reopen.
+
+## [2026-02-12] - Release Version Bump to v0.1.8 for Terminal-Ready Launch Fix
+**Context:** The repository already had tag `v0.1.7`; shipping the terminal-ready launch fix required a new parity-safe release tag.
+**Decision:** Bump release metadata from `0.1.7` to `0.1.8` across:
+- root `package.json`,
+- `apps/desktop/package.json`,
+- `apps/desktop/src-tauri/tauri.conf.json`.
+Ran parity guard: `./scripts/verify-release-version.sh v0.1.8`.
+**Rationale:** Keeps release history immutable and preserves enforced tag/version updater parity.
+**Consequences:** Next release tag should be `v0.1.8` for this fix set.
+**Alternatives Considered:** Reusing existing `v0.1.7` tag.
