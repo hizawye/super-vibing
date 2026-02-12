@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useWorkspaceStore } from "./workspace";
-import type { AgentAllocation, SessionState, SpawnPaneRequest, WorkspaceRuntime } from "../types";
+import { generateTilingLayouts } from "../lib/tiling";
+import type { AgentAllocation, LayoutMode, SessionState, SpawnPaneRequest, WorkspaceRuntime } from "../types";
 import * as tauriApi from "../lib/tauri";
 import * as persistence from "../lib/persistence";
 import { toRuntimePaneId } from "../lib/panes";
@@ -9,12 +10,15 @@ vi.mock("../lib/tauri", () => ({
   closePane: vi.fn(async () => {}),
   getCurrentBranch: vi.fn(async () => "main"),
   getDefaultCwd: vi.fn(async () => "/repo"),
+  getRuntimeStats: vi.fn(async () => ({ activePanes: 0, suspendedPanes: 0 })),
+  resumePane: vi.fn(async () => {}),
   runGlobalCommand: vi.fn(async () => []),
   spawnPane: vi.fn(async ({ paneId, cwd }: SpawnPaneRequest) => ({
     paneId,
     cwd: cwd ?? "/repo",
     shell: "/bin/bash",
   })),
+  suspendPane: vi.fn(async () => {}),
   writePaneInput: vi.fn(async () => {}),
   subscribeToPaneEvents: vi.fn(() => () => {}),
 }));
@@ -52,8 +56,9 @@ function workspace(
   id: string,
   name: string,
   paneCount: number,
-  statuses: Array<"idle" | "running" | "closed" | "error">,
+  statuses: Array<"idle" | "spawning" | "running" | "suspended" | "closed" | "error">,
   cwd = "/repo",
+  layoutMode: LayoutMode = "tiling",
 ): WorkspaceRuntime {
   const paneOrder = Array.from({ length: paneCount }, (_, index) => `pane-${index + 1}`);
 
@@ -63,6 +68,7 @@ function workspace(
     repoRoot: cwd,
     branch: "main",
     worktreePath: cwd,
+    layoutMode,
     paneCount,
     paneOrder,
     panes: Object.fromEntries(
@@ -105,6 +111,7 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
     echoInput: overrides.echoInput ?? false,
     workspaces: overrides.workspaces ?? [baseWorkspace],
     activeWorkspaceId: overrides.activeWorkspaceId ?? baseWorkspace.id,
+    workspaceBootSessions: {},
     snapshots: [],
     blueprints: [],
   });
@@ -139,6 +146,57 @@ describe("workspace store", () => {
     active = useWorkspaceStore.getState().workspaces[0];
     expect(active.paneCount).toBe(16);
     expect(active.paneOrder).toHaveLength(16);
+  });
+
+  it("rebalances pane layout in tiling mode when pane count changes", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 2, ["running", "running"], "/repo", "tiling")],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await useWorkspaceStore.getState().setActiveWorkspacePaneCount(3);
+
+    const active = useWorkspaceStore.getState().workspaces[0];
+    expect(active.layouts).toEqual(generateTilingLayouts(active.paneOrder));
+  });
+
+  it("preserves existing pane positions in free-form mode when increasing pane count", async () => {
+    const freeformWorkspace = workspace("workspace-main", "Workspace 1", 2, ["running", "running"], "/repo", "freeform");
+    freeformWorkspace.layouts = [
+      { i: "pane-1", x: 0, y: 0, w: 6, h: 4, minW: 2, minH: 2 },
+      { i: "pane-2", x: 6, y: 0, w: 6, h: 4, minW: 2, minH: 2 },
+    ];
+
+    resetStore({
+      workspaces: [freeformWorkspace],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await useWorkspaceStore.getState().setActiveWorkspacePaneCount(3);
+
+    const active = useWorkspaceStore.getState().workspaces[0];
+    expect(active.layouts.find((layout) => layout.i === "pane-1")).toMatchObject({ x: 0, y: 0, w: 6, h: 4 });
+    expect(active.layouts.find((layout) => layout.i === "pane-2")).toMatchObject({ x: 6, y: 0, w: 6, h: 4 });
+  });
+
+  it("recomputes layout when switching workspace mode to tiling", () => {
+    const freeformWorkspace = workspace("workspace-main", "Workspace 1", 3, ["running", "running", "running"], "/repo", "freeform");
+    freeformWorkspace.layouts = [
+      { i: "pane-1", x: 0, y: 0, w: 12, h: 2, minW: 2, minH: 2 },
+      { i: "pane-2", x: 0, y: 2, w: 6, h: 6, minW: 2, minH: 2 },
+      { i: "pane-3", x: 6, y: 2, w: 6, h: 6, minW: 2, minH: 2 },
+    ];
+
+    resetStore({
+      workspaces: [freeformWorkspace],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    useWorkspaceStore.getState().setActiveWorkspaceLayoutMode("tiling");
+
+    const active = useWorkspaceStore.getState().workspaces[0];
+    expect(active.layoutMode).toBe("tiling");
+    expect(active.layouts).toEqual(generateTilingLayouts(active.paneOrder));
   });
 
   it("toggles active workspace zoom idempotently", () => {
@@ -269,7 +327,9 @@ describe("workspace store", () => {
 
     await useWorkspaceStore.getState().setActiveWorkspace("workspace-two");
 
-    expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(4);
+    await vi.waitFor(() => {
+      expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(4);
+    });
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
       paneId: runtimePaneId("workspace-two", "pane-1"),
       data: "codex",
@@ -304,7 +364,9 @@ describe("workspace store", () => {
 
     await useWorkspaceStore.getState().setActiveWorkspace("workspace-two");
 
-    expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(1);
+    });
     expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
       paneId: runtimePaneId("workspace-two", "pane-2"),
       data: "codex",
@@ -336,6 +398,7 @@ describe("workspace store", () => {
       echoInput: false,
       workspaces: [],
       activeWorkspaceId: null,
+      workspaceBootSessions: {},
       snapshots: [],
       blueprints: [],
     });
@@ -347,6 +410,43 @@ describe("workspace store", () => {
       data: "claude",
       execute: true,
     });
+  });
+
+  it("defaults layout mode to tiling for persisted sessions missing layoutMode", async () => {
+    const restoredWorkspace = workspace("workspace-main", "Workspace 1", 2, ["idle", "idle"]);
+    const legacyLikeWorkspace = { ...restoredWorkspace } as Record<string, unknown>;
+    delete legacyLikeWorkspace.layoutMode;
+
+    vi.mocked(persistence.loadPersistedPayload).mockResolvedValueOnce({
+      version: 2,
+      session: {
+        workspaces: [legacyLikeWorkspace],
+        activeWorkspaceId: "workspace-main",
+        activeSection: "terminal",
+        echoInput: false,
+      } as unknown as SessionState,
+      snapshots: [],
+      blueprints: [],
+    });
+
+    useWorkspaceStore.setState({
+      initialized: false,
+      bootstrapping: false,
+      activeSection: "terminal",
+      paletteOpen: false,
+      echoInput: false,
+      workspaces: [],
+      activeWorkspaceId: null,
+      workspaceBootSessions: {},
+      snapshots: [],
+      blueprints: [],
+    });
+
+    await useWorkspaceStore.getState().bootstrap();
+
+    const active = useWorkspaceStore.getState().workspaces[0];
+    expect(active.layoutMode).toBe("tiling");
+    expect(active.layouts).toEqual(generateTilingLayouts(active.paneOrder));
   });
 
   it("dedupes concurrent spawn calls and runs init command once", async () => {
@@ -462,6 +562,51 @@ describe("workspace store", () => {
     const pane = useWorkspaceStore.getState().workspaces[0].panes["pane-1"];
     expect(pane?.status).toBe("error");
     expect(pane?.error).toContain("spawn failed");
+  });
+
+  it("resumes a suspended pane without respawning", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["running"])],
+      activeWorkspaceId: "workspace-main",
+    });
+    useWorkspaceStore.setState((state) => ({
+      workspaces: state.workspaces.map((item) => ({
+        ...item,
+        panes: {
+          ...item.panes,
+          "pane-1": {
+            ...item.panes["pane-1"],
+            status: "suspended",
+          },
+        },
+      })),
+    }));
+
+    await useWorkspaceStore.getState().ensurePaneSpawned("workspace-main", "pane-1");
+
+    expect(tauriApi.resumePane).toHaveBeenCalledWith(runtimePaneId("workspace-main", "pane-1"));
+    expect(tauriApi.spawnPane).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().workspaces[0].panes["pane-1"]?.status).toBe("running");
+  });
+
+  it("batches rapid pane input writes per target pane", async () => {
+    resetStore({
+      echoInput: false,
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["running"])],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await Promise.all([
+      useWorkspaceStore.getState().sendInputFromPane("workspace-main", "pane-1", "c"),
+      useWorkspaceStore.getState().sendInputFromPane("workspace-main", "pane-1", "d"),
+    ]);
+
+    expect(tauriApi.writePaneInput).toHaveBeenCalledTimes(1);
+    expect(tauriApi.writePaneInput).toHaveBeenCalledWith({
+      paneId: runtimePaneId("workspace-main", "pane-1"),
+      data: "cd",
+      execute: false,
+    });
   });
 
   it("maps global command runtime pane ids back to logical pane ids", async () => {

@@ -1,18 +1,30 @@
 import { create } from "zustand";
 import type { Layout } from "react-grid-layout";
-import { closePane, getCurrentBranch, getDefaultCwd, runGlobalCommand, spawnPane, writePaneInput } from "../lib/tauri";
+import {
+  closePane,
+  getCurrentBranch,
+  getDefaultCwd,
+  resumePane,
+  runGlobalCommand,
+  spawnPane,
+  suspendPane,
+  writePaneInput,
+} from "../lib/tauri";
 import { toRuntimePaneId } from "../lib/panes";
+import { generateTilingLayouts } from "../lib/tiling";
 import { loadPersistedPayload, saveBlueprints, saveSessionState, saveSnapshots } from "../lib/persistence";
 import type {
   AgentAllocation,
   AgentProfileKey,
   AppSection,
   Blueprint,
+  LayoutMode,
   LegacySessionState,
   PaneCommandResult,
   PaneModel,
   SessionState,
   Snapshot,
+  WorkspaceBootSession,
   WorkspaceRuntime,
 } from "../types";
 
@@ -28,6 +40,10 @@ interface PaneSpawnOptions {
   executeInit?: boolean;
 }
 
+interface WorkspaceBootOptions {
+  eligiblePaneIds?: string[];
+}
+
 interface WorkspaceStore {
   initialized: boolean;
   bootstrapping: boolean;
@@ -36,6 +52,7 @@ interface WorkspaceStore {
   echoInput: boolean;
   workspaces: WorkspaceRuntime[];
   activeWorkspaceId: string | null;
+  workspaceBootSessions: Record<string, WorkspaceBootSession>;
   snapshots: Snapshot[];
   blueprints: Blueprint[];
 
@@ -47,10 +64,15 @@ interface WorkspaceStore {
   closeWorkspace: (workspaceId: string) => Promise<void>;
   setActiveWorkspace: (workspaceId: string) => Promise<void>;
   setActiveWorkspacePaneCount: (count: number) => Promise<void>;
+  startWorkspaceBoot: (workspaceId: string, options?: WorkspaceBootOptions) => Promise<void>;
+  pauseWorkspaceBoot: (workspaceId: string) => void;
+  resumeWorkspaceBoot: (workspaceId: string) => void;
+  cancelWorkspaceBoot: (workspaceId: string) => void;
   ensurePaneSpawned: (workspaceId: string, paneId: string, options?: PaneSpawnOptions) => Promise<void>;
   markPaneExited: (workspaceId: string, paneId: string, error?: string) => void;
   updatePaneLastCommand: (workspaceId: string, paneId: string, command: string) => void;
   sendInputFromPane: (workspaceId: string, sourcePaneId: string, data: string) => Promise<void>;
+  setActiveWorkspaceLayoutMode: (mode: LayoutMode) => void;
   setActiveWorkspaceLayouts: (layouts: Layout[]) => void;
   toggleActiveWorkspaceZoom: (paneId: string) => void;
   runGlobalCommand: (command: string, execute: boolean) => Promise<PaneCommandResult[]>;
@@ -63,6 +85,14 @@ interface WorkspaceStore {
 
 const MAX_PANES = 16;
 const MIN_PANES = 1;
+const SPAWN_CONCURRENCY_LIMIT = 4;
+const PERSIST_DEBOUNCE_MS = 400;
+const INACTIVE_WORKSPACE_SUSPEND_MS = 10 * 60 * 1000;
+const INPUT_BATCH_MS = 16;
+const AGENT_BOOT_PARALLELISM = 3;
+const AGENT_BOOT_STAGGER_MS = 150;
+const AGENT_BOOT_RETRY_LIMIT = 1;
+const AGENT_BOOT_RETRY_BACKOFF_MS = 300;
 
 const AGENT_PROFILE_CONFIG: Array<{ profile: AgentProfileKey; label: string; command: string }> = [
   { profile: "claude", label: "Claude", command: "claude" },
@@ -79,6 +109,28 @@ interface PendingPaneInit {
 
 const spawnInFlight = new Map<string, Promise<void>>();
 const pendingPaneInit = new Map<string, PendingPaneInit>();
+const workspaceSuspendTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const paneInputBuffers = new Map<string, string>();
+const paneInputTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const paneInputFlushes = new Map<string, Promise<void>>();
+const workspaceBootInFlight = new Map<string, Promise<void>>();
+const workspaceBootControllers = new Map<string, WorkspaceBootController>();
+const spawnSlotWaiters: Array<() => void> = [];
+let activeSpawnSlots = 0;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let persistQueue: Promise<void> = Promise.resolve();
+
+type WorkspaceSetState = (
+  updater: Partial<WorkspaceStore> | ((state: WorkspaceStore) => Partial<WorkspaceStore>),
+) => void;
+
+interface WorkspaceBootController {
+  paused: boolean;
+  canceled: boolean;
+  maxParallel: number;
+  pressureStrikeCount: number;
+  waiters: Array<() => void>;
+}
 
 function paneRuntimeKey(workspaceId: string, paneId: string): string {
   return `${workspaceId}:${paneId}`;
@@ -117,6 +169,245 @@ function clearPendingPaneInitForWorkspace(workspaceId: string): void {
 
 function clearAllPendingPaneInit(): void {
   pendingPaneInit.clear();
+}
+
+function clearSuspendTimer(workspaceId: string): void {
+  const timer = workspaceSuspendTimers.get(workspaceId);
+  if (!timer) {
+    return;
+  }
+  clearTimeout(timer);
+  workspaceSuspendTimers.delete(workspaceId);
+}
+
+function clearAllSuspendTimers(): void {
+  Array.from(workspaceSuspendTimers.keys()).forEach((workspaceId) => clearSuspendTimer(workspaceId));
+}
+
+function enqueuePersist(getState: () => WorkspaceStore): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+  }
+
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    void flushPersist(getState).catch(() => {
+      // best effort for debounced persist operations
+    });
+  }, PERSIST_DEBOUNCE_MS);
+}
+
+async function flushPersist(getState: () => WorkspaceStore): Promise<void> {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+
+  const payload = serializeSessionState(getState());
+  persistQueue = persistQueue
+    .catch(() => {
+      // recover queue chain after prior persistence failures
+    })
+    .then(async () => {
+      await saveSessionState(payload);
+    });
+
+  await persistQueue;
+}
+
+function queuePaneInput(runtimePaneId: string, data: string): Promise<void> {
+  const buffered = paneInputBuffers.get(runtimePaneId) ?? "";
+  if (data.length > 0) {
+    paneInputBuffers.set(runtimePaneId, buffered + data);
+  }
+
+  const inProgress = paneInputFlushes.get(runtimePaneId);
+  if (inProgress) {
+    return inProgress;
+  }
+
+  const flush = new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      paneInputTimers.delete(runtimePaneId);
+      resolve();
+    }, INPUT_BATCH_MS);
+    paneInputTimers.set(runtimePaneId, timer);
+  })
+    .then(async () => {
+      const chunk = paneInputBuffers.get(runtimePaneId) ?? "";
+      paneInputBuffers.delete(runtimePaneId);
+      if (chunk.length === 0) {
+        return;
+      }
+
+      await writePaneInput({
+        paneId: runtimePaneId,
+        data: chunk,
+        execute: false,
+      });
+    })
+    .finally(() => {
+      paneInputFlushes.delete(runtimePaneId);
+      if ((paneInputBuffers.get(runtimePaneId)?.length ?? 0) > 0) {
+        void queuePaneInput(runtimePaneId, "");
+      }
+    });
+
+  paneInputFlushes.set(runtimePaneId, flush);
+  return flush;
+}
+
+function clearWorkspacePaneInputBuffers(workspaceId: string): void {
+  const prefix = `${workspaceId}::`;
+  Array.from(paneInputTimers.keys()).forEach((runtimePaneId) => {
+    if (!runtimePaneId.startsWith(prefix)) {
+      return;
+    }
+    const timer = paneInputTimers.get(runtimePaneId);
+    if (timer) {
+      clearTimeout(timer);
+    }
+    paneInputTimers.delete(runtimePaneId);
+    paneInputBuffers.delete(runtimePaneId);
+    paneInputFlushes.delete(runtimePaneId);
+  });
+}
+
+async function withConcurrency<T>(
+  items: T[],
+  limit: number,
+  iteratee: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) {
+    return;
+  }
+
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(Math.max(limit, 1), items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      await iteratee(items[index] as T);
+    }
+  });
+
+  await Promise.all(workers);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withSpawnSlot<T>(task: () => Promise<T>): Promise<T> {
+  while (activeSpawnSlots >= SPAWN_CONCURRENCY_LIMIT) {
+    await new Promise<void>((resolve) => {
+      spawnSlotWaiters.push(resolve);
+    });
+  }
+
+  activeSpawnSlots += 1;
+  try {
+    return await task();
+  } finally {
+    activeSpawnSlots = Math.max(0, activeSpawnSlots - 1);
+    const waiter = spawnSlotWaiters.shift();
+    waiter?.();
+  }
+}
+
+function createBootSession(workspaceId: string, totalAgents: number): WorkspaceBootSession {
+  const timestamp = new Date().toISOString();
+  return {
+    workspaceId,
+    totalAgents,
+    queued: totalAgents,
+    running: 0,
+    completed: 0,
+    failed: 0,
+    status: totalAgents > 0 ? "running" : "completed",
+    startedAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+function updateWorkspaceBootSession(
+  setState: WorkspaceSetState,
+  workspaceId: string,
+  updater: (session: WorkspaceBootSession) => WorkspaceBootSession,
+): void {
+  setState((state) => {
+    const current = state.workspaceBootSessions[workspaceId];
+    if (!current) {
+      return {};
+    }
+
+    const next = updater(current);
+    return {
+      workspaceBootSessions: {
+        ...state.workspaceBootSessions,
+        [workspaceId]: next,
+      },
+    };
+  });
+}
+
+function setWorkspaceBootSession(setState: WorkspaceSetState, session: WorkspaceBootSession): void {
+  setState((state) => ({
+    workspaceBootSessions: {
+      ...state.workspaceBootSessions,
+      [session.workspaceId]: session,
+    },
+  }));
+}
+
+function removeWorkspaceBootSession(setState: WorkspaceSetState, workspaceId: string): void {
+  setState((state) => {
+    if (!state.workspaceBootSessions[workspaceId]) {
+      return {};
+    }
+    const next = { ...state.workspaceBootSessions };
+    delete next[workspaceId];
+    return { workspaceBootSessions: next };
+  });
+}
+
+function clearAllWorkspaceBoot(setState: WorkspaceSetState): void {
+  workspaceBootControllers.forEach((controller) => {
+    controller.canceled = true;
+    controller.paused = false;
+    wakeBootController(controller);
+  });
+  workspaceBootControllers.clear();
+  workspaceBootInFlight.clear();
+  setState({ workspaceBootSessions: {} });
+}
+
+function getBootController(workspaceId: string): WorkspaceBootController {
+  const existing = workspaceBootControllers.get(workspaceId);
+  if (existing) {
+    return existing;
+  }
+
+  const controller: WorkspaceBootController = {
+    paused: false,
+    canceled: false,
+    maxParallel: AGENT_BOOT_PARALLELISM,
+    pressureStrikeCount: 0,
+    waiters: [],
+  };
+  workspaceBootControllers.set(workspaceId, controller);
+  return controller;
+}
+
+function wakeBootController(controller: WorkspaceBootController): void {
+  const waiters = controller.waiters.splice(0);
+  waiters.forEach((wake) => wake());
+}
+
+async function waitForBootResume(controller: WorkspaceBootController): Promise<void> {
+  while (controller.paused && !controller.canceled) {
+    await new Promise<void>((resolve) => controller.waiters.push(resolve));
+  }
 }
 
 async function flushPendingPaneInit(
@@ -203,7 +494,7 @@ function createPaneModel(id: string, title = id, cwd = "", shell = ""): PaneMode
   };
 }
 
-function generateDefaultLayouts(paneOrder: string[], existing: Layout[] = []): Layout[] {
+function generateFreeformLayouts(paneOrder: string[], existing: Layout[] = []): Layout[] {
   const existingById = new Map(existing.map((layout) => [layout.i, layout]));
   return paneOrder.map((paneId, index) => {
     const previous = existingById.get(paneId);
@@ -223,6 +514,17 @@ function generateDefaultLayouts(paneOrder: string[], existing: Layout[] = []): L
       minH: 2,
     };
   });
+}
+
+function isLayoutMode(value: unknown): value is LayoutMode {
+  return value === "tiling" || value === "freeform";
+}
+
+function resolveWorkspaceLayouts(paneOrder: string[], layoutMode: LayoutMode, existing: Layout[] = []): Layout[] {
+  if (layoutMode === "tiling") {
+    return generateTilingLayouts(paneOrder);
+  }
+  return generateFreeformLayouts(paneOrder, existing);
 }
 
 function toIdlePanes(panes: Record<string, PaneModel>): Record<string, PaneModel> {
@@ -266,6 +568,7 @@ function createWorkspaceRuntime(args: {
   name: string;
   directory: string;
   branch: string;
+  layoutMode?: LayoutMode;
   paneCount: number;
   agentAllocation?: AgentAllocation[];
   createdAt?: string;
@@ -274,6 +577,7 @@ function createWorkspaceRuntime(args: {
   layouts?: Layout[];
   zoomedPaneId?: string | null;
 }): WorkspaceRuntime {
+  const layoutMode = args.layoutMode ?? "tiling";
   const paneCount = clampPaneCount(args.paneCount);
   const paneOrder = args.paneOrder ?? Array.from({ length: paneCount }, (_, index) => paneIdAt(index));
   const panes = args.panes
@@ -297,10 +601,11 @@ function createWorkspaceRuntime(args: {
     repoRoot: args.directory,
     branch: args.branch,
     worktreePath: args.directory,
+    layoutMode,
     paneCount,
     paneOrder,
     panes,
-    layouts: generateDefaultLayouts(paneOrder, args.layouts ?? []),
+    layouts: resolveWorkspaceLayouts(paneOrder, layoutMode, args.layouts ?? []),
     zoomedPaneId:
       args.zoomedPaneId && paneOrder.includes(args.zoomedPaneId)
         ? args.zoomedPaneId
@@ -356,6 +661,7 @@ function migrateLegacySession(session: LegacySessionState): SessionState {
       name: workspace.branch,
       directory: workspace.worktreePath,
       branch: workspace.branch,
+      layoutMode: "tiling",
       paneCount,
       paneOrder: normalizedOrder,
       panes: toIdlePanes(session.panes),
@@ -391,6 +697,7 @@ function sanitizeSession(session: SessionState): SessionState {
       name: workspace.name,
       directory: workspace.worktreePath,
       branch: workspace.branch,
+      layoutMode: isLayoutMode(workspace.layoutMode) ? workspace.layoutMode : "tiling",
       paneCount,
       paneOrder: normalizedOrder,
       panes,
@@ -412,7 +719,10 @@ function sanitizeSession(session: SessionState): SessionState {
 }
 
 async function closeRunningPanes(workspace: WorkspaceRuntime): Promise<void> {
-  const runningPaneIds = workspace.paneOrder.filter((paneId) => workspace.panes[paneId]?.status === "running");
+  const runningPaneIds = workspace.paneOrder.filter((paneId) => {
+    const status = workspace.panes[paneId]?.status;
+    return status === "running" || status === "suspended" || status === "spawning";
+  });
   await Promise.all(
     runningPaneIds.map(async (paneId) => {
       try {
@@ -422,6 +732,138 @@ async function closeRunningPanes(workspace: WorkspaceRuntime): Promise<void> {
       }
     }),
   );
+}
+
+async function suspendWorkspacePanes(
+  getState: () => WorkspaceStore,
+  setState: WorkspaceSetState,
+  workspaceId: string,
+): Promise<void> {
+  const state = getState();
+  if (state.activeWorkspaceId === workspaceId) {
+    return;
+  }
+
+  const workspace = state.workspaces.find((item) => item.id === workspaceId);
+  if (!workspace) {
+    return;
+  }
+
+  const runningPaneIds = workspace.paneOrder.filter((paneId) => workspace.panes[paneId]?.status === "running");
+  if (runningPaneIds.length === 0) {
+    return;
+  }
+
+  const suspendedPaneIds = await Promise.all(
+    runningPaneIds.map(async (paneId) => {
+      try {
+        await suspendPane(toRuntimePaneId(workspaceId, paneId));
+        return paneId;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const suspended = new Set(suspendedPaneIds.filter(Boolean) as string[]);
+  if (suspended.size === 0) {
+    return;
+  }
+
+  setState((current) => ({
+    workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
+      const panes: Record<string, PaneModel> = { ...target.panes };
+      suspended.forEach((paneId) => {
+        const pane = panes[paneId];
+        if (!pane) {
+          return;
+        }
+        panes[paneId] = {
+          ...pane,
+          status: "suspended",
+          error: undefined,
+        };
+      });
+
+      return {
+        ...target,
+        panes,
+        updatedAt: new Date().toISOString(),
+      };
+    }),
+  }));
+  enqueuePersist(getState);
+}
+
+function scheduleWorkspaceSuspend(
+  getState: () => WorkspaceStore,
+  setState: WorkspaceSetState,
+  workspaceId: string,
+): void {
+  clearSuspendTimer(workspaceId);
+  const timer = setTimeout(() => {
+    workspaceSuspendTimers.delete(workspaceId);
+    void suspendWorkspacePanes(getState, setState, workspaceId);
+  }, INACTIVE_WORKSPACE_SUSPEND_MS);
+  workspaceSuspendTimers.set(workspaceId, timer);
+}
+
+async function resumeWorkspacePanes(
+  getState: () => WorkspaceStore,
+  setState: WorkspaceSetState,
+  workspaceId: string,
+): Promise<void> {
+  clearSuspendTimer(workspaceId);
+
+  const state = getState();
+  const workspace = state.workspaces.find((item) => item.id === workspaceId);
+  if (!workspace) {
+    return;
+  }
+
+  const suspendedPaneIds = workspace.paneOrder.filter((paneId) => workspace.panes[paneId]?.status === "suspended");
+  if (suspendedPaneIds.length === 0) {
+    return;
+  }
+
+  const resumedPaneIds = await Promise.all(
+    suspendedPaneIds.map(async (paneId) => {
+      const runtimePaneId = toRuntimePaneId(workspaceId, paneId);
+      try {
+        await resumePane(runtimePaneId);
+        return paneId;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const resumed = new Set(resumedPaneIds.filter(Boolean) as string[]);
+  if (resumed.size === 0) {
+    return;
+  }
+
+  setState((current) => ({
+    workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
+      const panes: Record<string, PaneModel> = { ...target.panes };
+      resumed.forEach((paneId) => {
+        const pane = panes[paneId];
+        if (!pane) {
+          return;
+        }
+        panes[paneId] = {
+          ...pane,
+          status: "running",
+          error: undefined,
+        };
+      });
+
+      return {
+        ...target,
+        panes,
+        updatedAt: new Date().toISOString(),
+      };
+    }),
+  }));
+  enqueuePersist(getState);
 }
 
 function buildLaunchPlan(
@@ -472,6 +914,17 @@ function applyLaunchTitles(
   };
 }
 
+function collectEligibleLaunchPaneIds(workspace: WorkspaceRuntime): string[] {
+  const launchPlan = buildLaunchPlan(workspace.paneOrder, workspace.agentAllocation);
+  return workspace.paneOrder.filter((paneId) => {
+    if (!launchPlan.has(paneId)) {
+      return false;
+    }
+    const status = workspace.panes[paneId]?.status;
+    return status !== "running" && status !== "suspended";
+  });
+}
+
 async function spawnWorkspacePanes(
   getState: () => WorkspaceStore,
   workspaceId: string,
@@ -487,7 +940,7 @@ async function spawnWorkspacePanes(
     workspace.paneOrder.map((paneId) => [paneId, workspace.panes[paneId]?.status ?? "idle"]),
   );
 
-  for (const paneId of workspace.paneOrder) {
+  await withConcurrency(workspace.paneOrder, SPAWN_CONCURRENCY_LIMIT, async (paneId) => {
     const latest = getState();
     const latestWorkspace = latest.workspaces.find((item) => item.id === workspaceId);
     if (!latestWorkspace) {
@@ -495,7 +948,10 @@ async function spawnWorkspacePanes(
     }
 
     const launch = launchPlan?.get(paneId);
-    const shouldInit = Boolean(launch && initialStatuses.get(paneId) !== "running");
+    const initialStatus = initialStatuses.get(paneId);
+    const shouldInit = Boolean(
+      launch && initialStatus !== "running" && initialStatus !== "suspended",
+    );
 
     await latest.ensurePaneSpawned(
       workspaceId,
@@ -507,7 +963,207 @@ async function spawnWorkspacePanes(
           }
         : undefined,
     );
+  });
+}
+
+interface AgentBootTask {
+  paneId: string;
+  command: string;
+}
+
+async function runWorkspaceBootQueue(
+  getState: () => WorkspaceStore,
+  setState: WorkspaceSetState,
+  workspaceId: string,
+  options?: WorkspaceBootOptions,
+): Promise<void> {
+  const workspace = getState().workspaces.find((item) => item.id === workspaceId);
+  if (!workspace) {
+    removeWorkspaceBootSession(setState, workspaceId);
+    return;
   }
+
+  const launchPlan = buildLaunchPlan(workspace.paneOrder, workspace.agentAllocation);
+  const eligiblePaneIds = options?.eligiblePaneIds ? new Set(options.eligiblePaneIds) : null;
+  const tasks: AgentBootTask[] = workspace.paneOrder
+    .map((paneId) => {
+      if (eligiblePaneIds && !eligiblePaneIds.has(paneId)) {
+        return null;
+      }
+      const launch = launchPlan.get(paneId);
+      if (!launch) {
+        return null;
+      }
+      return {
+        paneId,
+        command: launch.command,
+      };
+    })
+    .filter((task): task is AgentBootTask => Boolean(task));
+
+  setWorkspaceBootSession(setState, createBootSession(workspaceId, tasks.length));
+
+  if (tasks.length === 0) {
+    updateWorkspaceBootSession(setState, workspaceId, (session) => ({
+      ...session,
+      status: "completed",
+      queued: 0,
+      updatedAt: new Date().toISOString(),
+    }));
+    return;
+  }
+
+  const controller = getBootController(workspaceId);
+  controller.canceled = false;
+  controller.paused = false;
+  controller.maxParallel = AGENT_BOOT_PARALLELISM;
+  controller.pressureStrikeCount = 0;
+
+  let nextIndex = 0;
+  let completed = 0;
+  let failed = 0;
+  const inFlight = new Set<Promise<void>>();
+
+  const refreshSession = (statusOverride?: WorkspaceBootSession["status"]): void => {
+    updateWorkspaceBootSession(setState, workspaceId, (session) => ({
+      ...session,
+      status: statusOverride ?? (controller.paused ? "paused" : "running"),
+      queued: Math.max(0, tasks.length - nextIndex),
+      running: inFlight.size,
+      completed,
+      failed,
+      updatedAt: new Date().toISOString(),
+    }));
+  };
+
+  const startTask = (task: AgentBootTask): Promise<void> => {
+    const taskPromise = (async () => {
+      await waitForBootResume(controller);
+      if (controller.canceled) {
+        return;
+      }
+
+      const startedAt = Date.now();
+      let success = false;
+      let lastError: unknown = null;
+
+      for (let attempt = 0; attempt <= AGENT_BOOT_RETRY_LIMIT; attempt += 1) {
+        try {
+          await getState().ensurePaneSpawned(workspaceId, task.paneId);
+          await writePaneInput({
+            paneId: toRuntimePaneId(workspaceId, task.paneId),
+            data: task.command,
+            execute: true,
+          });
+          success = true;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attempt < AGENT_BOOT_RETRY_LIMIT) {
+            await sleep(AGENT_BOOT_RETRY_BACKOFF_MS * (attempt + 1));
+          }
+        }
+      }
+
+      const elapsedMs = Date.now() - startedAt;
+      if (!success || elapsedMs >= 5000) {
+        controller.pressureStrikeCount += 1;
+      } else {
+        controller.pressureStrikeCount = 0;
+      }
+
+      if (controller.pressureStrikeCount >= 3) {
+        controller.maxParallel = 2;
+      }
+
+      if (success) {
+        completed += 1;
+        setState((state) => ({
+          workspaces: withWorkspaceUpdated(state.workspaces, workspaceId, (target) => {
+            const pane = target.panes[task.paneId];
+            if (!pane) {
+              return target;
+            }
+            return {
+              ...target,
+              panes: {
+                ...target.panes,
+                [task.paneId]: {
+                  ...pane,
+                  status: "running",
+                  lastSubmittedCommand: task.command,
+                  error: undefined,
+                },
+              },
+            };
+          }),
+        }));
+        return;
+      }
+
+      failed += 1;
+      if (lastError) {
+        setState((state) => ({
+          workspaces: withWorkspaceUpdated(state.workspaces, workspaceId, (target) => {
+            const pane = target.panes[task.paneId];
+            if (!pane) {
+              return target;
+            }
+            return {
+              ...target,
+              panes: {
+                ...target.panes,
+                [task.paneId]: {
+                  ...pane,
+                  status: "error",
+                  error: String(lastError),
+                },
+              },
+            };
+          }),
+        }));
+      }
+    })().finally(() => {
+      inFlight.delete(taskPromise);
+      refreshSession();
+    });
+
+    inFlight.add(taskPromise);
+    refreshSession();
+    return taskPromise;
+  };
+
+  refreshSession("running");
+
+  while ((nextIndex < tasks.length || inFlight.size > 0) && !controller.canceled) {
+    await waitForBootResume(controller);
+    if (controller.canceled) {
+      break;
+    }
+
+    while (
+      !controller.canceled
+      && !controller.paused
+      && nextIndex < tasks.length
+      && inFlight.size < controller.maxParallel
+    ) {
+      const task = tasks[nextIndex];
+      nextIndex += 1;
+      refreshSession();
+      startTask(task);
+
+      if (nextIndex < tasks.length) {
+        await sleep(AGENT_BOOT_STAGGER_MS);
+      }
+    }
+
+    if (inFlight.size > 0) {
+      await Promise.race(Array.from(inFlight));
+    }
+  }
+
+  refreshSession(controller.canceled ? "canceled" : failed > 0 ? "failed" : "completed");
+  workspaceBootControllers.delete(workspaceId);
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -518,6 +1174,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   echoInput: false,
   workspaces: [],
   activeWorkspaceId: null,
+  workspaceBootSessions: {},
   snapshots: [],
   blueprints: [],
 
@@ -528,6 +1185,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     clearAllPendingPaneInit();
+    clearAllSuspendTimers();
+    clearAllWorkspaceBoot(set);
 
     set({ bootstrapping: true });
 
@@ -579,15 +1238,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     const activeWorkspace = activeWorkspaceOf(get());
     if (activeWorkspace) {
-      await spawnWorkspacePanes(get, activeWorkspace.id, true);
+      clearSuspendTimer(activeWorkspace.id);
+      await spawnWorkspacePanes(get, activeWorkspace.id, false);
+      get().resumeWorkspaceBoot(activeWorkspace.id);
+      void get().startWorkspaceBoot(activeWorkspace.id, {
+        eligiblePaneIds: collectEligibleLaunchPaneIds(activeWorkspace),
+      });
     }
 
-    await get().persistSession();
+    await flushPersist(get);
   },
 
   setActiveSection: (section: AppSection) => {
     set({ activeSection: section });
-    void get().persistSession();
+    enqueuePersist(get);
   },
 
   setPaletteOpen: (open: boolean) => {
@@ -596,7 +1260,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setEchoInput: (enabled: boolean) => {
     set({ echoInput: enabled });
-    void get().persistSession();
+    enqueuePersist(get);
   },
 
   createWorkspace: async (input: CreateWorkspaceInput) => {
@@ -610,6 +1274,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     const workspaceId = `workspace-${crypto.randomUUID()}`;
     const name = input.name?.trim() || `Workspace ${get().workspaces.length + 1}`;
+    const previousActiveId = get().activeWorkspaceId;
 
     let nextWorkspace = createWorkspaceRuntime({
       id: workspaceId,
@@ -629,9 +1294,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       activeWorkspaceId: nextWorkspace.id,
     }));
 
-    await spawnWorkspacePanes(get, nextWorkspace.id, true);
+    clearSuspendTimer(nextWorkspace.id);
+    if (previousActiveId && previousActiveId !== nextWorkspace.id) {
+      get().pauseWorkspaceBoot(previousActiveId);
+      scheduleWorkspaceSuspend(get, set, previousActiveId);
+    }
 
-    await get().persistSession();
+    void (async () => {
+      await resumeWorkspacePanes(get, set, nextWorkspace.id);
+      await spawnWorkspacePanes(get, nextWorkspace.id, false);
+      await get().startWorkspaceBoot(nextWorkspace.id, {
+        eligiblePaneIds: collectEligibleLaunchPaneIds(nextWorkspace),
+      });
+    })();
+
+    await flushPersist(get);
   },
 
   closeWorkspace: async (workspaceId: string) => {
@@ -646,11 +1323,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     const closingActive = workspaceId === state.activeWorkspaceId;
+    clearSuspendTimer(workspaceId);
+    get().cancelWorkspaceBoot(workspaceId);
     await closeRunningPanes(workspace);
     clearPendingPaneInitForWorkspace(workspaceId);
+    clearWorkspacePaneInputBuffers(workspaceId);
 
     const remaining = state.workspaces.filter((item) => item.id !== workspaceId);
     const nextActiveId = closingActive ? remaining[0]?.id ?? null : state.activeWorkspaceId;
+    const nextActiveWorkspaceSnapshot = nextActiveId
+      ? remaining.find((workspace) => workspace.id === nextActiveId)
+      : undefined;
 
     set({
       workspaces: remaining,
@@ -658,15 +1341,25 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     });
 
     if (closingActive && nextActiveId) {
-      await spawnWorkspacePanes(get, nextActiveId, true);
+      clearSuspendTimer(nextActiveId);
+      await resumeWorkspacePanes(get, set, nextActiveId);
+      await spawnWorkspacePanes(get, nextActiveId, false);
+      get().resumeWorkspaceBoot(nextActiveId);
+      void get().startWorkspaceBoot(nextActiveId, {
+        eligiblePaneIds: nextActiveWorkspaceSnapshot
+          ? collectEligibleLaunchPaneIds(nextActiveWorkspaceSnapshot)
+          : undefined,
+      });
     }
 
-    await get().persistSession();
+    await flushPersist(get);
   },
 
   setActiveWorkspace: async (workspaceId: string) => {
     const state = get();
     if (state.activeWorkspaceId === workspaceId) {
+      clearSuspendTimer(workspaceId);
+      get().resumeWorkspaceBoot(workspaceId);
       return;
     }
 
@@ -675,14 +1368,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return;
     }
 
+    const previousActiveId = state.activeWorkspaceId;
     set(() => ({
       activeWorkspaceId: workspaceId,
       activeSection: "terminal",
     }));
 
-    await spawnWorkspacePanes(get, target.id, true);
+    clearSuspendTimer(workspaceId);
+    await resumeWorkspacePanes(get, set, workspaceId);
+    await spawnWorkspacePanes(get, target.id, false);
+    get().resumeWorkspaceBoot(target.id);
+    void get().startWorkspaceBoot(target.id, {
+      eligiblePaneIds: collectEligibleLaunchPaneIds(target),
+    });
 
-    await get().persistSession();
+    if (previousActiveId && previousActiveId !== workspaceId) {
+      get().pauseWorkspaceBoot(previousActiveId);
+      scheduleWorkspaceSuspend(get, set, previousActiveId);
+    }
+
+    await flushPersist(get);
   },
 
   setActiveWorkspacePaneCount: async (requestedCount: number) => {
@@ -709,7 +1414,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const removedPaneIds = activeWorkspace.paneOrder.filter((paneId) => !nextPaneOrder.includes(paneId));
     await Promise.all(
       removedPaneIds.map(async (paneId) => {
-        if (activeWorkspace.panes[paneId]?.status === "running") {
+        const status = activeWorkspace.panes[paneId]?.status;
+        if (status === "running" || status === "suspended" || status === "spawning") {
           try {
             await closePane(toRuntimePaneId(activeWorkspace.id, paneId));
           } catch {
@@ -722,6 +1428,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     removedPaneIds.forEach((paneId) => {
       delete nextPanes[paneId];
       clearPendingPaneInit(activeWorkspace.id, paneId);
+      const runtimePaneId = toRuntimePaneId(activeWorkspace.id, paneId);
+      const timer = paneInputTimers.get(runtimePaneId);
+      if (timer) {
+        clearTimeout(timer);
+      }
+      paneInputTimers.delete(runtimePaneId);
+      paneInputBuffers.delete(runtimePaneId);
+      paneInputFlushes.delete(runtimePaneId);
     });
 
     set((current) => ({
@@ -730,7 +1444,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         paneCount,
         paneOrder: nextPaneOrder,
         panes: nextPanes,
-        layouts: generateDefaultLayouts(nextPaneOrder, workspace.layouts),
+        layouts: resolveWorkspaceLayouts(nextPaneOrder, workspace.layoutMode, workspace.layouts),
         zoomedPaneId:
           workspace.zoomedPaneId && nextPaneOrder.includes(workspace.zoomedPaneId)
             ? workspace.zoomedPaneId
@@ -739,9 +1453,78 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       })),
     }));
 
-    await spawnWorkspacePanes(get, activeWorkspace.id, true);
+    const workspaceAfterResize = activeWorkspaceOf(get());
+    const eligiblePaneIds = workspaceAfterResize
+      ? collectEligibleLaunchPaneIds(workspaceAfterResize)
+      : undefined;
 
-    await get().persistSession();
+    await spawnWorkspacePanes(get, activeWorkspace.id, false);
+    void get().startWorkspaceBoot(activeWorkspace.id, { eligiblePaneIds });
+
+    await flushPersist(get);
+  },
+
+  startWorkspaceBoot: async (workspaceId: string, options?: WorkspaceBootOptions) => {
+    const inFlight = workspaceBootInFlight.get(workspaceId);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const task = runWorkspaceBootQueue(get, set, workspaceId, options)
+      .catch(() => {
+        updateWorkspaceBootSession(set, workspaceId, (session) => ({
+          ...session,
+          status: "failed",
+          running: 0,
+          queued: 0,
+          updatedAt: new Date().toISOString(),
+        }));
+      })
+      .finally(() => {
+        workspaceBootInFlight.delete(workspaceId);
+      });
+
+    workspaceBootInFlight.set(workspaceId, task);
+    return task;
+  },
+
+  pauseWorkspaceBoot: (workspaceId: string) => {
+    const controller = workspaceBootControllers.get(workspaceId);
+    if (!controller || controller.canceled) {
+      return;
+    }
+    controller.paused = true;
+    updateWorkspaceBootSession(set, workspaceId, (session) => ({
+      ...session,
+      status: "paused",
+      updatedAt: new Date().toISOString(),
+    }));
+  },
+
+  resumeWorkspaceBoot: (workspaceId: string) => {
+    const controller = workspaceBootControllers.get(workspaceId);
+    if (!controller || controller.canceled) {
+      return;
+    }
+    controller.paused = false;
+    wakeBootController(controller);
+    updateWorkspaceBootSession(set, workspaceId, (session) => ({
+      ...session,
+      status: "running",
+      updatedAt: new Date().toISOString(),
+    }));
+  },
+
+  cancelWorkspaceBoot: (workspaceId: string) => {
+    const controller = workspaceBootControllers.get(workspaceId);
+    if (controller) {
+      controller.canceled = true;
+      controller.paused = false;
+      wakeBootController(controller);
+      workspaceBootControllers.delete(workspaceId);
+    }
+    workspaceBootInFlight.delete(workspaceId);
+    removeWorkspaceBootSession(set, workspaceId);
   },
 
   ensurePaneSpawned: async (workspaceId: string, paneId: string, options?: PaneSpawnOptions) => {
@@ -764,6 +1547,34 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (pane.status === "running") {
       await flushPendingPaneInit(get, workspaceId, paneId);
       return;
+    }
+    if (pane.status === "suspended") {
+      try {
+        await resumePane(toRuntimePaneId(workspaceId, paneId));
+        set((current) => ({
+          workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
+            const currentPane = target.panes[paneId];
+            if (!currentPane) {
+              return target;
+            }
+            return {
+              ...target,
+              panes: {
+                ...target.panes,
+                [paneId]: {
+                  ...currentPane,
+                  status: "running",
+                  error: undefined,
+                },
+              },
+            };
+          }),
+        }));
+        await flushPendingPaneInit(get, workspaceId, paneId);
+        return;
+      } catch {
+        // fall back to respawn path below
+      }
     }
 
     const key = paneRuntimeKey(workspaceId, paneId);
@@ -807,7 +1618,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
               ...target.panes,
               [paneId]: {
                 ...currentPane,
-                status: "idle",
+                status: "spawning",
                 error: undefined,
               },
             },
@@ -816,9 +1627,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }));
 
       try {
-        const response = await spawnPaneWithConflictRetry(
-          toRuntimePaneId(workspaceId, paneId),
-          targetWorkspace.worktreePath,
+        const response = await withSpawnSlot(async () =>
+          spawnPaneWithConflictRetry(
+            toRuntimePaneId(workspaceId, paneId),
+            targetWorkspace.worktreePath,
+          ),
         );
 
         set((current) => ({
@@ -896,7 +1709,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         };
       }),
     }));
-    void get().persistSession();
+    enqueuePersist(get);
   },
 
   updatePaneLastCommand: (workspaceId: string, paneId: string, command: string) => {
@@ -919,7 +1732,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         };
       }),
     }));
-    void get().persistSession();
+    enqueuePersist(get);
   },
 
   sendInputFromPane: async (workspaceId: string, sourcePaneId: string, data: string) => {
@@ -939,18 +1752,31 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     await Promise.all(
       targetPaneIds.map((paneId) =>
-        writePaneInput({
-          paneId: toRuntimePaneId(workspaceId, paneId),
-          data,
-          execute: false,
-        }),
+        queuePaneInput(toRuntimePaneId(workspaceId, paneId), data),
       ),
     );
   },
 
+  setActiveWorkspaceLayoutMode: (mode: LayoutMode) => {
+    const activeWorkspace = activeWorkspaceOf(get());
+    if (!activeWorkspace || activeWorkspace.layoutMode === mode) {
+      return;
+    }
+
+    set((state) => ({
+      workspaces: withWorkspaceUpdated(state.workspaces, activeWorkspace.id, (workspace) => ({
+        ...workspace,
+        layoutMode: mode,
+        layouts: resolveWorkspaceLayouts(workspace.paneOrder, mode, workspace.layouts),
+        updatedAt: new Date().toISOString(),
+      })),
+    }));
+    enqueuePersist(get);
+  },
+
   setActiveWorkspaceLayouts: (layouts: Layout[]) => {
     const activeWorkspace = activeWorkspaceOf(get());
-    if (!activeWorkspace) {
+    if (!activeWorkspace || activeWorkspace.layoutMode !== "freeform") {
       return;
     }
 
@@ -961,7 +1787,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       })),
     }));
-    void get().persistSession();
+    enqueuePersist(get);
   },
 
   toggleActiveWorkspaceZoom: (paneId: string) => {
@@ -977,7 +1803,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       })),
     }));
-    void get().persistSession();
+    enqueuePersist(get);
   },
 
   runGlobalCommand: async (command: string, execute: boolean) => {
@@ -1015,7 +1841,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const snapshots = [snapshot, ...state.snapshots].slice(0, 25);
     set({ snapshots });
     await saveSnapshots(snapshots);
-    await get().persistSession();
+    await flushPersist(get);
   },
 
   restoreSnapshot: async (snapshotId: string) => {
@@ -1030,6 +1856,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       await closeRunningPanes(activeWorkspace);
     }
     clearAllPendingPaneInit();
+    clearAllSuspendTimers();
+    clearAllWorkspaceBoot(set);
+    state.workspaces.forEach((workspace) => clearWorkspacePaneInputBuffers(workspace.id));
 
     const restored = sanitizeSession(snapshot.state);
 
@@ -1038,14 +1867,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       activeWorkspaceId: restored.activeWorkspaceId,
       activeSection: restored.activeSection,
       echoInput: restored.echoInput,
+      workspaceBootSessions: {},
     });
 
     const nextActiveWorkspace = activeWorkspaceOf(get());
     if (nextActiveWorkspace) {
-      await spawnWorkspacePanes(get, nextActiveWorkspace.id, true);
+      clearSuspendTimer(nextActiveWorkspace.id);
+      await resumeWorkspacePanes(get, set, nextActiveWorkspace.id);
+      await spawnWorkspacePanes(get, nextActiveWorkspace.id, false);
+      get().resumeWorkspaceBoot(nextActiveWorkspace.id);
+      void get().startWorkspaceBoot(nextActiveWorkspace.id, {
+        eligiblePaneIds: collectEligibleLaunchPaneIds(nextActiveWorkspace),
+      });
     }
 
-    await get().persistSession();
+    await flushPersist(get);
   },
 
   createBlueprint: async (name: string, workspacePaths: string[], autorunCommands: string[]) => {
@@ -1063,6 +1899,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const blueprints = [blueprint, ...state.blueprints].slice(0, 25);
     set({ blueprints });
     await saveBlueprints(blueprints);
+    enqueuePersist(get);
   },
 
   launchBlueprint: async (blueprintId: string) => {
@@ -1094,12 +1931,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       await get().runGlobalCommand(command, true);
     }
 
-    await get().persistSession();
+    await flushPersist(get);
   },
 
   persistSession: async () => {
-    const state = get();
-    await saveSessionState(serializeSessionState(state));
+    await flushPersist(get);
   },
 }));
 
