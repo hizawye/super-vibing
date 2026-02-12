@@ -7,8 +7,8 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc,
     },
 };
 use tauri::{ipc::Channel, State};
@@ -16,6 +16,7 @@ use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
 const PTY_READ_BUFFER_BYTES: usize = 4096;
+const PTY_READER_STACK_BYTES: usize = 256 * 1024;
 
 #[derive(Debug)]
 enum AppError {
@@ -256,8 +257,7 @@ async fn spawn_pane(
         })?;
         if request.execute_init.unwrap_or(false) {
             writer.write_all(b"\n").map_err(|err| {
-                AppError::pty(format!("failed to write initial command newline: {err}"))
-                    .to_string()
+                AppError::pty(format!("failed to write initial command newline: {err}")).to_string()
             })?;
         }
         writer.flush().map_err(|err| {
@@ -289,49 +289,65 @@ async fn spawn_pane(
 
     let pane_registry = Arc::clone(&state.panes);
     let pane_id_for_task = pane_id.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut buffer = [0_u8; PTY_READ_BUFFER_BYTES];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => {
-                    let _ = output.send(PtyEvent {
-                        pane_id: pane_id_for_task.clone(),
-                        kind: "exit".to_string(),
-                        payload: "eof".to_string(),
-                    });
-                    break;
-                }
-                Ok(bytes_read) => {
-                    let chunk = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
-                    if output
-                        .send(PtyEvent {
+    let reader_thread = std::thread::Builder::new()
+        .name(format!("pane-reader-{pane_id_for_task}"))
+        .stack_size(PTY_READER_STACK_BYTES)
+        .spawn(move || {
+            let mut buffer = [0_u8; PTY_READ_BUFFER_BYTES];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => {
+                        let _ = output.send(PtyEvent {
                             pane_id: pane_id_for_task.clone(),
-                            kind: "output".to_string(),
-                            payload: chunk,
-                        })
-                        .is_err()
-                    {
+                            kind: "exit".to_string(),
+                            payload: "eof".to_string(),
+                        });
+                        break;
+                    }
+                    Ok(bytes_read) => {
+                        let chunk = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+                        if output
+                            .send(PtyEvent {
+                                pane_id: pane_id_for_task.clone(),
+                                kind: "output".to_string(),
+                                payload: chunk,
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        let _ = output.send(PtyEvent {
+                            pane_id: pane_id_for_task.clone(),
+                            kind: "error".to_string(),
+                            payload: err.to_string(),
+                        });
                         break;
                     }
                 }
-                Err(err) => {
-                    let _ = output.send(PtyEvent {
-                        pane_id: pane_id_for_task.clone(),
-                        kind: "error".to_string(),
-                        payload: err.to_string(),
-                    });
-                    break;
-                }
             }
+
+            let cleanup_registry = Arc::clone(&pane_registry);
+            let cleanup_pane_id = pane_id_for_task.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut panes = cleanup_registry.write().await;
+                panes.remove(&cleanup_pane_id);
+            });
+        });
+
+    if let Err(err) = reader_thread {
+        {
+            let mut panes = state.panes.write().await;
+            panes.remove(&pane_id);
         }
 
-        let cleanup_registry = Arc::clone(&pane_registry);
-        let cleanup_pane_id = pane_id_for_task.clone();
-        tauri::async_runtime::spawn(async move {
-            let mut panes = cleanup_registry.write().await;
-            panes.remove(&cleanup_pane_id);
-        });
-    });
+        let mut child = pane_runtime.child.lock().await;
+        let _ = child.kill();
+        return Err(
+            AppError::system(format!("failed to spawn pane reader thread: {err}")).to_string(),
+        );
+    }
 
     Ok(SpawnPaneResponse {
         pane_id,
@@ -409,7 +425,11 @@ fn signal_process(pid: u32, signal: i32) -> Result<(), String> {
     if status == 0 {
         Ok(())
     } else {
-        Err(AppError::system(format!("failed to signal process {pid}: {}", std::io::Error::last_os_error())).to_string())
+        Err(AppError::system(format!(
+            "failed to signal process {pid}: {}",
+            std::io::Error::last_os_error()
+        ))
+        .to_string())
     }
 }
 

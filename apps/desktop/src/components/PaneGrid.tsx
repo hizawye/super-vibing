@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
 import type { LayoutMode } from "../types";
-import { useWorkspaceStore } from "../store/workspace";
 import { TerminalPane } from "./TerminalPane";
 
 const FluidGridLayout = WidthProvider(GridLayout);
-const GRID_MARGIN: [number, number] = [0, 0];
+const GRID_MARGIN: [number, number] = [1, 1];
+const GRID_CONTAINER_PADDING: [number, number] = [0, 0];
 const DEFAULT_ROW_HEIGHT = 110;
 const MIN_ROW_HEIGHT = 32;
 
@@ -17,14 +17,6 @@ interface PaneGridProps {
   zoomedPaneId: string | null;
   onLayoutsChange: (next: Layout[]) => void;
   onToggleZoom: (paneId: string) => void;
-}
-
-function PaneTitle({ workspaceId, paneId }: { workspaceId: string; paneId: string }) {
-  const title = useWorkspaceStore((state) => {
-    const workspace = state.workspaces.find((item) => item.id === workspaceId);
-    return workspace?.panes[paneId]?.title ?? paneId;
-  });
-  return <span>{title}</span>;
 }
 
 export function PaneGrid({
@@ -75,16 +67,11 @@ export function PaneGrid({
     return (
       <div className="zoom-grid">
         <div className="pane-card is-zoomed">
-          <div className="pane-header" onDoubleClick={() => onToggleZoom(zoomedPaneId)}>
-            <PaneTitle workspaceId={workspaceId} paneId={zoomedPaneId} />
-            <button
-              type="button"
-              className="toolbar-btn"
-              onClick={() => onToggleZoom(zoomedPaneId)}
-            >
-              Restore
-            </button>
-          </div>
+          <div
+            className="pane-header"
+            data-testid={`pane-handle-${zoomedPaneId}`}
+            onDoubleClick={() => onToggleZoom(zoomedPaneId)}
+          />
           <TerminalPane workspaceId={workspaceId} paneId={zoomedPaneId} />
         </div>
       </div>
@@ -99,6 +86,7 @@ export function PaneGrid({
         cols={12}
         rowHeight={rowHeight}
         margin={GRID_MARGIN}
+        containerPadding={GRID_CONTAINER_PADDING}
         onLayoutChange={layoutMode === "freeform" ? onLayoutsChange : undefined}
         draggableHandle={layoutMode === "freeform" ? ".pane-header.is-draggable" : undefined}
         isDraggable={layoutMode === "freeform"}
@@ -109,13 +97,9 @@ export function PaneGrid({
           <div key={paneId} className="pane-card">
             <div
               className={`pane-header ${layoutMode === "freeform" ? "is-draggable" : ""}`}
+              data-testid={`pane-handle-${paneId}`}
               onDoubleClick={() => onToggleZoom(paneId)}
-            >
-              <PaneTitle workspaceId={workspaceId} paneId={paneId} />
-              <button type="button" className="toolbar-btn" onClick={() => onToggleZoom(paneId)}>
-                Zoom
-              </button>
-            </div>
+            />
             <TerminalPane workspaceId={workspaceId} paneId={paneId} />
           </div>
         ))}

@@ -1,17 +1,15 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import type { Layout } from "react-grid-layout";
 import { useShallow } from "zustand/react/shallow";
-import { PaneGrid } from "./components/PaneGrid";
-import { TopChrome, type WorkspaceTabView } from "./components/TopChrome";
+import { AppSidebar, type WorkspaceNavView } from "./components/AppSidebar";
 import { EmptyStatePage } from "./components/EmptyStatePage";
+import { PaneGrid } from "./components/PaneGrid";
+import { TopChrome } from "./components/TopChrome";
 import type { WorkspaceCreationInput } from "./components/NewWorkspaceModal";
 import { useWorkspaceStore } from "./store/workspace";
 import { THEME_DEFINITIONS, THEME_IDS } from "./theme/themes";
-import type { DensityMode, LayoutMode, ThemeId, WorkspaceBootSession } from "./types";
+import type { AppSection, DensityMode, LayoutMode, ThemeId, WorkspaceBootSession } from "./types";
 
-const SectionMenu = lazy(() =>
-  import("./components/SectionMenu").then((module) => ({ default: module.SectionMenu })),
-);
 const NewWorkspaceModal = lazy(() =>
   import("./components/NewWorkspaceModal").then((module) => ({ default: module.NewWorkspaceModal })),
 );
@@ -23,7 +21,7 @@ const SHORTCUT_GROUPS = [
   {
     title: "Workspaces",
     shortcuts: [
-      ["New workspace tab", "Ctrl/Cmd + N"],
+      ["New workspace", "Ctrl/Cmd + N"],
       ["Next workspace", "Ctrl/Cmd + ]"],
       ["Previous workspace", "Ctrl/Cmd + ["],
       ["Close workspace", "Ctrl/Cmd + W"],
@@ -56,7 +54,8 @@ interface ActiveWorkspaceView {
   zoomedPaneId: string | null;
 }
 
-const WORKSPACE_TAB_KEY_SEPARATOR = "\u0001";
+const WORKSPACE_NAV_KEY_SEPARATOR = "\u0001";
+const LOCKED_SECTIONS: AppSection[] = ["kanban", "agents", "prompts"];
 
 interface SettingsSectionProps {
   themeId: ThemeId;
@@ -184,7 +183,6 @@ function App() {
     initialized,
     bootstrapping,
     activeSection,
-    echoInput,
     paletteOpen,
     activeWorkspaceId,
     themeId,
@@ -196,7 +194,6 @@ function App() {
       initialized: state.initialized,
       bootstrapping: state.bootstrapping,
       activeSection: state.activeSection,
-      echoInput: state.echoInput,
       paletteOpen: state.paletteOpen,
       activeWorkspaceId: state.activeWorkspaceId,
       themeId: state.themeId,
@@ -206,26 +203,26 @@ function App() {
     })),
   );
 
-  const workspaceTabKeys = useWorkspaceStore(
+  const workspaceNavKeys = useWorkspaceStore(
     useShallow((state) =>
       state.workspaces.map(
         (workspace) =>
-          `${workspace.id}${WORKSPACE_TAB_KEY_SEPARATOR}${workspace.name}${WORKSPACE_TAB_KEY_SEPARATOR}${workspace.paneCount}`,
+          `${workspace.id}${WORKSPACE_NAV_KEY_SEPARATOR}${workspace.name}${WORKSPACE_NAV_KEY_SEPARATOR}${workspace.paneCount}`,
       ),
     ),
   );
 
-  const workspaceTabs = useMemo<WorkspaceTabView[]>(
+  const workspaceNav = useMemo<WorkspaceNavView[]>(
     () =>
-      workspaceTabKeys.map((value) => {
-        const [id, name, paneCount] = value.split(WORKSPACE_TAB_KEY_SEPARATOR);
+      workspaceNavKeys.map((value) => {
+        const [id, name, paneCount] = value.split(WORKSPACE_NAV_KEY_SEPARATOR);
         return {
           id,
           name,
           paneCount: Number(paneCount),
         };
       }),
-    [workspaceTabKeys],
+    [workspaceNavKeys],
   );
 
   const activeWorkspace = useWorkspaceStore(
@@ -276,7 +273,6 @@ function App() {
 
   const bootstrap = useWorkspaceStore((state) => state.bootstrap);
   const setActiveSection = useWorkspaceStore((state) => state.setActiveSection);
-  const setEchoInput = useWorkspaceStore((state) => state.setEchoInput);
   const setTheme = useWorkspaceStore((state) => state.setTheme);
   const setReduceMotion = useWorkspaceStore((state) => state.setReduceMotion);
   const setHighContrastAssist = useWorkspaceStore((state) => state.setHighContrastAssist);
@@ -289,11 +285,10 @@ function App() {
   const setActiveWorkspaceLayoutMode = useWorkspaceStore((state) => state.setActiveWorkspaceLayoutMode);
   const setActiveWorkspaceLayouts = useWorkspaceStore((state) => state.setActiveWorkspaceLayouts);
   const toggleActiveWorkspaceZoom = useWorkspaceStore((state) => state.toggleActiveWorkspaceZoom);
-  const saveSnapshot = useWorkspaceStore((state) => state.saveSnapshot);
   const pauseWorkspaceBoot = useWorkspaceStore((state) => state.pauseWorkspaceBoot);
   const resumeWorkspaceBoot = useWorkspaceStore((state) => state.resumeWorkspaceBoot);
 
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
 
   useEffect(() => {
@@ -312,6 +307,8 @@ function App() {
     const listener = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
         event.preventDefault();
+        setActiveSection("terminal");
+        setSidebarOpen(false);
         setPaletteOpen(false);
         setNewWorkspaceOpen(true);
         return;
@@ -319,22 +316,123 @@ function App() {
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
         event.preventDefault();
-        setMenuOpen(false);
+        setSidebarOpen(false);
         setNewWorkspaceOpen(false);
         setPaletteOpen(true);
         return;
       }
 
       if (event.key === "Escape") {
-        setMenuOpen(false);
-        setNewWorkspaceOpen(false);
-        setPaletteOpen(false);
+        if (paletteOpen) {
+          event.preventDefault();
+          setPaletteOpen(false);
+          return;
+        }
+
+        if (newWorkspaceOpen) {
+          event.preventDefault();
+          setNewWorkspaceOpen(false);
+          return;
+        }
+
+        if (sidebarOpen) {
+          event.preventDefault();
+          setSidebarOpen(false);
+        }
       }
     };
 
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [setPaletteOpen]);
+  }, [newWorkspaceOpen, paletteOpen, setActiveSection, setPaletteOpen, sidebarOpen]);
+
+  const openWorkspaceModal = () => {
+    setActiveSection("terminal");
+    setSidebarOpen(false);
+    setPaletteOpen(false);
+    setNewWorkspaceOpen(true);
+  };
+
+  const openCommandPalette = () => {
+    setSidebarOpen(false);
+    setNewWorkspaceOpen(false);
+    setPaletteOpen(true);
+  };
+
+  const terminalControls =
+    activeSection === "terminal" && activeWorkspace ? (
+      <div className="terminal-controls">
+        <span className="compact-label">Panes {activeWorkspace.paneCount}</span>
+        <div className="pane-stepper" role="group" aria-label="Pane count quick controls">
+          <button
+            type="button"
+            className="subtle-btn pane-stepper-btn"
+            onClick={() => {
+              void setActiveWorkspacePaneCount(activeWorkspace.paneCount - 1);
+            }}
+            disabled={activeWorkspace.paneCount <= 1}
+            aria-label="Decrease pane count"
+          >
+            -
+          </button>
+          <button
+            type="button"
+            className="subtle-btn pane-stepper-btn"
+            onClick={() => {
+              void setActiveWorkspacePaneCount(activeWorkspace.paneCount + 1);
+            }}
+            disabled={activeWorkspace.paneCount >= 16}
+            aria-label="Increase pane count"
+          >
+            +
+          </button>
+        </div>
+        <div className="layout-mode-toggle" role="group" aria-label="Layout mode">
+          <button
+            type="button"
+            className={`layout-mode-btn ${activeWorkspace.layoutMode === "tiling" ? "active" : ""}`}
+            onClick={() => setActiveWorkspaceLayoutMode("tiling")}
+          >
+            Tiling
+          </button>
+          <button
+            type="button"
+            className={`layout-mode-btn ${activeWorkspace.layoutMode === "freeform" ? "active" : ""}`}
+            onClick={() => setActiveWorkspaceLayoutMode("freeform")}
+          >
+            Free-form
+          </button>
+        </div>
+        {activeWorkspaceBoot ? (
+          <>
+            <span className="compact-label">
+              Boot {activeWorkspaceBoot.completed}/{activeWorkspaceBoot.totalAgents}
+              {activeWorkspaceBoot.failed > 0 ? ` · failed ${activeWorkspaceBoot.failed}` : ""}
+            </span>
+            {activeWorkspaceBoot.status === "running" ? (
+              <button
+                type="button"
+                className="subtle-btn"
+                onClick={() => pauseWorkspaceBoot(activeWorkspace.id)}
+              >
+                Pause boot
+              </button>
+            ) : null}
+            {activeWorkspaceBoot.status === "paused" ? (
+              <button
+                type="button"
+                className="subtle-btn"
+                onClick={() => resumeWorkspaceBoot(activeWorkspace.id)}
+              >
+                Resume boot
+              </button>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    ) : null;
+
+  const terminalSubtitle = null;
 
   if (!initialized || bootstrapping) {
     return (
@@ -344,219 +442,129 @@ function App() {
     );
   }
 
+  const isTerminalSection = activeSection === "terminal";
+
   return (
-    <main className="app-shell">
-      <TopChrome
-        activeSection={activeSection}
-        workspaces={workspaceTabs}
-        activeWorkspaceId={activeWorkspaceId}
-        onSectionButtonClick={() => setMenuOpen((current) => !current)}
-        onSelectWorkspace={(workspaceId) => {
-          void setActiveWorkspace(workspaceId);
-        }}
-        onCloseWorkspace={(workspaceId) => {
-          void closeWorkspace(workspaceId);
-        }}
-        onOpenWorkspaceModal={() => setNewWorkspaceOpen(true)}
-        onOpenSettings={() => setActiveSection("settings")}
-      />
+    <main className={`app-shell ${isTerminalSection ? "app-shell-terminal" : ""}`}>
+      <div className="app-layout">
+        <AppSidebar
+          open={sidebarOpen}
+          activeSection={activeSection}
+          workspaces={workspaceNav}
+          activeWorkspaceId={activeWorkspaceId}
+          onClose={() => setSidebarOpen(false)}
+          onSelectSection={(section) => {
+            if (LOCKED_SECTIONS.includes(section)) {
+              return;
+            }
+            setActiveSection(section);
+            setSidebarOpen(false);
+          }}
+          onSelectWorkspace={(workspaceId) => {
+            setActiveSection("terminal");
+            void setActiveWorkspace(workspaceId);
+            setSidebarOpen(false);
+          }}
+          onCloseWorkspace={(workspaceId) => {
+            void closeWorkspace(workspaceId);
+          }}
+          onCreateWorkspace={openWorkspaceModal}
+        />
 
-      {activeSection === "terminal" && activeWorkspace ? (
-        <section className="section-surface terminal-surface">
-          <header className="terminal-head">
-            <div className="terminal-context">
-              <h2>{activeWorkspace.name}</h2>
-              <p>
-                {activeWorkspace.branch} · <code>{activeWorkspace.worktreePath}</code>
-              </p>
-            </div>
+        <div className={`app-main ${isTerminalSection ? "app-main-terminal" : ""}`}>
+          <TopChrome
+            activeSection={activeSection}
+            activeWorkspaceName={activeWorkspace?.name ?? null}
+            terminalTitle={activeWorkspace?.name ?? null}
+            terminalSubtitle={terminalSubtitle}
+            terminalControls={terminalControls}
+            onToggleSidebar={() => setSidebarOpen((current) => !current)}
+            onOpenCommandPalette={openCommandPalette}
+          />
 
-            <div className="terminal-controls">
-              <label className="compact-label" htmlFor="pane-count">
-                Panes {activeWorkspace.paneCount}
-              </label>
-              <div className="pane-stepper" role="group" aria-label="Pane count quick controls">
-                <button
-                  type="button"
-                  className="subtle-btn pane-stepper-btn"
-                  onClick={() => {
-                    void setActiveWorkspacePaneCount(activeWorkspace.paneCount - 1);
-                  }}
-                  disabled={activeWorkspace.paneCount <= 1}
-                  aria-label="Decrease pane count"
-                >
-                  -
-                </button>
-                <button
-                  type="button"
-                  className="subtle-btn pane-stepper-btn"
-                  onClick={() => {
-                    void setActiveWorkspacePaneCount(activeWorkspace.paneCount + 1);
-                  }}
-                  disabled={activeWorkspace.paneCount >= 16}
-                  aria-label="Increase pane count"
-                >
-                  +
-                </button>
-              </div>
-              <input
-                id="pane-count"
-                type="range"
-                min={1}
-                max={16}
-                value={activeWorkspace.paneCount}
-                onChange={(event) => {
-                  void setActiveWorkspacePaneCount(Number(event.currentTarget.value));
-                }}
-              />
-              <div className="layout-mode-toggle" role="group" aria-label="Layout mode">
-                <button
-                  type="button"
-                  className={`layout-mode-btn ${activeWorkspace.layoutMode === "tiling" ? "active" : ""}`}
-                  onClick={() => setActiveWorkspaceLayoutMode("tiling")}
-                >
-                  Tiling
-                </button>
-                <button
-                  type="button"
-                  className={`layout-mode-btn ${activeWorkspace.layoutMode === "freeform" ? "active" : ""}`}
-                  onClick={() => setActiveWorkspaceLayoutMode("freeform")}
-                >
-                  Free-form
-                </button>
-              </div>
-              <label className="check-label">
-                <input
-                  type="checkbox"
-                  checked={echoInput}
-                  onChange={(event) => setEchoInput(event.currentTarget.checked)}
+          {activeSection === "terminal" && activeWorkspace ? (
+            <section className="section-surface terminal-surface terminal-surface-dense">
+              <div className="grid-shell">
+                <PaneGrid
+                  workspaceId={activeWorkspace.id}
+                  paneIds={activeWorkspace.paneOrder}
+                  layouts={activeWorkspace.layouts}
+                  layoutMode={activeWorkspace.layoutMode}
+                  zoomedPaneId={activeWorkspace.zoomedPaneId}
+                  onLayoutsChange={(next) => setActiveWorkspaceLayouts(next)}
+                  onToggleZoom={toggleActiveWorkspaceZoom}
                 />
-                Echo input
-              </label>
-              <button
-                type="button"
-                className="subtle-btn"
-                onClick={() => {
-                  const fallback = `Snapshot ${new Date().toLocaleString()}`;
-                  void saveSnapshot(fallback);
-                }}
-              >
-                Save snapshot
-              </button>
-              {activeWorkspaceBoot ? (
-                <>
-                  <span className="compact-label">
-                    Boot {activeWorkspaceBoot.completed}/{activeWorkspaceBoot.totalAgents}
-                    {activeWorkspaceBoot.failed > 0 ? ` · failed ${activeWorkspaceBoot.failed}` : ""}
-                  </span>
-                  {activeWorkspaceBoot.status === "running" ? (
-                    <button
-                      type="button"
-                      className="subtle-btn"
-                      onClick={() => pauseWorkspaceBoot(activeWorkspace.id)}
-                    >
-                      Pause boot
-                    </button>
-                  ) : null}
-                  {activeWorkspaceBoot.status === "paused" ? (
-                    <button
-                      type="button"
-                      className="subtle-btn"
-                      onClick={() => resumeWorkspaceBoot(activeWorkspace.id)}
-                    >
-                      Resume boot
-                    </button>
-                  ) : null}
-                </>
-              ) : null}
-            </div>
-          </header>
+              </div>
+            </section>
+          ) : null}
 
-          <div className="grid-shell">
-            <PaneGrid
-              workspaceId={activeWorkspace.id}
-              paneIds={activeWorkspace.paneOrder}
-              layouts={activeWorkspace.layouts}
-              layoutMode={activeWorkspace.layoutMode}
-              zoomedPaneId={activeWorkspace.zoomedPaneId}
-              onLayoutsChange={(next) => setActiveWorkspaceLayouts(next)}
-              onToggleZoom={toggleActiveWorkspaceZoom}
+          {activeSection === "terminal" && !activeWorkspace ? (
+            <EmptyStatePage
+              title="No workspaces"
+              subtitle="Create your first workspace to start multiplexing agent terminals."
+              actionLabel="Create Workspace"
+              onAction={openWorkspaceModal}
             />
-          </div>
-        </section>
-      ) : null}
+          ) : null}
 
-      {activeSection === "terminal" && !activeWorkspace ? (
-        <EmptyStatePage
-          title="No workspaces"
-          subtitle="Create your first workspace to start multiplexing agent terminals."
-          actionLabel="Create Workspace"
-          onAction={() => setNewWorkspaceOpen(true)}
-        />
-      ) : null}
+          {activeSection === "kanban" ? (
+            <EmptyStatePage
+              title="Kanban Board"
+              subtitle="Track branch tasks through todo, in-progress, review, and done stages."
+              actionLabel="New Task"
+            />
+          ) : null}
 
-      {activeSection === "kanban" ? (
-        <EmptyStatePage
-          title="Kanban Board"
-          subtitle="Track branch tasks through todo, in-progress, review, and done stages."
-          actionLabel="New Task"
-        />
-      ) : null}
+          {activeSection === "agents" ? (
+            <EmptyStatePage
+              title="Agents"
+              subtitle="No agents configured yet. Define agent defaults in workspace creation."
+              actionLabel="Create Agent"
+            />
+          ) : null}
 
-      {activeSection === "agents" ? (
-        <EmptyStatePage
-          title="Agents"
-          subtitle="No agents configured yet. Define agent defaults in workspace creation."
-          actionLabel="Create Agent"
-        />
-      ) : null}
+          {activeSection === "prompts" ? (
+            <EmptyStatePage
+              title="Prompts"
+              subtitle="Store reusable prompt templates and route them to selected panes."
+              actionLabel="New Prompt"
+            />
+          ) : null}
 
-      {activeSection === "prompts" ? (
-        <EmptyStatePage
-          title="Prompts"
-          subtitle="Store reusable prompt templates and route them to selected panes."
-          actionLabel="New Prompt"
-        />
-      ) : null}
-
-      {activeSection === "settings" ? (
-        <SettingsSection
-          themeId={themeId}
-          reduceMotion={reduceMotion}
-          highContrastAssist={highContrastAssist}
-          density={density}
-          onThemeChange={setTheme}
-          onReduceMotionChange={setReduceMotion}
-          onHighContrastAssistChange={setHighContrastAssist}
-          onDensityChange={setDensity}
-        />
-      ) : null}
+          {activeSection === "settings" ? (
+            <SettingsSection
+              themeId={themeId}
+              reduceMotion={reduceMotion}
+              highContrastAssist={highContrastAssist}
+              density={density}
+              onThemeChange={setTheme}
+              onReduceMotionChange={setReduceMotion}
+              onHighContrastAssistChange={setHighContrastAssist}
+              onDensityChange={setDensity}
+            />
+          ) : null}
+        </div>
+      </div>
 
       <Suspense fallback={null}>
-        <SectionMenu
-          open={menuOpen}
-          activeSection={activeSection}
-          onSelectSection={setActiveSection}
-          onClose={() => setMenuOpen(false)}
-        />
+        {newWorkspaceOpen ? (
+          <NewWorkspaceModal
+            open={newWorkspaceOpen}
+            defaultDirectory={activeWorkspace?.worktreePath ?? ""}
+            onClose={() => setNewWorkspaceOpen(false)}
+            onSubmit={(input: WorkspaceCreationInput) => {
+              void createWorkspace(input);
+            }}
+          />
+        ) : null}
 
-        <NewWorkspaceModal
-          open={newWorkspaceOpen}
-          defaultDirectory={activeWorkspace?.worktreePath ?? ""}
-          onClose={() => setNewWorkspaceOpen(false)}
-          onSubmit={(input: WorkspaceCreationInput) => {
-            void createWorkspace(input);
-          }}
-        />
-
-        <CommandPalette
-          open={paletteOpen}
-          onClose={() => setPaletteOpen(false)}
-          onOpenWorkspaceModal={() => {
-            setPaletteOpen(false);
-            setNewWorkspaceOpen(true);
-          }}
-        />
+        {paletteOpen ? (
+          <CommandPalette
+            open={paletteOpen}
+            onClose={() => setPaletteOpen(false)}
+            onOpenWorkspaceModal={openWorkspaceModal}
+          />
+        ) : null}
       </Suspense>
     </main>
   );

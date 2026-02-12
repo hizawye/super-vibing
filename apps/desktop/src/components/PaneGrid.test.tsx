@@ -9,6 +9,7 @@ vi.mock("react-grid-layout", () => {
     onLayoutChange,
     layout,
     margin,
+    containerPadding,
     isDraggable = true,
     isResizable = true,
   }: {
@@ -16,6 +17,7 @@ vi.mock("react-grid-layout", () => {
     onLayoutChange?: (layout: Array<Record<string, unknown>>) => void;
     layout: Array<Record<string, unknown>>;
     margin?: [number, number];
+    containerPadding?: [number, number];
     isDraggable?: boolean;
     isResizable?: boolean;
   }) => (
@@ -24,6 +26,7 @@ vi.mock("react-grid-layout", () => {
       data-draggable={String(isDraggable)}
       data-resizable={String(isResizable)}
       data-margin={JSON.stringify(margin ?? null)}
+      data-container-padding={JSON.stringify(containerPadding ?? null)}
       onClick={() => {
         onLayoutChange?.(layout);
       }}
@@ -42,28 +45,13 @@ vi.mock("./TerminalPane", () => ({
   TerminalPane: ({ paneId }: { paneId: string }) => <div data-testid={`terminal-${paneId}`} />,
 }));
 
-vi.mock("../store/workspace", () => ({
-  useWorkspaceStore: <T,>(selector: (state: { workspaces: Array<{ id: string; panes: Record<string, { title: string }> }> }) => T): T =>
-    selector({
-      workspaces: [
-        {
-          id: "workspace-1",
-          panes: {
-            "pane-1": { title: "pane-1" },
-            "pane-2": { title: "pane-2" },
-          },
-        },
-      ],
-    }),
-}));
-
 describe("PaneGrid", () => {
   const layouts = [
     { i: "pane-1", x: 0, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
     { i: "pane-2", x: 3, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
   ];
 
-  it("renders zoomed pane view with restore action", () => {
+  it("renders zoomed pane view and toggles zoom on handle double-click", () => {
     const onLayoutsChange = vi.fn();
     const onToggleZoom = vi.fn();
 
@@ -82,7 +70,7 @@ describe("PaneGrid", () => {
     expect(screen.getByTestId("terminal-pane-2")).toBeInTheDocument();
     expect(screen.queryByTestId("terminal-pane-1")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    fireEvent.doubleClick(screen.getByTestId("pane-handle-pane-2"));
     expect(onToggleZoom).toHaveBeenCalledWith("pane-2");
   });
 
@@ -104,12 +92,13 @@ describe("PaneGrid", () => {
 
     expect(screen.getByTestId("terminal-pane-1")).toBeInTheDocument();
     expect(screen.getByTestId("terminal-pane-2")).toBeInTheDocument();
-    expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-margin", "[0,0]");
+    expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-margin", "[1,1]");
+    expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-container-padding", "[0,0]");
 
     fireEvent.click(screen.getByTestId("mock-grid"));
     expect(onLayoutsChange).toHaveBeenCalledWith(layouts);
 
-    fireEvent.doubleClick(screen.getByText("pane-1"));
+    fireEvent.doubleClick(screen.getByTestId("pane-handle-pane-1"));
     expect(onToggleZoom).toHaveBeenCalledWith("pane-1");
   });
 

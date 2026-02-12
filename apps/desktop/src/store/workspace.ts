@@ -99,7 +99,8 @@ const MAX_PANES = 16;
 const MIN_PANES = 1;
 const SPAWN_CONCURRENCY_LIMIT = 4;
 const PERSIST_DEBOUNCE_MS = 400;
-const INACTIVE_WORKSPACE_SUSPEND_MS = 10 * 60 * 1000;
+// Suspend inactive workspaces earlier to reclaim PTY/runtime memory.
+const INACTIVE_WORKSPACE_SUSPEND_MS = 120 * 1000;
 const INPUT_BATCH_MS = 16;
 const AGENT_BOOT_PARALLELISM = 3;
 const AGENT_BOOT_STAGGER_MS = 150;
@@ -562,6 +563,39 @@ function resolveWorkspaceLayouts(paneOrder: string[], layoutMode: LayoutMode, ex
     return generateTilingLayouts(paneOrder);
   }
   return generateFreeformLayouts(paneOrder, existing);
+}
+
+function areLayoutsEquivalent(current: Layout[], next: Layout[]): boolean {
+  if (current.length !== next.length) {
+    return false;
+  }
+
+  for (let index = 0; index < current.length; index += 1) {
+    const a = current[index];
+    const b = next[index];
+    if (!a || !b) {
+      return false;
+    }
+
+    if (a.i !== b.i || a.x !== b.x || a.y !== b.y || a.w !== b.w || a.h !== b.h) {
+      return false;
+    }
+
+    if (
+      a.minW !== b.minW
+      || a.maxW !== b.maxW
+      || a.minH !== b.minH
+      || a.maxH !== b.maxH
+      || a.static !== b.static
+      || a.isDraggable !== b.isDraggable
+      || a.isResizable !== b.isResizable
+      || a.isBounded !== b.isBounded
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function toIdlePanes(panes: Record<string, PaneModel>): Record<string, PaneModel> {
@@ -1851,6 +1885,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   setActiveWorkspaceLayouts: (layouts: Layout[]) => {
     const activeWorkspace = activeWorkspaceOf(get());
     if (!activeWorkspace || activeWorkspace.layoutMode !== "freeform") {
+      return;
+    }
+    if (areLayoutsEquivalent(activeWorkspace.layouts, layouts)) {
       return;
     }
 

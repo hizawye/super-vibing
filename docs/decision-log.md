@@ -175,3 +175,141 @@
 **Rationale:** Gives immediate user-facing visual customization while keeping one coherent design system and minimizing per-component theming complexity.
 **Consequences:** Session schema now includes `uiPreferences`; store/tests/persistence path required migration-safe defaults and additional coverage.
 **Alternatives Considered:** Per-workspace themes, custom theme editor in v1, and style-only CSS tweaks without persisted state.
+
+## [2026-02-12] - Navigation IA Shift to Sidebar + Mobile Drawer
+**Context:** Navigation hierarchy in top chrome mixed section switching, workspace switching, and utility actions in one row, which reduced scan clarity and made mobile behavior brittle.
+**Decision:** Move primary navigation to a dedicated left sidebar with desktop persistence and mobile off-canvas behavior:
+- section navigation in sidebar with `Terminal` + `Settings` enabled,
+- `Kanban`, `Agents`, `Prompts` kept visible as locked `PRO` teasers,
+- workspace list/actions (`switch`, `add`, `close`) moved into sidebar panel,
+- top chrome simplified to contextual heading + command palette launcher + mobile nav toggle,
+- section menu overlay removed from runtime flow.
+**Rationale:** Improves information hierarchy and task navigation speed while preserving existing workspace flows and keyboard shortcuts.
+**Consequences:** Top chrome component contract changed, app layout moved to two-column shell, and CSS gained sidebar/drawer primitives with overlay-priority keyboard close handling.
+**Alternatives Considered:** Keep top-bar navigation with visual-only refresh, or expose all sections as clickable placeholders.
+
+## [2026-02-12] - Sidebar Default Visibility Changed to Hidden Drawer
+**Context:** Persistent desktop sidebar consumed space when not actively navigating and did not match user preference for a hideable side menu.
+**Decision:** Make sidebar hidden by default at all breakpoints and open it only on demand via the nav toggle.
+- drawer behavior now applies globally (desktop + mobile),
+- `app-layout` content uses a single main column,
+- sidebar closes via backdrop, close button, `Esc`, and selection flows.
+**Rationale:** Keeps maximum canvas area for terminal work while preserving full navigation access when needed.
+**Consequences:** Navigation now behaves consistently as an overlay drawer rather than persistent rail.
+**Alternatives Considered:** Keep persistent desktop rail with a collapse mode.
+
+## [2026-02-12] - Floating Midnight UI System (Soft-Surface Global Restyle)
+**Context:** After enabling drawer navigation, the app still felt overly rigid with repeated hard-edged rectangular cards and strong borders across panes, settings, and overlays.
+**Decision:** Apply a cohesive soft-surface visual system aligned with reference UI direction:
+- floating drawer and top chrome with subtle glass-like depth,
+- mixed-radius geometry and low-contrast separators instead of heavy outlines,
+- active-state emphasis via glow/fill accents rather than border-only highlighting,
+- global restyle coverage across navigation, pane cards, settings blocks, command palette, and workspace modal.
+**Rationale:** Improves visual hierarchy and perceived polish while preserving terminal density and existing interaction behavior.
+**Consequences:** Styling primitives shifted from border-dominant framing to layered surfaces/shadows; control classes now rely on shared soft tokens for consistency.
+**Alternatives Considered:** Restricting changes to navigation only, and maintaining existing rigid cards with minor border tweaks.
+
+## [2026-02-12] - Terminal Header Controls Realigned Next to Workspace Title
+**Context:** Terminal controls were placed as a separate sibling block under/away from the workspace title, making the header feel detached and less like the target reference.
+**Decision:** Restructure terminal header into two rows:
+- top row: workspace title + full controls cluster inline,
+- second row: branch/path metadata line.
+Responsive behavior keeps inline layout on desktop and stacks controls below title on narrow screens.
+**Rationale:** Tightens information hierarchy and keeps primary controls visually anchored to the active workspace identity.
+**Consequences:** `App.tsx` terminal header markup now uses dedicated title/subtitle row wrappers; `styles.css` includes matching layout rules for desktop/mobile wrapping.
+**Alternatives Considered:** Keeping the old split-block header and only adjusting spacing/alignment values.
+
+## [2026-02-12] - Terminal Header Moved Into Top Chrome
+**Context:** The terminal header strip still occupied vertical space below the top chrome, even after alignment fixes. The desired layout was to pull workspace controls into the top chrome area.
+**Decision:** Move the terminal header contents (workspace name, controls, branch/path) into the top chrome:
+- `TopChrome` now accepts terminal-specific title, subtitle, and control slots.
+- the terminal section no longer renders a dedicated header block.
+- the top chrome renders a second subtitle line for the branch/path while keeping controls on the top row.
+**Rationale:** Compresses vertical chrome, aligns with the reference layout, and keeps primary controls co-located with the workspace identity.
+**Consequences:** Top chrome layout is now variant-aware; terminal controls can overflow horizontally on desktop and wrap on smaller screens.
+**Alternatives Considered:** Keeping a separate header strip and reducing its height only.
+
+## [2026-02-12] - Simplified Top Chrome for Terminal View
+**Context:** The top chrome still felt busy after moving terminal controls into it, with extra labels and actions competing for space.
+**Decision:** Simplify terminal view chrome:
+- remove the section chip,
+- hide the command palette button,
+- keep only nav toggle, workspace name, and inline terminal controls.
+Branch/path subtitle line is hidden for the minimal terminal chrome.
+**Rationale:** Prioritizes workspace identity and direct controls, reducing visual noise in the main working view.
+**Consequences:** Command palette is no longer visible in terminal chrome (still accessible via shortcut), and branch/path line is no longer shown.
+**Alternatives Considered:** Keeping an icon-only command palette button or leaving the subtitle line intact.
+
+## [2026-02-12] - Button-Only Pane Controls
+**Context:** The terminal header still used multiple input controls (range slider and echo checkbox), which felt heavy compared to the desired minimal toolbar.
+**Decision:** Remove the range slider and echo checkbox from the terminal controls and keep pane changes via +/- buttons only. Also remove the save snapshot button from the chrome.
+**Rationale:** Keeps the toolbar button-focused and reduces visual clutter without removing core controls.
+**Consequences:** Pane count is adjusted only via +/- buttons; echo input toggle and snapshot action are no longer visible in the terminal chrome (still available via command palette).
+**Alternatives Considered:** Keeping the slider as a compact control or replacing it with preset buttons.
+
+## [2026-02-12] - Borderless Minimalist Visual System
+**Context:** The interface still relied on nested cards, borders, and container surfaces, which contradicted the requested borderless minimalist aesthetic.
+**Decision:** Apply a global borderless minimal pass:
+- remove borders and heavy container backgrounds,
+- use whitespace and typography as the primary structure,
+- shift to a cool graphite monochrome palette,
+- keep only minimal shadows where depth is necessary.
+**Rationale:** Produces an open, airy, floating layout while improving typographic hierarchy.
+**Consequences:** Most UI surfaces now render as transparent layers; separation is driven by spacing, typography, and subtle hover backgrounds instead of lines.
+**Alternatives Considered:** Only removing borders on primary surfaces while leaving cards intact.
+
+## [2026-02-12] - Borderless Minimalism Rebalanced for Visibility
+**Context:** The initial minimalist pass removed too much surface contrast, reducing content visibility and perceived structure.
+**Decision:** Restore surface backgrounds and text contrast while keeping borders removed:
+- keep background fills on major surfaces (chrome, sidebar, panes, modals),
+- reduce padding rather than removing it entirely,
+- maintain minimal shadows only where depth helps.
+**Rationale:** Preserves the minimalist, airy feel without flattening content into invisibility.
+**Consequences:** The UI regains clarity and contrast while retaining the borderless aesthetic.
+**Alternatives Considered:** Reintroducing borders on key containers.
+
+## [2026-02-12] - Single-Layer Minimalism (Unified Canvas)
+**Context:** Even after borderless passes, the interface still felt multi-layered due to wrapper/card surfaces and subtle panel containment.
+**Decision:** Enforce single-layer minimalism across the main app:
+- header, sidebar, and terminal share the exact same canvas background,
+- remove wrapper/card geometry from content regions,
+- rely on alignment and whitespace for structure,
+- introduce pane spacing via grid margins instead of card borders.
+Modal/palette readability kept via a faint translucent overlay panel.
+**Rationale:** Aligns strictly with the single-layer directive while preserving interaction clarity for overlays.
+**Consequences:** Main interface appears as one continuous canvas; visual grouping now comes from spacing, typography, and alignment.
+**Alternatives Considered:** Keeping subtle surface tints on top chrome/sidebar.
+
+## [2026-02-12] - Removed Pane Labels and Zoom Buttons
+**Context:** Pane chrome still showed visible labels/actions (`Codex`, `Zoom`, `RUNNING`) that conflicted with the requested minimal single-layer UI.
+**Decision:** Remove visible pane label/status/action text from pane regions:
+- `PaneGrid` now renders a slim, textless pane handle used for drag (freeform) and double-click zoom toggle,
+- zoom restore uses handle double-click instead of a `Restore` button,
+- `TerminalPane` no longer renders the metadata row (title/status) above terminal output.
+**Rationale:** Keeps pane interactions intact while eliminating redundant UI text and chrome noise.
+**Consequences:** Pane state/actions are less explicit visually but layout is cleaner and aligned with the requested aesthetic.
+**Alternatives Considered:** Keeping icon-only zoom/status indicators.
+
+## [2026-02-12] - Edge-to-Edge Terminal Pane Density with 1px Dividers
+**Context:** Pane area still lost usable space due to shell gaps and pane grid margins, and panes looked visually detached when pane count increased.
+**Decision:** Increase pane density for terminal view:
+- terminal section now uses edge-to-edge layout spacing with terminal-only shell gap reduction,
+- pane grid spacing changed to `1px` with `containerPadding={0,0}`,
+- divider effect comes from grid background with panes touching each other separated by thin 1px lines,
+- zoomed pane view removes extra outer padding to preserve maximum usable area.
+**Rationale:** Maximizes working terminal area while keeping panes visually grouped and readable at high pane counts.
+**Consequences:** Terminal canvas becomes more compact and efficient; non-terminal sections keep existing spacing rhythm.
+**Alternatives Considered:** Keeping 12px pane spacing and using pane borders only.
+
+## [2026-02-12] - Memory-First Runtime Cleanup and Bottleneck Pass
+**Context:** With multi-workspace/multi-pane usage, memory pressure became the primary pain point and the codebase still carried idle subscriptions, dead UI artifacts, and avoidable state churn.
+**Decision:** Apply low-risk performance cleanup focused on memory and runtime overhead:
+- reduce inactive workspace auto-suspend delay to `120s`,
+- set terminal scrollback depth to `400` lines per pane,
+- move PTY reader from generic `spawn_blocking` pool to named bounded-stack threads (`256 KiB`) and handle reader-thread spawn failure with explicit pane rollback,
+- skip mounting `CommandPalette` and `NewWorkspaceModal` while closed,
+- deduplicate no-op freeform layout updates to avoid unnecessary state writes/persistence,
+- remove dead `SectionMenu` component and stale `App.css`, plus related `section-menu` CSS.
+**Rationale:** Reclaims memory earlier, lowers idle render/subscription cost, and trims unnecessary UI/runtime overhead without changing product behavior.
+**Consequences:** Inactive workspaces suspend sooner; terminal panes retain less scrollback history; code surface is smaller and easier to maintain.
+**Alternatives Considered:** Aggressive lifecycle changes (auto-closing inactive panes) and large store architecture rewrites.

@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { useShallow } from "zustand/react/shallow";
 import type { Terminal } from "xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import { toRuntimePaneId } from "../lib/panes";
@@ -16,11 +15,6 @@ const PROMPTABLE_INPUT_REGEX = /^[\x20-\x7E]$/;
 const OUTPUT_FLUSH_THRESHOLD_BYTES = 32 * 1024;
 const RESIZE_DEBOUNCE_MS = 50;
 
-interface PaneView {
-  title: string;
-  status: string;
-}
-
 export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
   const runtimePaneId = toRuntimePaneId(workspaceId, paneId);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -31,16 +25,6 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
   const outputFlushRafRef = useRef<number | null>(null);
   const resizeTimerRef = useRef<number | null>(null);
 
-  const pane = useWorkspaceStore(
-    useShallow((state) => {
-      const workspace = state.workspaces.find((item) => item.id === workspaceId);
-      const current = workspace?.panes[paneId];
-      return {
-        title: current?.title ?? paneId,
-        status: current?.status ?? "idle",
-      } satisfies PaneView;
-    }),
-  );
   const ensurePaneSpawned = useWorkspaceStore((state) => state.ensurePaneSpawned);
   const markPaneExited = useWorkspaceStore((state) => state.markPaneExited);
   const updatePaneLastCommand = useWorkspaceStore((state) => state.updatePaneLastCommand);
@@ -79,6 +63,7 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
         cursorBlink: !reduceMotion,
         fontFamily: '"JetBrains Mono", "Fira Code", monospace',
         fontSize: 13,
+        scrollback: 400,
         theme: resolveTerminalTheme(themeId, highContrastAssist),
       });
 
@@ -245,10 +230,6 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
 
   return (
     <div className="terminal-shell">
-      <div className="terminal-meta">
-        <span>{pane.title}</span>
-        <span className="terminal-status">{pane.status}</span>
-      </div>
       <div className="terminal-body" ref={containerRef} />
     </div>
   );

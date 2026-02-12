@@ -1,20 +1,14 @@
+import type { ReactNode } from "react";
 import type { AppSection } from "../types";
-
-export interface WorkspaceTabView {
-  id: string;
-  name: string;
-  paneCount: number;
-}
 
 interface TopChromeProps {
   activeSection: AppSection;
-  workspaces: WorkspaceTabView[];
-  activeWorkspaceId: string | null;
-  onSectionButtonClick: () => void;
-  onSelectWorkspace: (workspaceId: string) => void;
-  onCloseWorkspace: (workspaceId: string) => void;
-  onOpenWorkspaceModal: () => void;
-  onOpenSettings: () => void;
+  activeWorkspaceName: string | null;
+  onToggleSidebar: () => void;
+  onOpenCommandPalette: () => void;
+  terminalTitle?: string | null;
+  terminalSubtitle?: ReactNode;
+  terminalControls?: ReactNode;
 }
 
 function titleForSection(section: AppSection): string {
@@ -34,67 +28,77 @@ function titleForSection(section: AppSection): string {
   }
 }
 
+function subtitleForSection(section: AppSection, workspaceName: string | null): string {
+  if (section === "terminal") {
+    return workspaceName ? `Active workspace: ${workspaceName}` : "No workspace active";
+  }
+
+  if (section === "settings") {
+    return "Appearance, accessibility, and shortcuts";
+  }
+
+  return "Coming soon";
+}
+
 export function TopChrome({
   activeSection,
-  workspaces,
-  activeWorkspaceId,
-  onSectionButtonClick,
-  onSelectWorkspace,
-  onCloseWorkspace,
-  onOpenWorkspaceModal,
-  onOpenSettings,
+  activeWorkspaceName,
+  onToggleSidebar,
+  onOpenCommandPalette,
+  terminalTitle,
+  terminalSubtitle,
+  terminalControls,
 }: TopChromeProps) {
+  const workspaceLabel = activeWorkspaceName ?? "No workspace";
+  const hasTerminalControls = activeSection === "terminal" && Boolean(terminalControls);
+  const fallbackSubtitle = subtitleForSection(activeSection, activeWorkspaceName);
+  const terminalTitleText = terminalTitle ?? workspaceLabel;
+  const showCommandPalette = !hasTerminalControls;
+
   return (
-    <header className="top-chrome">
-      <div className="top-chrome-left">
-        <div className="brand-dot" aria-hidden="true">
-          ⚡
-        </div>
-
-        <button type="button" className="section-pill" onClick={onSectionButtonClick}>
-          {titleForSection(activeSection)}
-        </button>
-
-        <div className="workspace-tabs" role="tablist" aria-label="Workspaces">
-          {workspaces.map((workspace) => {
-            const active = workspace.id === activeWorkspaceId;
-            const closable = workspaces.length > 1;
-
-            return (
-              <div key={workspace.id} className={`workspace-tab-shell ${active ? "active" : ""}`}>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  className="workspace-tab"
-                  onClick={() => onSelectWorkspace(workspace.id)}
-                >
-                  <span className="workspace-tab-name">{workspace.name}</span>
-                  <span className="workspace-tab-count">{workspace.paneCount}</span>
-                </button>
-                {closable ? (
-                  <button
-                    type="button"
-                    className="workspace-tab-close"
-                    aria-label={`Close ${workspace.name}`}
-                    onClick={() => onCloseWorkspace(workspace.id)}
-                  >
-                    x
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
-
-          <button type="button" className="workspace-add" aria-label="New workspace" onClick={onOpenWorkspaceModal}>
-            +
+    <header className={`top-chrome ${hasTerminalControls ? "top-chrome-terminal top-chrome-minimal" : ""}`}>
+      <div className="top-chrome-row">
+        <div className="top-chrome-left">
+          <button type="button" className="mobile-nav-toggle" aria-label="Open navigation" onClick={onToggleSidebar}>
+            <span aria-hidden="true">☰</span>
           </button>
+
+          <div className="top-chrome-context">
+            {hasTerminalControls ? (
+              <h1 className="top-terminal-title">
+                <span className="top-terminal-name">{terminalTitleText}</span>
+              </h1>
+            ) : (
+              <>
+                <h1>
+                  <span>{titleForSection(activeSection)}</span>
+                  <span className="top-section-dot" aria-hidden="true" />
+                  <span className="top-workspace-pill">{workspaceLabel}</span>
+                </h1>
+                <p>{fallbackSubtitle}</p>
+              </>
+            )}
+          </div>
         </div>
+
+        {hasTerminalControls ? <div className="top-chrome-controls">{terminalControls}</div> : null}
+
+        {showCommandPalette ? (
+          <button
+            type="button"
+            className="top-command-btn"
+            aria-label="Open command palette"
+            onClick={onOpenCommandPalette}
+          >
+            <span>Command Palette</span>
+            <kbd>Ctrl/Cmd + P</kbd>
+          </button>
+        ) : null}
       </div>
 
-      <button type="button" className="chrome-icon-btn" aria-label="Settings" onClick={onOpenSettings}>
-        ⚙
-      </button>
+      {!hasTerminalControls && terminalSubtitle ? (
+        <div className="top-chrome-subtitle">{terminalSubtitle}</div>
+      ) : null}
     </header>
   );
 }

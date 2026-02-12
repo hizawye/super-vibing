@@ -271,6 +271,28 @@ describe("workspace store", () => {
     expect(active.layouts).toEqual(generateTilingLayouts(active.paneOrder));
   });
 
+  it("skips no-op free-form layout updates", () => {
+    const freeformWorkspace = workspace("workspace-main", "Workspace 1", 3, ["running", "running", "running"], "/repo", "freeform");
+    freeformWorkspace.layouts = [
+      { i: "pane-1", x: 0, y: 0, w: 12, h: 2, minW: 2, minH: 2 },
+      { i: "pane-2", x: 0, y: 2, w: 6, h: 6, minW: 2, minH: 2 },
+      { i: "pane-3", x: 6, y: 2, w: 6, h: 6, minW: 2, minH: 2 },
+    ];
+
+    resetStore({
+      workspaces: [freeformWorkspace],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    const beforeWorkspace = useWorkspaceStore.getState().workspaces[0];
+    const equivalentLayouts = beforeWorkspace.layouts.map((layout) => ({ ...layout }));
+
+    useWorkspaceStore.getState().setActiveWorkspaceLayouts(equivalentLayouts);
+
+    const afterWorkspace = useWorkspaceStore.getState().workspaces[0];
+    expect(afterWorkspace).toBe(beforeWorkspace);
+  });
+
   it("toggles active workspace zoom idempotently", () => {
     useWorkspaceStore.getState().toggleActiveWorkspaceZoom("pane-1");
     let active = useWorkspaceStore.getState().workspaces[0];
