@@ -48,3 +48,10 @@
 **Rationale:** Reduces initial bundle size and defers heavy dependencies until needed, improving startup performance.
 **Consequences:** Additional chunks generated; terminal initialization now awaits async module load; build output now has multiple sub-300 kB chunks.
 **Alternatives Considered:** Keeping a single bundle and only adjusting `chunkSizeWarningLimit`.
+
+## [2026-02-12] - Agent Auto-Launch Reliability
+**Context:** New workspace agent panes sometimes failed to auto-run their init command even when the CLI was available on PATH.
+**Decision:** Re-issue agent init commands from the frontend after `spawnPane` completes with a short delay, instead of relying solely on backend init writes.
+**Rationale:** Ensures the shell is ready to accept the command; avoids dropped writes during early PTY startup.
+**Consequences:** Slight delay before agent starts; backend init support remains unused but available.
+**Alternatives Considered:** Using a first-output trigger, or relying only on backend init writes.

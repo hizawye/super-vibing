@@ -1,17 +1,14 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (bundle-segmentation)
+- Last Updated: 2026-02-12 (agent-auto-launch)
 
 - Current progress:
-  - Split frontend bundles using Vite manual chunks (react/grid/terminal/tauri).
-  - Lazy-loaded palette, section menu, and workspace modal to reduce initial JS.
-  - Dynamically imported `xterm` and FitAddon in `TerminalPane` to defer terminal runtime load.
-  - Validation passed: `pnpm --filter @supervibing/desktop typecheck`, `test:ci`, and `build` (no 500 kB chunk warning).
+  - Reissued agent init commands after `spawnPane` to improve workspace auto-launch reliability.
+  - Backend init support remains available, but frontend now delays the write to avoid early PTY drops.
 
 - Blockers/Bugs:
-  - Pending verification from current GitHub Actions run `21927033658` (CI fix for Rust dependencies).
-  - No local runtime regressions observed in tests.
+  - Pending manual verification that Codex starts in new workspace panes after the delay.
 
 - Next immediate starting point:
-  - Confirm CI run passes; if not, refine dependency package list.
-  - Run manual `pnpm tauri:dev` UX pass for terminal startup latency after async xterm load.
+  - Run `pnpm tauri:debug` and create a workspace with Codex allocation to confirm auto-launch.
+  - If still failing, switch to first-output trigger and add a retry strategy.
