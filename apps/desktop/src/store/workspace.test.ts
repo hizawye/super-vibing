@@ -103,6 +103,8 @@ function workspace(
 
 function resetStore(overrides: Partial<SessionState> = {}): void {
   const baseWorkspace = workspace("workspace-main", "Workspace 1", 2, ["running", "running"]);
+  const workspaces = overrides.workspaces ?? [baseWorkspace];
+  const activeWorkspaceId = overrides.activeWorkspaceId ?? workspaces[0]?.id ?? null;
   const uiPreferences = overrides.uiPreferences ?? {
     theme: DEFAULT_THEME_ID,
     reduceMotion: false,
@@ -120,8 +122,11 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
     reduceMotion: uiPreferences.reduceMotion,
     highContrastAssist: uiPreferences.highContrastAssist,
     density: uiPreferences.density,
-    workspaces: overrides.workspaces ?? [baseWorkspace],
-    activeWorkspaceId: overrides.activeWorkspaceId ?? baseWorkspace.id,
+    workspaces,
+    activeWorkspaceId,
+    focusedPaneByWorkspace: Object.fromEntries(
+      workspaces.map((item) => [item.id, item.paneOrder[0] ?? null]),
+    ),
     workspaceBootSessions: {},
     snapshots: [],
     blueprints: [],
@@ -187,6 +192,7 @@ describe("workspace store", () => {
       density: "comfortable",
       workspaces: [],
       activeWorkspaceId: null,
+      focusedPaneByWorkspace: {},
       workspaceBootSessions: {},
       snapshots: [],
       blueprints: [],
@@ -301,6 +307,36 @@ describe("workspace store", () => {
     useWorkspaceStore.getState().toggleActiveWorkspaceZoom("pane-1");
     active = useWorkspaceStore.getState().workspaces[0];
     expect(active.zoomedPaneId).toBeNull();
+  });
+
+  it("moves focused pane by direction and keeps stable when no candidate exists", () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 4, ["running", "running", "running", "running"])],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    useWorkspaceStore.getState().setFocusedPane("workspace-main", "pane-1");
+    useWorkspaceStore.getState().moveFocusedPane("workspace-main", "right");
+    let state = useWorkspaceStore.getState();
+    expect(state.focusedPaneByWorkspace["workspace-main"]).toBe("pane-2");
+
+    useWorkspaceStore.getState().moveFocusedPane("workspace-main", "up");
+    state = useWorkspaceStore.getState();
+    expect(state.focusedPaneByWorkspace["workspace-main"]).toBe("pane-2");
+  });
+
+  it("reassigns focus when focused pane is removed by pane-count decrease", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 4, ["running", "running", "running", "running"])],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    useWorkspaceStore.getState().setFocusedPane("workspace-main", "pane-4");
+    await useWorkspaceStore.getState().setActiveWorkspacePaneCount(2);
+
+    const state = useWorkspaceStore.getState();
+    expect(state.workspaces[0]?.paneOrder).toEqual(["pane-1", "pane-2"]);
+    expect(state.focusedPaneByWorkspace["workspace-main"]).toBe("pane-2");
   });
 
   it("broadcasts input only to running panes when echo mode is on", async () => {
@@ -502,6 +538,7 @@ describe("workspace store", () => {
       density: "comfortable",
       workspaces: [],
       activeWorkspaceId: null,
+      focusedPaneByWorkspace: {},
       workspaceBootSessions: {},
       snapshots: [],
       blueprints: [],
@@ -551,6 +588,7 @@ describe("workspace store", () => {
       density: "comfortable",
       workspaces: [],
       activeWorkspaceId: null,
+      focusedPaneByWorkspace: {},
       workspaceBootSessions: {},
       snapshots: [],
       blueprints: [],

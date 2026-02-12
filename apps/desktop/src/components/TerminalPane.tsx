@@ -9,13 +9,14 @@ import { resolveTerminalTheme } from "../theme/themes";
 interface TerminalPaneProps {
   workspaceId: string;
   paneId: string;
+  onFocusPane?: (paneId: string) => void;
 }
 
 const PROMPTABLE_INPUT_REGEX = /^[\x20-\x7E]$/;
 const OUTPUT_FLUSH_THRESHOLD_BYTES = 32 * 1024;
 const RESIZE_DEBOUNCE_MS = 50;
 
-export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
+export function TerminalPane({ workspaceId, paneId, onFocusPane }: TerminalPaneProps) {
   const runtimePaneId = toRuntimePaneId(workspaceId, paneId);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -24,6 +25,7 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
   const outputBufferRef = useRef("");
   const outputFlushRafRef = useRef<number | null>(null);
   const resizeTimerRef = useRef<number | null>(null);
+  const onFocusPaneRef = useRef(onFocusPane);
 
   const ensurePaneSpawned = useWorkspaceStore((state) => state.ensurePaneSpawned);
   const markPaneExited = useWorkspaceStore((state) => state.markPaneExited);
@@ -32,6 +34,10 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
   const themeId = useWorkspaceStore((state) => state.themeId);
   const reduceMotion = useWorkspaceStore((state) => state.reduceMotion);
   const highContrastAssist = useWorkspaceStore((state) => state.highContrastAssist);
+
+  useEffect(() => {
+    onFocusPaneRef.current = onFocusPane;
+  }, [onFocusPane]);
 
   useEffect(() => {
     void ensurePaneSpawned(workspaceId, paneId);
@@ -230,7 +236,7 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
 
   return (
     <div className="terminal-shell">
-      <div className="terminal-body" ref={containerRef} />
+      <div className="terminal-body" ref={containerRef} onMouseDown={() => onFocusPaneRef.current?.(paneId)} />
     </div>
   );
 }

@@ -15,8 +15,10 @@ interface PaneGridProps {
   layouts: Layout[];
   layoutMode: LayoutMode;
   zoomedPaneId: string | null;
+  focusedPaneId: string | null;
   onLayoutsChange: (next: Layout[]) => void;
   onToggleZoom: (paneId: string) => void;
+  onPaneFocus: (paneId: string) => void;
 }
 
 export function PaneGrid({
@@ -25,8 +27,10 @@ export function PaneGrid({
   layouts,
   layoutMode,
   zoomedPaneId,
+  focusedPaneId,
   onLayoutsChange,
   onToggleZoom,
+  onPaneFocus,
 }: PaneGridProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
@@ -66,13 +70,14 @@ export function PaneGrid({
   if (zoomedPaneId) {
     return (
       <div className="zoom-grid">
-        <div className="pane-card is-zoomed">
+        <div className={`pane-card is-zoomed ${focusedPaneId === zoomedPaneId ? "is-focused" : ""}`}>
           <div
             className="pane-header"
             data-testid={`pane-handle-${zoomedPaneId}`}
             onDoubleClick={() => onToggleZoom(zoomedPaneId)}
+            onMouseDown={() => onPaneFocus(zoomedPaneId)}
           />
-          <TerminalPane workspaceId={workspaceId} paneId={zoomedPaneId} />
+          <TerminalPane workspaceId={workspaceId} paneId={zoomedPaneId} onFocusPane={onPaneFocus} />
         </div>
       </div>
     );
@@ -94,13 +99,14 @@ export function PaneGrid({
         resizeHandles={layoutMode === "freeform" ? ["se"] : []}
       >
         {paneIds.map((paneId) => (
-          <div key={paneId} className="pane-card">
+          <div key={paneId} className={`pane-card ${focusedPaneId === paneId ? "is-focused" : ""}`}>
             <div
               className={`pane-header ${layoutMode === "freeform" ? "is-draggable" : ""}`}
               data-testid={`pane-handle-${paneId}`}
               onDoubleClick={() => onToggleZoom(paneId)}
+              onMouseDown={() => onPaneFocus(paneId)}
             />
-            <TerminalPane workspaceId={workspaceId} paneId={paneId} />
+            <TerminalPane workspaceId={workspaceId} paneId={paneId} onFocusPane={onPaneFocus} />
           </div>
         ))}
       </FluidGridLayout>

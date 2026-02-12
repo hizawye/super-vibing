@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Layout } from "react-grid-layout";
+import { findDirectionalPaneTarget, type PaneMoveDirection } from "../lib/pane-focus";
 import {
   closePane,
   getCurrentBranch,
@@ -60,6 +61,7 @@ interface WorkspaceStore {
   density: DensityMode;
   workspaces: WorkspaceRuntime[];
   activeWorkspaceId: string | null;
+  focusedPaneByWorkspace: Record<string, string | null>;
   workspaceBootSessions: Record<string, WorkspaceBootSession>;
   snapshots: Snapshot[];
   blueprints: Blueprint[];
@@ -87,6 +89,8 @@ interface WorkspaceStore {
   setActiveWorkspaceLayoutMode: (mode: LayoutMode) => void;
   setActiveWorkspaceLayouts: (layouts: Layout[]) => void;
   toggleActiveWorkspaceZoom: (paneId: string) => void;
+  setFocusedPane: (workspaceId: string, paneId: string) => void;
+  moveFocusedPane: (workspaceId: string, direction: PaneMoveDirection) => void;
   runGlobalCommand: (command: string, execute: boolean) => Promise<PaneCommandResult[]>;
   saveSnapshot: (name: string) => Promise<void>;
   restoreSnapshot: (snapshotId: string) => Promise<void>;
@@ -702,6 +706,24 @@ function activeWorkspaceOf(state: Pick<WorkspaceStore, "workspaces" | "activeWor
   return state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ?? null;
 }
 
+function resolveFocusedPaneId(workspace: WorkspaceRuntime, preferredPaneId?: string | null): string | null {
+  if (preferredPaneId && workspace.paneOrder.includes(preferredPaneId)) {
+    return preferredPaneId;
+  }
+
+  if (workspace.zoomedPaneId && workspace.paneOrder.includes(workspace.zoomedPaneId)) {
+    return workspace.zoomedPaneId;
+  }
+
+  return workspace.paneOrder[0] ?? null;
+}
+
+function buildFocusedPaneMap(workspaces: WorkspaceRuntime[]): Record<string, string | null> {
+  return Object.fromEntries(
+    workspaces.map((workspace) => [workspace.id, resolveFocusedPaneId(workspace)]),
+  );
+}
+
 function serializeSessionState(state: WorkspaceStore): SessionState {
   return {
     workspaces: state.workspaces,
@@ -1257,6 +1279,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   density: "comfortable",
   workspaces: [],
   activeWorkspaceId: null,
+  focusedPaneByWorkspace: {},
   workspaceBootSessions: {},
   snapshots: [],
   blueprints: [],
@@ -1318,6 +1341,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       density: session.uiPreferences.density,
       workspaces: session.workspaces,
       activeWorkspaceId: session.activeWorkspaceId,
+      focusedPaneByWorkspace: buildFocusedPaneMap(session.workspaces),
       snapshots: persisted.snapshots,
       blueprints: persisted.blueprints,
       initialized: true,
@@ -1400,6 +1424,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       activeSection: "terminal",
       workspaces: [...state.workspaces, nextWorkspace],
       activeWorkspaceId: nextWorkspace.id,
+      focusedPaneByWorkspace: {
+        ...state.focusedPaneByWorkspace,
+        [nextWorkspace.id]: resolveFocusedPaneId(nextWorkspace),
+      },
     }));
 
     clearSuspendTimer(nextWorkspace.id);
@@ -1443,9 +1471,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       ? remaining.find((workspace) => workspace.id === nextActiveId)
       : undefined;
 
-    set({
-      workspaces: remaining,
-      activeWorkspaceId: nextActiveId,
+    set((current) => {
+      const focusedPaneByWorkspace = Object.fromEntries(
+        Object.entries(current.focusedPaneByWorkspace).filter(([workspaceKey]) => workspaceKey !== workspaceId),
+      );
+      if (nextActiveWorkspaceSnapshot && nextActiveId) {
+        focusedPaneByWorkspace[nextActiveId] = resolveFocusedPaneId(
+          nextActiveWorkspaceSnapshot,
+          focusedPaneByWorkspace[nextActiveId],
+        );
+      }
+
+      return {
+        workspaces: remaining,
+        activeWorkspaceId: nextActiveId,
+        focusedPaneByWorkspace,
+      };
     });
 
     if (closingActive && nextActiveId) {
@@ -1466,6 +1507,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   setActiveWorkspace: async (workspaceId: string) => {
     const state = get();
     if (state.activeWorkspaceId === workspaceId) {
+      const target = state.workspaces.find((workspace) => workspace.id === workspaceId);
+      if (target) {
+        set((current) => ({
+          focusedPaneByWorkspace: {
+            ...current.focusedPaneByWorkspace,
+            [workspaceId]: resolveFocusedPaneId(target, current.focusedPaneByWorkspace[workspaceId]),
+          },
+        }));
+      }
       clearSuspendTimer(workspaceId);
       get().resumeWorkspaceBoot(workspaceId);
       return;
@@ -1477,9 +1527,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     const previousActiveId = state.activeWorkspaceId;
-    set(() => ({
+    set((current) => ({
       activeWorkspaceId: workspaceId,
       activeSection: "terminal",
+      focusedPaneByWorkspace: {
+        ...current.focusedPaneByWorkspace,
+        [workspaceId]: resolveFocusedPaneId(target, current.focusedPaneByWorkspace[workspaceId]),
+      },
     }));
 
     clearSuspendTimer(workspaceId);
@@ -1546,20 +1600,35 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       paneInputFlushes.delete(runtimePaneId);
     });
 
-    set((current) => ({
-      workspaces: withWorkspaceUpdated(current.workspaces, activeWorkspace.id, (workspace) => ({
-        ...workspace,
-        paneCount,
-        paneOrder: nextPaneOrder,
-        panes: nextPanes,
-        layouts: resolveWorkspaceLayouts(nextPaneOrder, workspace.layoutMode, workspace.layouts),
-        zoomedPaneId:
-          workspace.zoomedPaneId && nextPaneOrder.includes(workspace.zoomedPaneId)
-            ? workspace.zoomedPaneId
-            : null,
-        updatedAt: new Date().toISOString(),
-      })),
-    }));
+    set((current) => {
+      const currentFocusedPane = current.focusedPaneByWorkspace[activeWorkspace.id];
+      const previousIndex = activeWorkspace.paneOrder.indexOf(currentFocusedPane ?? "");
+      const fallbackIndex = previousIndex >= 0
+        ? Math.min(previousIndex, Math.max(0, nextPaneOrder.length - 1))
+        : 0;
+      const focusedPaneId = nextPaneOrder.includes(currentFocusedPane ?? "")
+        ? currentFocusedPane
+        : nextPaneOrder[fallbackIndex] ?? null;
+
+      return {
+        focusedPaneByWorkspace: {
+          ...current.focusedPaneByWorkspace,
+          [activeWorkspace.id]: focusedPaneId,
+        },
+        workspaces: withWorkspaceUpdated(current.workspaces, activeWorkspace.id, (workspace) => ({
+          ...workspace,
+          paneCount,
+          paneOrder: nextPaneOrder,
+          panes: nextPanes,
+          layouts: resolveWorkspaceLayouts(nextPaneOrder, workspace.layoutMode, workspace.layouts),
+          zoomedPaneId:
+            workspace.zoomedPaneId && nextPaneOrder.includes(workspace.zoomedPaneId)
+              ? workspace.zoomedPaneId
+              : null,
+          updatedAt: new Date().toISOString(),
+        })),
+      };
+    });
 
     const workspaceAfterResize = activeWorkspaceOf(get());
     const eligiblePaneIds = workspaceAfterResize
@@ -1908,6 +1977,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     set((state) => ({
+      focusedPaneByWorkspace: {
+        ...state.focusedPaneByWorkspace,
+        [activeWorkspace.id]: paneId,
+      },
       workspaces: withWorkspaceUpdated(state.workspaces, activeWorkspace.id, (workspace) => ({
         ...workspace,
         zoomedPaneId: workspace.zoomedPaneId === paneId ? null : paneId,
@@ -1915,6 +1988,45 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       })),
     }));
     enqueuePersist(get);
+  },
+
+  setFocusedPane: (workspaceId: string, paneId: string) => {
+    const workspace = get().workspaces.find((item) => item.id === workspaceId);
+    if (!workspace || !workspace.paneOrder.includes(paneId)) {
+      return;
+    }
+
+    set((state) => ({
+      focusedPaneByWorkspace: {
+        ...state.focusedPaneByWorkspace,
+        [workspaceId]: paneId,
+      },
+    }));
+  },
+
+  moveFocusedPane: (workspaceId: string, direction: PaneMoveDirection) => {
+    const state = get();
+    const workspace = state.workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) {
+      return;
+    }
+
+    const focusedPaneId = resolveFocusedPaneId(workspace, state.focusedPaneByWorkspace[workspaceId]);
+    if (!focusedPaneId) {
+      return;
+    }
+
+    const nextPaneId = findDirectionalPaneTarget(workspace.paneOrder, workspace.layouts, focusedPaneId, direction);
+    if (!nextPaneId || nextPaneId === focusedPaneId) {
+      return;
+    }
+
+    set((current) => ({
+      focusedPaneByWorkspace: {
+        ...current.focusedPaneByWorkspace,
+        [workspaceId]: nextPaneId,
+      },
+    }));
   },
 
   runGlobalCommand: async (command: string, execute: boolean) => {
@@ -1976,6 +2088,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({
       workspaces: restored.workspaces,
       activeWorkspaceId: restored.activeWorkspaceId,
+      focusedPaneByWorkspace: buildFocusedPaneMap(restored.workspaces),
       activeSection: restored.activeSection,
       echoInput: restored.echoInput,
       themeId: restored.uiPreferences.theme,

@@ -39,10 +39,11 @@ const SHORTCUT_GROUPS = [
   {
     title: "Panes",
     shortcuts: [
+      ["Move pane focus", "Ctrl/Cmd + Alt + Arrow"],
       ["Increase pane layout", "Ctrl/Cmd + Shift + ]"],
       ["Decrease pane layout", "Ctrl/Cmd + Shift + ["],
-      ["Zoom pane", "Double-click pane header"],
-      ["Run command in all panes", "Ctrl/Cmd + Enter"],
+      ["Zoom focused pane", "Ctrl/Cmd + Alt + Enter"],
+      ["Zoom pane (mouse)", "Double-click pane header"],
     ],
   },
   {
@@ -61,11 +62,131 @@ interface ActiveWorkspaceView {
   layouts: Layout[];
   layoutMode: LayoutMode;
   zoomedPaneId: string | null;
+  focusedPaneId: string | null;
 }
 
 const WORKSPACE_NAV_KEY_SEPARATOR = "\u0001";
 const LOCKED_SECTIONS: AppSection[] = ["kanban", "agents", "prompts"];
 type UpdateStatus = "idle" | "checking" | "available" | "installing" | "installed" | "upToDate" | "error";
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!target) {
+    return false;
+  }
+
+  const element = target as HTMLElement;
+  const tag = element.tagName?.toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") {
+    return true;
+  }
+
+  return element.isContentEditable;
+}
+
+interface AppShortcutContext {
+  activeSection: AppSection;
+  activeWorkspace: ActiveWorkspaceView | null;
+  paletteOpen: boolean;
+  newWorkspaceOpen: boolean;
+  sidebarOpen: boolean;
+  setActiveSection: (section: AppSection) => void;
+  setSidebarOpen: (open: boolean) => void;
+  setPaletteOpen: (open: boolean) => void;
+  setNewWorkspaceOpen: (open: boolean) => void;
+  setActiveWorkspacePaneCount: (count: number) => void;
+  moveFocusedPane: (workspaceId: string, direction: "left" | "right" | "up" | "down") => void;
+  toggleActiveWorkspaceZoom: (paneId: string) => void;
+}
+
+export function handleAppKeydown(event: KeyboardEvent, context: AppShortcutContext): void {
+  if (isEditableTarget(event.target)) {
+    return;
+  }
+
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
+    event.preventDefault();
+    context.setActiveSection("terminal");
+    context.setSidebarOpen(false);
+    context.setPaletteOpen(false);
+    context.setNewWorkspaceOpen(true);
+    return;
+  }
+
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
+    event.preventDefault();
+    context.setSidebarOpen(false);
+    context.setNewWorkspaceOpen(false);
+    context.setPaletteOpen(true);
+    return;
+  }
+
+  if (
+    context.activeSection === "terminal"
+    && context.activeWorkspace
+    && !context.paletteOpen
+    && !context.newWorkspaceOpen
+    && (event.metaKey || event.ctrlKey)
+  ) {
+    if (event.shiftKey && !event.altKey && event.code === "BracketRight") {
+      event.preventDefault();
+      context.setActiveWorkspacePaneCount(context.activeWorkspace.paneCount + 1);
+      return;
+    }
+
+    if (event.shiftKey && !event.altKey && event.code === "BracketLeft") {
+      event.preventDefault();
+      context.setActiveWorkspacePaneCount(context.activeWorkspace.paneCount - 1);
+      return;
+    }
+
+    if (event.altKey && !event.shiftKey) {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        context.moveFocusedPane(context.activeWorkspace.id, "left");
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        context.moveFocusedPane(context.activeWorkspace.id, "right");
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        context.moveFocusedPane(context.activeWorkspace.id, "up");
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        context.moveFocusedPane(context.activeWorkspace.id, "down");
+        return;
+      }
+      if (event.key === "Enter" && context.activeWorkspace.focusedPaneId) {
+        event.preventDefault();
+        context.toggleActiveWorkspaceZoom(context.activeWorkspace.focusedPaneId);
+        return;
+      }
+    }
+  }
+
+  if (event.key === "Escape") {
+    if (context.paletteOpen) {
+      event.preventDefault();
+      context.setPaletteOpen(false);
+      return;
+    }
+
+    if (context.newWorkspaceOpen) {
+      event.preventDefault();
+      context.setNewWorkspaceOpen(false);
+      return;
+    }
+
+    if (context.sidebarOpen) {
+      event.preventDefault();
+      context.setSidebarOpen(false);
+    }
+  }
+}
 
 interface UpdateUiState {
   status: UpdateStatus;
@@ -452,6 +573,7 @@ function App() {
         layouts: workspace.layouts,
         layoutMode: workspace.layoutMode,
         zoomedPaneId: workspace.zoomedPaneId,
+        focusedPaneId: state.focusedPaneByWorkspace[workspace.id] ?? workspace.zoomedPaneId ?? workspace.paneOrder[0] ?? null,
       } satisfies ActiveWorkspaceView;
     }),
   );
@@ -493,6 +615,8 @@ function App() {
   const setActiveWorkspaceLayoutMode = useWorkspaceStore((state) => state.setActiveWorkspaceLayoutMode);
   const setActiveWorkspaceLayouts = useWorkspaceStore((state) => state.setActiveWorkspaceLayouts);
   const toggleActiveWorkspaceZoom = useWorkspaceStore((state) => state.toggleActiveWorkspaceZoom);
+  const setFocusedPane = useWorkspaceStore((state) => state.setFocusedPane);
+  const moveFocusedPane = useWorkspaceStore((state) => state.moveFocusedPane);
   const pauseWorkspaceBoot = useWorkspaceStore((state) => state.pauseWorkspaceBoot);
   const resumeWorkspaceBoot = useWorkspaceStore((state) => state.resumeWorkspaceBoot);
 
@@ -513,46 +637,38 @@ function App() {
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
-        event.preventDefault();
-        setActiveSection("terminal");
-        setSidebarOpen(false);
-        setPaletteOpen(false);
-        setNewWorkspaceOpen(true);
-        return;
-      }
-
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
-        event.preventDefault();
-        setSidebarOpen(false);
-        setNewWorkspaceOpen(false);
-        setPaletteOpen(true);
-        return;
-      }
-
-      if (event.key === "Escape") {
-        if (paletteOpen) {
-          event.preventDefault();
-          setPaletteOpen(false);
-          return;
-        }
-
-        if (newWorkspaceOpen) {
-          event.preventDefault();
-          setNewWorkspaceOpen(false);
-          return;
-        }
-
-        if (sidebarOpen) {
-          event.preventDefault();
-          setSidebarOpen(false);
-        }
-      }
+      handleAppKeydown(event, {
+        activeSection,
+        activeWorkspace,
+        paletteOpen,
+        newWorkspaceOpen,
+        sidebarOpen,
+        setActiveSection,
+        setSidebarOpen,
+        setPaletteOpen,
+        setNewWorkspaceOpen,
+        setActiveWorkspacePaneCount: (count) => {
+          void setActiveWorkspacePaneCount(count);
+        },
+        moveFocusedPane,
+        toggleActiveWorkspaceZoom,
+      });
     };
 
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [newWorkspaceOpen, paletteOpen, setActiveSection, setPaletteOpen, sidebarOpen]);
+  }, [
+    activeSection,
+    activeWorkspace,
+    moveFocusedPane,
+    newWorkspaceOpen,
+    paletteOpen,
+    setActiveSection,
+    setActiveWorkspacePaneCount,
+    setPaletteOpen,
+    sidebarOpen,
+    toggleActiveWorkspaceZoom,
+  ]);
 
   const openWorkspaceModal = () => {
     setActiveSection("terminal");
@@ -699,8 +815,10 @@ function App() {
                   layouts={activeWorkspace.layouts}
                   layoutMode={activeWorkspace.layoutMode}
                   zoomedPaneId={activeWorkspace.zoomedPaneId}
+                  focusedPaneId={activeWorkspace.focusedPaneId}
                   onLayoutsChange={(next) => setActiveWorkspaceLayouts(next)}
                   onToggleZoom={toggleActiveWorkspaceZoom}
+                  onPaneFocus={(paneId) => setFocusedPane(activeWorkspace.id, paneId)}
                 />
               </div>
             </section>

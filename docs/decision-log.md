@@ -381,3 +381,16 @@ Modal/palette readability kept via a faint translucent overlay panel.
 **Rationale:** Makes section structure explicit, fixes terminal full-height behavior, and prevents future regressions from implicit grid assumptions.
 **Consequences:** Any new `section-surface` usage must choose headed vs body variant intentionally; layout behavior is now more predictable across views.
 **Alternatives Considered:** Terminal-only CSS override without refactoring shared section semantics.
+
+## [2026-02-12] - tmux-Style Pane Keyboard Navigation and Focus State
+**Context:** Pane shortcuts listed in Settings were partially unimplemented, and there was no keyboard-targeted pane focus model to support tmux-like navigation.
+**Decision:** Add direct-chord pane shortcuts and runtime focus tracking:
+- implemented `Ctrl/Cmd + Alt + Arrow` directional pane focus movement using layout-aware nearest-candidate selection,
+- implemented `Ctrl/Cmd + Shift + ]` / `Ctrl/Cmd + Shift + [` pane count adjustments,
+- implemented `Ctrl/Cmd + Alt + Enter` zoom toggle for the currently focused pane,
+- introduced runtime-only `focusedPaneByWorkspace` store state with actions to set/move focus and reconcile focus on workspace switch, pane count changes, close, and snapshot restore,
+- added subtle `.pane-card.is-focused` visual treatment and pane focus capture via pane header/terminal pointer interaction,
+- added focused-pane algorithm/unit coverage and keyboard shortcut tests.
+**Rationale:** Makes pane-heavy workflows keyboard-first without introducing prefix-state complexity while keeping focus behavior deterministic across layout mutations.
+**Consequences:** Pane interaction now depends on explicit focused-pane state; shortcut docs now match actual bindings; no persistence schema changes.
+**Alternatives Considered:** Full tmux prefix emulation (`Ctrl+B` sequences) and non-directional linear pane cycling.

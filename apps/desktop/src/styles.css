@@ -968,6 +968,13 @@ input[type="checkbox"] {
   box-shadow: inset 0 1px 0 color-mix(in oklab, var(--line-hairline) 40%, transparent);
 }
 
+.pane-card.is-focused {
+  border-color: color-mix(in oklab, var(--accent) 56%, var(--line-quiet));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--accent) 26%, transparent);
+}
+
 .pane-card.is-zoomed {
   height: 100%;
 }

@@ -42,7 +42,9 @@ vi.mock("react-grid-layout", () => {
 });
 
 vi.mock("./TerminalPane", () => ({
-  TerminalPane: ({ paneId }: { paneId: string }) => <div data-testid={`terminal-${paneId}`} />,
+  TerminalPane: ({ paneId }: { paneId: string; onFocusPane?: (paneId: string) => void }) => (
+    <div data-testid={`terminal-${paneId}`} />
+  ),
 }));
 
 describe("PaneGrid", () => {
@@ -62,8 +64,10 @@ describe("PaneGrid", () => {
         layouts={layouts}
         layoutMode="tiling"
         zoomedPaneId="pane-2"
+        focusedPaneId="pane-2"
         onLayoutsChange={onLayoutsChange}
         onToggleZoom={onToggleZoom}
+        onPaneFocus={vi.fn()}
       />,
     );
 
@@ -85,8 +89,10 @@ describe("PaneGrid", () => {
         layouts={layouts}
         layoutMode="freeform"
         zoomedPaneId={null}
+        focusedPaneId="pane-1"
         onLayoutsChange={onLayoutsChange}
         onToggleZoom={onToggleZoom}
+        onPaneFocus={vi.fn()}
       />,
     );
 
@@ -110,8 +116,10 @@ describe("PaneGrid", () => {
         layouts={layouts}
         layoutMode="tiling"
         zoomedPaneId={null}
+        focusedPaneId="pane-1"
         onLayoutsChange={vi.fn()}
         onToggleZoom={vi.fn()}
+        onPaneFocus={vi.fn()}
       />,
     );
 
