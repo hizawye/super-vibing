@@ -83,3 +83,51 @@
 **Rationale:** Preserves interactive session state across workspace switches while avoiding backend `pane already exists` conflicts caused by shared logical pane IDs.
 **Consequences:** Runtime memory/CPU can grow with the number of open workspaces; input/event/backend operations now use runtime pane IDs and map results back to logical pane IDs for UI consistency.
 **Alternatives Considered:** Keep only active workspace alive (current behavior) and bounded LRU keep-alive.
+
+## [2026-02-12] - Performance-First Lifecycle Hardening
+**Context:** Before adding more features, the workspace runtime needed stronger scalability controls for pane fan-out, persistence write pressure, and background workspace resource usage.
+**Decision:** Introduce performance guardrails in both frontend store and backend runtime:
+- backend commands for pane suspend/resume plus runtime stats,
+- frontend idle auto-suspend timers for inactive workspaces,
+- bounded pane spawn concurrency,
+- debounced session persistence with explicit critical flushes,
+- per-pane input micro-batching to reduce write amplification.
+**Rationale:** Keeps terminal UX responsive as pane/workspace counts increase while avoiding aggressive close+respawn churn.
+**Consequences:** Lifecycle logic is more stateful (`spawning`/`suspended`, timers, buffered input, persistence queue) but behavior is deterministic and test-covered.
+**Alternatives Considered:** Keep all panes always running, persist on every mutation, and retain sequential pane spawn on workspace activation.
+
+## [2026-02-12] - Staggered Workspace Boot Queue for Multi-Agent Freeze Mitigation
+**Context:** Creating a workspace with ~6 agents could still freeze the app/system due to clustered CLI startups and heavy synchronous startup churn.
+**Decision:** Shift agent startup to a dedicated background boot queue:
+- run at max 3 parallel starts with staggered dispatch,
+- retry failed starts once with backoff,
+- adaptively reduce concurrency to 2 under sustained pressure (slow/failing starts),
+- expose boot session progress and pause/resume controls in UI.
+**Rationale:** Preserves high overall startup throughput while preventing all-at-once process spikes that lock the desktop.
+**Consequences:** Agent startup is now asynchronous relative to workspace creation; boot state is explicitly tracked in store and not persisted as session state.
+**Alternatives Considered:** Keep all-at-once startup, force manual agent startup only, or reduce to strict serial startup.
+
+## [2026-02-12] - Per-Workspace Tiling Layout Mode with Deterministic Rebalancing
+**Context:** The terminal pane UX used a free-form drag grid, which made multi-pane sessions feel scattered and inconsistent when adding/removing panes.
+**Decision:** Introduce per-workspace `layoutMode` (`tiling` default, `freeform` optional) and implement a deterministic near-square row-major tiling engine that auto-rebalances on pane count changes; disable manual drag/resize while in tiling mode.
+**Rationale:** Provides predictable pane geometry and better space usage for agent terminals, while retaining an escape hatch for users who want manual free-form adjustments.
+**Consequences:** Session schema now includes `layoutMode`; legacy persisted sessions require migration defaulting to `tiling`; UI adds explicit mode toggle and quick pane step controls.
+**Alternatives Considered:** Tiling-only without fallback, focus-based split model, and keeping free-form behavior with light auto-arrange only.
+
+## [2026-02-12] - Terminal Render Hot-Path Batching and Selector Narrowing
+**Context:** Even after startup queueing improvements, heavy terminal output and broad UI subscriptions could still create perceptible lag during multi-agent boot and noisy command streams.
+**Decision:** Optimize terminal/UI hot paths without changing behavior:
+- batch PTY output writes to xterm via per-pane frame-buffer flushing,
+- debounce resize-to-backend calls from `ResizeObserver`,
+- narrow `App` store subscriptions using `useShallow` and metadata-only selectors,
+- remove app-level pane-title fanout and resolve pane titles at pane-level render points.
+**Rationale:** Reduces main-thread churn and avoids unnecessary top-level rerenders while preserving existing workspace lifecycle semantics.
+**Consequences:** Slightly more terminal component statefulness (output buffer + raf/timer management), but lower UI pressure under bursty output.
+**Alternatives Considered:** Backend-side output coalescing only, and deeper store refactor into dedicated slices in one large pass.
+
+## [2026-02-12] - Palette-Only Global Command Entry and Dynamic Grid Height Fit
+**Context:** Inline global command controls duplicated command palette behavior and reduced usable terminal area; at higher pane counts some panes visually clipped below hidden viewport bounds.
+**Decision:** Remove inline terminal command row and keep global command execution in command palette only; compute `PaneGrid` row height dynamically from container height and layout row count.
+**Rationale:** Simplifies terminal surface UX and ensures pane grid consumes available vertical space without hidden overflow at dense layouts.
+**Consequences:** Terminal header + grid now occupy the full section; row heights are responsive to window height and layout density instead of fixed `110px`.
+**Alternatives Considered:** Keeping inline run bar with compact styling, or enabling section scroll for clipped panes.
