@@ -231,6 +231,8 @@ async fn spawn_pane(
 
     let mut command = CommandBuilder::new(shell.clone());
     command.cwd(PathBuf::from(&cwd));
+    let resolved_term = resolve_pane_term(env::var("TERM").ok().as_deref());
+    command.env("TERM", resolved_term);
 
     let child = pty_pair
         .slave
@@ -713,6 +715,26 @@ detached
 
         fs::remove_dir_all(&dir).expect("cleanup temp dir");
     }
+
+    #[test]
+    fn resolve_pane_term_defaults_when_missing_or_empty() {
+        assert_eq!(resolve_pane_term(None), "xterm-256color");
+        assert_eq!(resolve_pane_term(Some("")), "xterm-256color");
+        assert_eq!(resolve_pane_term(Some("   ")), "xterm-256color");
+    }
+
+    #[test]
+    fn resolve_pane_term_replaces_dumb_case_insensitively() {
+        assert_eq!(resolve_pane_term(Some("dumb")), "xterm-256color");
+        assert_eq!(resolve_pane_term(Some("DUMB")), "xterm-256color");
+        assert_eq!(resolve_pane_term(Some(" dumb ")), "xterm-256color");
+    }
+
+    #[test]
+    fn resolve_pane_term_preserves_valid_values() {
+        assert_eq!(resolve_pane_term(Some("screen-256color")), "screen-256color");
+        assert_eq!(resolve_pane_term(Some("xterm-kitty")), "xterm-kitty");
+    }
 }
 
 fn parse_worktree_porcelain(stdout: &str, repo_root: &str) -> Vec<WorkspaceTab> {
@@ -775,6 +797,18 @@ fn default_shell() -> String {
     } else {
         env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
     }
+}
+
+fn resolve_pane_term(current: Option<&str>) -> String {
+    let Some(value) = current.map(str::trim).filter(|value| !value.is_empty()) else {
+        return "xterm-256color".to_string();
+    };
+
+    if value.eq_ignore_ascii_case("dumb") {
+        return "xterm-256color".to_string();
+    }
+
+    value.to_string()
 }
 
 fn sanitize_branch_segment(branch: &str) -> String {
