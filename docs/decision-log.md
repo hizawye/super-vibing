@@ -164,3 +164,14 @@
 **Rationale:** Preserve the flat/brutalist aesthetic without sacrificing scanability and state clarity.
 **Consequences:** Slightly higher visual intensity; interaction states are now easier to identify at a glance.
 **Alternatives Considered:** Reintroducing shadows/blur, and reverting to gradient-heavy surfaces.
+
+## [2026-02-12] - Global Preset Theming and Accessibility State
+**Context:** The UI was locked to one brutalist dark style and Settings lacked appearance controls, making it impossible to switch to broader user-preferred looks.
+**Decision:** Introduce a tokenized global theme system with persisted UI preferences:
+- 6 built-in presets (`apple-dark`, `apple-light`, `graphite`, `midnight`, `solarized`, `nord`),
+- global accessibility/density flags (`reduceMotion`, `highContrastAssist`, `density`),
+- dedicated `theme/themes.ts` definitions including xterm terminal palette mapping,
+- root-level theme application through `data-theme`, `data-density`, and modifier classes from app state.
+**Rationale:** Gives immediate user-facing visual customization while keeping one coherent design system and minimizing per-component theming complexity.
+**Consequences:** Session schema now includes `uiPreferences`; store/tests/persistence path required migration-safe defaults and additional coverage.
+**Alternatives Considered:** Per-workspace themes, custom theme editor in v1, and style-only CSS tweaks without persisted state.

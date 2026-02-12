@@ -1,71 +1,54 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (brutalist-contrast-tuning-pass)
+- Last Updated: 2026-02-12 (global-theme-system-and-settings-refresh)
 
 - Current progress:
-  - Implemented non-blocking multi-agent workspace startup (background boot queue with staggered 3-wide concurrency and pause/resume controls).
-  - Added lifecycle/performance hardening:
-    - suspend/resume pane commands,
-    - debounced persistence,
-    - input micro-batching,
-    - bounded spawn slot gating.
-  - Added per-workspace layout modes (`tiling` / `freeform`) with deterministic tiling rebalancing.
-  - Implemented terminal render hot-path optimizations:
-    - output frame batching in `TerminalPane` (buffer + `requestAnimationFrame` flush),
-    - resize debounce in `TerminalPane`,
-    - reduced top-level `App` subscription fanout via `useShallow` selectors,
-    - moved pane title lookup from `App`-wide mapping to pane-local resolution in `PaneGrid`.
-  - Removed inline `Run in all panes` command row from terminal surface:
-    - command execution remains available via command palette only (`Ctrl/Cmd + P` + `>`).
-  - Updated viewport fit behavior for panes:
-    - terminal surface now dedicates all remaining vertical space to grid (no extra command row slot),
-    - pane grid computes dynamic `rowHeight` from available container height and current layout rows to avoid bottom clipping.
-  - Applied full-app flat visual pass to reduce "everything is a pane" look:
-    - pane grid margin set to zero so panes stick edge-to-edge,
-    - global square geometry for core shells/controls (removed rounded corners),
-    - compacted major spacing/gaps and removed extra container padding,
-    - flattened nested card surfaces (palette/modal/shortcut/agent rows) to line-based framing.
-  - Applied brutalist refinement pass across the full app:
-    - replaced decorative gradients with solid monochrome surfaces,
-    - standardized border/separator colors to a tighter line palette,
-    - removed blur and heavy shadow effects from overlays/modals,
-    - kept primary action contrast while making secondary controls flat/transparent.
-  - Applied contrast tuning pass for the brutalist theme:
-    - increased active/inactive workspace tab text contrast,
-    - raised border contrast on secondary controls and list rows,
-    - strengthened active-state backgrounds for menu/palette/layout selections,
-    - improved label/meta readability with slightly brighter text tokens.
-  - Updated tests for selector/prop changes and preserved workspace/boot regressions.
+  - Implemented a persisted global UI preference model in workspace state/session payload:
+    - `themeId`, `reduceMotion`, `highContrastAssist`, `density`.
+    - Added store actions: `setTheme`, `setReduceMotion`, `setHighContrastAssist`, `setDensity`.
+    - Added migration-safe defaults for older sessions without `uiPreferences`.
+  - Added theme architecture at `apps/desktop/src/theme/themes.ts`:
+    - 6 preset themes (`apple-dark`, `apple-light`, `graphite`, `midnight`, `solarized`, `nord`).
+    - Apple Dark set as default.
+    - Theme metadata for settings cards + terminal color mappings.
+  - Upgraded Settings section into full appearance/accessibility control center:
+    - Theme preset cards.
+    - Reduce motion + high contrast assist toggles.
+    - Comfortable/compact density toggle.
+    - Keyboard shortcuts retained under settings blocks.
+  - Applied global root theme wiring in `App.tsx`:
+    - `document.documentElement.dataset.theme`
+    - `document.documentElement.dataset.density`
+    - root classes `reduce-motion` and `high-contrast`.
+  - Updated terminal theming behavior:
+    - xterm now uses selected preset terminal palette.
+    - cursor blinking follows reduce-motion setting.
+    - live updates apply to active terminals when theme/accessibility settings change.
+  - Replaced legacy layered/brutalist CSS with semantic token-based design system:
+    - unified component styling across top chrome, panes, settings, command palette, section menu, and workspace modal.
+    - responsive behavior tuned for desktop + mobile breakpoints.
+    - accessibility modifiers for motion and contrast integrated at root-token level.
+  - Extended tests to cover UI preference persistence and migration defaults.
 
 - Verification:
   - `pnpm --filter @supervibing/desktop typecheck`
-  - `pnpm --filter @supervibing/desktop tauri:debug` (live HMR validation)
-  - `pnpm --filter @supervibing/desktop test -- run src/components/PaneGrid.test.tsx src/store/workspace.test.ts src/components/CommandPalette.test.tsx`
+  - `pnpm --filter @supervibing/desktop test -- run src/store/workspace.test.ts src/components/CommandPalette.test.tsx src/components/PaneGrid.test.tsx`
   - `pnpm --filter @supervibing/desktop test -- run`
-  - `pnpm --filter @supervibing/desktop test -- run src/components/PaneGrid.test.tsx`
-  - `pnpm --filter @supervibing/desktop typecheck`
   - `pnpm --filter @supervibing/desktop build`
-  - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml`
-  - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml`
 
 - Blockers/Bugs:
-  - Manual runtime validation pending for high-output multi-pane sessions in Tauri:
-    - verify output batching smoothness under long-running noisy commands,
-    - verify no regressions in terminal prompt interactivity during boot queue activity.
-  - Manual viewport validation needed with dense layouts (12/14/16 panes) on small window heights.
-  - Manual visual validation pending for flat UI pass:
-    - ensure compact spacing remains readable across settings/palette/modal,
-    - ensure line-based framing is visually consistent in all sections.
-  - Manual visual validation pending for brutalist refinement:
-    - confirm monochrome contrast remains clear for active/inactive/hover states,
-    - confirm reduced effects do not hurt modal/palette focus clarity.
+  - Manual runtime validation still pending in Tauri for final visual polish and interaction feel:
+    - verify each theme against real terminal output-heavy sessions,
+    - verify readability/contrast in all overlays and compact density mode,
+    - verify reduced-motion behavior feels correct during palette/modal transitions.
 
 - Next immediate starting point:
   - Run `pnpm --filter @supervibing/desktop tauri:debug`.
-  - Create workspace with 6+ agents and verify:
-    - app remains responsive during boot,
-    - boot progress controls remain responsive,
-    - terminal output remains smooth while agents initialize.
-  - Confirm in 12/14/16 pane layouts that no pane content drops below hidden viewport area.
-  - Verify flat UI pass visually in terminal/settings/agents/prompts/menu/modal and tweak compact spacing where readability is too dense.
-  - Verify brutalist pass in desktop runtime and adjust any low-contrast controls with minimal color-only tuning.
+  - Validate theme switching across:
+    - terminal view,
+    - settings,
+    - command palette,
+    - section menu,
+    - workspace creation modal.
+  - Check compact density with 12/14/16 pane layouts and tune spacing if text/control hit areas feel cramped.
+  - Optionally add Playwright visual regression snapshots for the 6 preset themes once manual pass is approved.
