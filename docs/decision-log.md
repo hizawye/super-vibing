@@ -69,3 +69,10 @@
 **Rationale:** Keeps agent startup behavior consistent whenever panes are respawned for an active workspace.
 **Consequences:** Reopening a workspace now reissues assigned agent commands in mapped panes; behavior is covered with store tests for reopen/boot/restore flows.
 **Alternatives Considered:** Auto-run only on initial creation, or adding separate persisted per-pane command fields.
+
+## [2026-02-12] - Multi-Pane Reopen Init Race Fix
+**Context:** On reopen, only the first pane often launched Codex/Claude while other assigned panes stayed at shell prompt.
+**Decision:** In `spawnWorkspacePanes`, compute init eligibility from pane statuses captured at activation start (status snapshot), then pass init options for all panes that were initially non-running.
+**Rationale:** Prevents concurrent mount-triggered spawns from flipping later panes to `running` before loop iteration and accidentally skipping init.
+**Consequences:** All assigned panes receive exactly one init command even under concurrent spawn timing; added regressions for the 4-pane race and no-rerun-on-initially-running panes.
+**Alternatives Considered:** Forcing sequential spawn locks at UI level, and always reissuing init regardless of initial pane status.

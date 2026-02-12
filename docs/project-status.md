@@ -1,22 +1,20 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (workspace-reopen-agent-autostart)
+- Last Updated: 2026-02-12 (multi-pane-reopen-init-race-fix)
 
 - Current progress:
-  - Extended agent auto-run to persisted workspace reopen flows:
-    - app bootstrap active workspace spawn,
-    - workspace tab switching,
-    - close active workspace -> activate next,
-    - snapshot restore,
-    - pane count updates.
-  - Centralized workspace spawn orchestration so agent launch plan is reused consistently across creation and reopen paths.
-  - Added store regressions for reopen/bootstrap/restore agent auto-run behavior.
+  - Fixed reopen race where only pane-1 received Codex/Claude init command.
+  - Updated `spawnWorkspacePanes` to decide init delivery from activation-start pane statuses (snapshot), not live per-iteration status.
+  - Ensured all assigned panes still receive init even if they become `running` due to concurrent mount-driven spawns.
+  - Added store regressions:
+    - 4-pane concurrent reopen scenario now initializes all panes.
+    - panes already running at activation start do not get reinitialized.
   - Verified via `pnpm --filter @supervibing/desktop test -- run src/store/workspace.test.ts` and `pnpm --filter @supervibing/desktop typecheck`.
 
 - Blockers/Bugs:
-  - Pending manual Tauri UI verification of restart -> reopen workspace flow in real PTY runtime.
+  - Pending manual Tauri verification for restart/reopen with 4+ pane allocations.
 
 - Next immediate starting point:
   - Run `pnpm --filter @supervibing/desktop tauri:debug`.
-  - Create workspace with Codex/Claude allocation, restart app, reopen that workspace, and confirm agent command auto-runs.
+  - Create 4-pane Codex workspace, restart app, reopen workspace, confirm all panes auto-launch.
   - If any pane still fails on reopen, capture logs and add repro for the specific path.
