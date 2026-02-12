@@ -370,3 +370,14 @@ Modal/palette readability kept via a faint translucent overlay panel.
 **Rationale:** Keeps strict frontend type boundaries intact, preserves deterministic CSS contract checks, and aligns release workflow inputs with the current `tauri-apps/tauri-action@v0.6.0` schema.
 **Consequences:** Typecheck/build no longer fail on Node test APIs; release workflow avoids invalid-input warning and remains updater-artifact enabled.
 **Alternatives Considered:** Adding Node typings to frontend tsconfig and excluding all `*.test.ts` from typecheck.
+
+## [2026-02-12] - Section Variant Layout Model for Full-Height Terminal Panes
+**Context:** Terminal panes were not consistently filling the available area below top chrome because the shared `.section-surface` enforced a headed two-row grid even for body-only terminal sections.
+**Decision:** Split section layout semantics into explicit variants and keep `.section-surface` as visual shell only:
+- added `.section-surface--headed` (`grid-template-rows: auto minmax(0, 1fr)`),
+- added `.section-surface--body` (`grid-template-rows: minmax(0, 1fr)`),
+- switched terminal view to body variant and headed views (Settings/EmptyState) to headed variant,
+- added a contract test to lock the new layout semantics and class usage.
+**Rationale:** Makes section structure explicit, fixes terminal full-height behavior, and prevents future regressions from implicit grid assumptions.
+**Consequences:** Any new `section-surface` usage must choose headed vs body variant intentionally; layout behavior is now more predictable across views.
+**Alternatives Considered:** Terminal-only CSS override without refactoring shared section semantics.

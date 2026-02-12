@@ -224,7 +224,7 @@ export function SettingsSection({
   };
 
   return (
-    <section className="section-surface">
+    <section className="section-surface section-surface--headed">
       <header className="section-head">
         <h2>Appearance and Accessibility</h2>
         <p>Choose theme presets and comfort settings for daily workflows.</p>
@@ -691,7 +691,7 @@ function App() {
           />
 
           {activeSection === "terminal" && activeWorkspace ? (
-            <section className="section-surface terminal-surface terminal-surface-dense">
+            <section className="section-surface section-surface--body terminal-surface">
               <div className="grid-shell">
                 <PaneGrid
                   workspaceId={activeWorkspace.id}

@@ -7,7 +7,7 @@ interface EmptyStatePageProps {
 
 export function EmptyStatePage({ title, subtitle, actionLabel, onAction }: EmptyStatePageProps) {
   return (
-    <section className="section-surface">
+    <section className="section-surface section-surface--headed">
       <header className="section-head">
         <h2>{title}</h2>
       </header>
