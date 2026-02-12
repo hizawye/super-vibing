@@ -1,35 +1,33 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (updater-version-parity-0.1.3)
+- Last Updated: 2026-02-12 (soft-ui-minimalism-2.0-v0.1.4)
 
 - Current progress:
-  - Root-caused non-working `Check for updates` behavior to release metadata drift:
-    - GitHub `latest.json` was served from `v0.1.2` assets but reported `version: 0.1.0`,
-    - updater therefore treated installed `0.1.0` as current.
-  - Implemented release parity guardrails:
-    - added `scripts/verify-release-version.sh`,
-    - validates tag format (`vX.Y.Z`) and strict equality with `apps/desktop/src-tauri/tauri.conf.json` version,
-    - release workflow now runs guard before publish and installs `jq`.
-  - Aligned version metadata to `0.1.3`:
-    - `apps/desktop/src-tauri/tauri.conf.json`,
+  - Implemented frontend redesign for Soft UI (Minimalism 2.0) in desktop app styles:
+    - removed hard border/stroke segmentation from core layout and control surfaces via override layer,
+    - introduced `canvas` + subtle pane elevation tokens (`--canvas-base`, `--pane-elev-1`, `--pane-elev-2`),
+    - made top chrome borderless and separated by tint-only treatment (`--chrome-tint`),
+    - switched layout rhythm to open spacing with `--space-structural: 24px`,
+    - updated hover/focus interaction to soft reveal fills/shadows (no 1px structural borders).
+  - Preserved all existing theme presets and remapped them to the elevation-based surface model.
+  - Added style contract tests (`src/styles.soft-ui.test.ts`) to guard:
+    - required Soft UI tokens,
+    - top chrome tint + borderless rule,
+    - no `1px` border reintroduction inside Soft UI override section.
+  - Bumped release metadata to `0.1.4` for tag/version parity:
+    - `package.json`,
     - `apps/desktop/package.json`,
-    - root `package.json`.
-  - Improved updater UX in Settings:
-    - added updater error normalization for network/signature/metadata parse failures,
-    - `Check for updates` now surfaces actionable messages instead of generic failure text.
-  - Added frontend tests for updater behavior in Settings section.
+    - `apps/desktop/src-tauri/tauri.conf.json`.
 
 - Verification:
-  - `pnpm --filter @supervibing/desktop test -- run`
-  - `GITHUB_REF_NAME=v0.1.3 ./scripts/verify-release-version.sh`
-  - Negative parity check confirms mismatch fails as expected:
-    - `GITHUB_REF_NAME=v0.1.2 ./scripts/verify-release-version.sh` -> mismatch error
+  - `pnpm --filter @supervibing/desktop test -- run` (44 tests passing)
+  - `GITHUB_REF_NAME=v0.1.4 ./scripts/verify-release-version.sh` (parity verified)
 
 - Blockers/Bugs:
-  - Corrective release tag `v0.1.3` is not published yet.
-  - Until `v0.1.3` release artifacts exist, older installs may still report up-to-date due to stale published metadata.
+  - No functional blockers found in automated tests.
+  - Visual QA on real desktop/mobile viewport is still recommended to validate perceived depth and spacing balance.
 
 - Next immediate starting point:
-  - Commit and push updater parity changes.
-  - Create and push tag `v0.1.3`.
-  - Confirm published `latest.json` now reports `"version": "0.1.3"` and retest in-app updater flow from an older build.
+  - Push commit and tag `v0.1.4`.
+  - Run a manual visual pass on terminal, sidebar, settings, command palette, and modals across theme presets.
+  - Tune per-theme elevation/tint contrast if any preset appears too flat or too strong.

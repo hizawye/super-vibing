@@ -1537,33 +1537,71 @@ input[type="range"] {
   }
 }
 
-/* Single-Layer Minimalism Overrides */
-:root,
-:root[data-theme="apple-dark"],
-:root[data-theme="apple-light"],
-:root[data-theme="graphite"],
-:root[data-theme="midnight"],
-:root[data-theme="solarized"],
-:root[data-theme="nord"] {
+/* Soft UI Minimalism 2.0 Overrides */
+:root {
+  --canvas-base: #0a0a0a;
+  --pane-elev-1: #121212;
+  --pane-elev-2: #161616;
+  --chrome-tint: color-mix(in oklab, var(--canvas-base) 96%, white);
+  --soft-shadow-1: 0 14px 32px rgba(0, 0, 0, 0.28);
+  --soft-shadow-2: 0 20px 46px rgba(0, 0, 0, 0.34);
+  --space-structural: 24px;
   --line-soft: transparent;
   --line-strong: transparent;
   --line-hairline: transparent;
   --line-quiet: transparent;
-  --line-focus: color-mix(in oklab, var(--text-main) 92%, white);
+}
 
-  --overlay: rgba(6, 10, 16, 0.58);
-  --overlay-strong: rgba(6, 10, 16, 0.68);
+:root[data-theme="apple-dark"] {
+  --canvas-base: #0a0a0a;
+  --pane-elev-1: #121212;
+  --pane-elev-2: #171717;
+}
 
-  --shadow-soft: 0 12px 26px rgba(3, 6, 12, 0.22);
-  --shadow-float: 0 16px 30px rgba(3, 6, 12, 0.26);
-  --shadow-pop: 0 20px 40px rgba(3, 6, 12, 0.3);
+:root[data-theme="apple-light"] {
+  --canvas-base: #edf2fb;
+  --pane-elev-1: color-mix(in oklab, var(--canvas-base) 98%, white);
+  --pane-elev-2: color-mix(in oklab, var(--canvas-base) 96%, white);
+}
 
-  --space-1: 8px;
-  --space-2: 12px;
-  --space-3: 18px;
-  --space-4: 28px;
-  --head-padding: 16px;
-  --pane-divider: color-mix(in oklab, var(--text-main) 14%, var(--bg-root));
+:root[data-theme="graphite"] {
+  --canvas-base: #111417;
+  --pane-elev-1: color-mix(in oklab, var(--canvas-base) 98%, white);
+  --pane-elev-2: color-mix(in oklab, var(--canvas-base) 96%, white);
+}
+
+:root[data-theme="midnight"] {
+  --canvas-base: #040914;
+  --pane-elev-1: color-mix(in oklab, var(--canvas-base) 98%, white);
+  --pane-elev-2: color-mix(in oklab, var(--canvas-base) 96%, white);
+}
+
+:root[data-theme="solarized"] {
+  --canvas-base: #00232c;
+  --pane-elev-1: color-mix(in oklab, var(--canvas-base) 98%, white);
+  --pane-elev-2: color-mix(in oklab, var(--canvas-base) 96%, white);
+}
+
+:root[data-theme="nord"] {
+  --canvas-base: #272d3a;
+  --pane-elev-1: color-mix(in oklab, var(--canvas-base) 98%, white);
+  --pane-elev-2: color-mix(in oklab, var(--canvas-base) 96%, white);
+}
+
+:root {
+  --bg-root: var(--canvas-base);
+  --bg-subtle: var(--canvas-base);
+  --surface-1: var(--pane-elev-1);
+  --surface-2: var(--pane-elev-2);
+  --surface-3: color-mix(in oklab, var(--pane-elev-2) 96%, white);
+  --surface-floating: var(--pane-elev-1);
+  --surface-glass: var(--chrome-tint);
+  --surface-raised: var(--pane-elev-2);
+  --shadow-soft: var(--soft-shadow-1);
+  --shadow-float: var(--soft-shadow-2);
+  --shadow-pop: 0 24px 52px rgba(0, 0, 0, 0.38);
+  --overlay: color-mix(in oklab, var(--canvas-base) 46%, black);
+  --overlay-strong: color-mix(in oklab, var(--canvas-base) 36%, black);
 }
 
 html,
@@ -1571,80 +1609,139 @@ body,
 #root,
 .app-shell,
 .app-layout,
-.app-main,
-.top-chrome,
-.app-sidebar,
-.section-surface,
-.terminal-surface,
-.grid-shell,
-.pane-card,
-.pane-header,
-.terminal-shell,
-.terminal-body {
-  background: var(--bg-root);
-}
-
-.app-shell {
-  padding: var(--space-3);
-}
-
 .app-main {
-  gap: var(--space-3);
+  background: var(--canvas-base);
 }
 
+.app-shell,
 .app-shell.app-shell-terminal {
-  padding: 0;
+  padding: var(--space-structural);
 }
 
+.app-layout,
+.app-main,
 .app-shell.app-shell-terminal .app-layout,
 .app-shell.app-shell-terminal .app-main.app-main-terminal {
-  gap: 0;
+  gap: var(--space-structural);
 }
 
 .app-shell.app-shell-terminal .top-chrome {
-  padding: var(--space-1) var(--space-2) 0;
+  padding: 0;
 }
 
+.app-sidebar,
 .top-chrome,
+.section-surface,
+.pane-card,
+.settings-block,
+.shortcuts-group,
+.agent-row,
+.workspace-modal-section,
+.palette-empty,
+.workspace-modal,
+.palette-modal,
+.sidebar-workspace-row {
+  border: 0;
+  box-shadow: var(--soft-shadow-1);
+}
+
 .app-sidebar,
 .section-surface,
-.pane-card {
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+.pane-card,
+.settings-block,
+.shortcuts-group,
+.agent-row,
+.workspace-modal-section,
+.workspace-modal,
+.palette-modal,
+.sidebar-workspace-row {
+  background: var(--pane-elev-1);
+}
+
+.app-sidebar {
+  border-radius: 16px;
+  padding: 16px;
+  gap: 12px;
+}
+
+.sidebar-footer {
+  border-top: 0;
+  padding-top: 12px;
 }
 
 .top-chrome {
-  min-height: auto;
-  padding: 0;
-  row-gap: var(--space-1);
+  min-height: 50px;
+  border: 0;
+  border-radius: 14px;
+  box-shadow: none;
+  background: var(--chrome-tint);
+  padding: 10px 12px;
+  row-gap: 8px;
 }
 
-.top-chrome-row {
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-
-.top-terminal-title {
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.top-terminal-name {
-  max-width: 420px;
+.top-chrome-subtitle {
+  padding-left: calc(32px + var(--space-2));
 }
 
 .top-workspace-pill,
-.top-section-dot,
-.top-chrome-subtitle {
+.top-command-btn kbd,
+.sidebar-workspace-count,
+.sidebar-section-item small,
+.shortcut-row kbd,
+.sidebar-item-icon,
+.sidebar-brand-dot {
   border: 0;
-  background: transparent;
-  padding: 0;
+  background: color-mix(in oklab, var(--pane-elev-2) 86%, transparent);
 }
 
-.top-chrome-subtitle {
-  padding-left: 0;
-  color: var(--text-muted);
+.section-surface {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.terminal-surface {
+  background: var(--pane-elev-1);
+}
+
+.section-head {
+  border-bottom: 0;
+  padding: 18px 20px 0;
+}
+
+.grid-shell {
+  background: var(--pane-elev-1);
+  padding: 20px;
+}
+
+.zoom-grid {
+  padding: 20px;
+}
+
+.pane-card {
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--pane-elev-2);
+  box-shadow: var(--soft-shadow-1);
+}
+
+.pane-header {
+  min-height: 12px;
+  border-bottom: 0;
+  background: color-mix(in oklab, var(--pane-elev-2) 92%, var(--canvas-base));
+}
+
+.terminal-body {
+  background: color-mix(in oklab, var(--canvas-base) 90%, black);
+}
+
+.layout .react-grid-item.react-grid-placeholder {
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--accent) 20%, var(--pane-elev-2));
+}
+
+.layout .react-resizable-handle::after {
+  border-color: color-mix(in oklab, var(--text-main) 22%, transparent);
 }
 
 .mobile-nav-toggle,
@@ -1652,176 +1749,142 @@ body,
 .sidebar-close-btn,
 .workspace-add,
 .sidebar-workspace-close,
-.palette-item,
-.layout-card,
-.theme-card,
-.expand-toggle,
-.stepper-btn,
-.toolbar-btn,
+.sidebar-section-item,
 .subtle-btn,
+.toolbar-btn,
 .primary-btn,
 .layout-mode-btn,
-.sidebar-section-item,
-.sidebar-workspace-row {
+.layout-card,
+.palette-item,
+.expand-toggle,
+.stepper-btn,
+.theme-card,
+.agent-panel-toolbar .toolbar-btn {
   border: 0;
-  border-radius: 0;
-  background: transparent;
   box-shadow: none;
-}
-
-button:hover,
-.sidebar-section-item:hover,
-.palette-item:hover,
-.sidebar-workspace-row:hover,
-.layout-mode-btn:hover,
-.subtle-btn:hover,
-.toolbar-btn:hover {
   background: transparent;
-  color: var(--text-main);
-}
-
-.sidebar-backdrop {
-  background: var(--overlay);
-}
-
-.app-sidebar {
-  box-shadow: none;
-}
-
-.sidebar-brand-dot,
-.sidebar-item-icon,
-.sidebar-section-item small,
-.sidebar-workspace-count {
-  border: 0;
-  background: transparent;
-}
-
-.sidebar-section-item.active,
-.sidebar-workspace-row.active {
-  background: transparent;
-  color: var(--text-main);
-  font-weight: 700;
-}
-
-.sidebar-footer {
-  border-top: 0;
-  padding-top: var(--space-3);
-}
-
-.section-surface {
-  overflow: visible;
-}
-
-.section-head {
-  border-bottom: 0;
-  padding: 0 0 var(--space-2);
-}
-
-.grid-shell {
-  padding: 0;
-}
-
-.app-shell.app-shell-terminal .terminal-surface-dense .grid-shell {
-  background: var(--pane-divider);
-}
-
-.pane-card {
-  overflow: hidden;
-  background: var(--bg-root);
-}
-
-.pane-header {
-  border-bottom: 0;
-  min-height: 8px;
-  padding: 0;
 }
 
 .layout-mode-toggle,
 .density-toggle {
   border: 0;
-  background: transparent;
+  border-radius: 11px;
+  background: color-mix(in oklab, var(--pane-elev-2) 88%, transparent);
+  box-shadow: inset 0 0 0 1px transparent;
 }
 
 .layout-mode-btn {
   border: 0;
-  border-radius: 0;
-  padding: 0;
+  border-radius: 9px;
 }
 
-.layout-mode-btn.active {
-  background: transparent;
-  color: var(--text-main);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+.layout-mode-btn.active,
+.layout-card.active,
+.palette-item.active,
+.theme-card.active,
+.sidebar-section-item.active,
+.sidebar-workspace-row.active {
+  background: color-mix(in oklab, var(--accent) 18%, var(--pane-elev-2));
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
 }
 
-.layout .react-grid-item.react-grid-placeholder {
-  border: 0;
-  border-radius: 0;
-  background: rgba(255, 255, 255, 0.03);
+.workspace-add:hover,
+.subtle-btn:hover,
+.toolbar-btn:hover,
+.primary-btn:hover,
+.layout-mode-btn:hover,
+.layout-card:hover,
+.expand-toggle:hover,
+.stepper-btn:hover,
+.theme-card:hover,
+.palette-item:hover,
+.sidebar-workspace-row:hover,
+.sidebar-workspace-close:hover,
+.top-command-btn:hover,
+.mobile-nav-toggle:hover,
+.sidebar-close-btn:hover,
+.sidebar-section-item:hover {
+  border-color: transparent;
+  background: color-mix(in oklab, var(--pane-elev-2) 90%, white);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
-.app-shell.app-shell-terminal .zoom-grid {
-  padding: 0;
-}
-
-.settings-block,
-.shortcuts-group,
-.agent-row,
-.workspace-modal-section,
-.palette-empty {
-  border: 0;
-  border-radius: 0;
+.sidebar-section-item.locked:hover {
   background: transparent;
   box-shadow: none;
 }
 
-.workspace-modal,
-.palette-modal {
-  border: 0;
-  border-radius: 10px;
-  background: color-mix(in oklab, var(--bg-root) 92%, white);
-  box-shadow: var(--shadow-soft);
+.primary-btn {
+  color: var(--accent-ink);
+  background: linear-gradient(180deg, var(--accent), color-mix(in oklab, var(--accent) 60%, #051633));
+  box-shadow: 0 12px 28px color-mix(in oklab, var(--accent) 30%, black);
 }
 
 .top-command-btn kbd {
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
+  color: var(--text-dim);
 }
 
-.palette-overlay,
-.workspace-modal-overlay {
-  backdrop-filter: blur(8px);
+button:focus-visible,
+input:focus-visible,
+.palette-item:focus-visible,
+.theme-card:focus-visible,
+.layout-card:focus-visible,
+.sidebar-section-item:focus-visible,
+.sidebar-workspace-btn:focus-visible,
+.mobile-nav-toggle:focus-visible,
+.top-command-btn:focus-visible {
+  outline: 0;
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--accent) 52%, transparent),
+    0 10px 24px rgba(0, 0, 0, 0.24);
 }
 
 .text-input {
   border: 0;
-  border-radius: 0;
-  background: color-mix(in oklab, var(--bg-root) 88%, white);
+  background: color-mix(in oklab, var(--pane-elev-2) 92%, transparent);
+  box-shadow: inset 0 0 0 1px transparent;
 }
 
-.palette-group-title {
-  color: var(--text-muted);
+.text-input:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--accent) 36%, transparent),
+    0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.palette-overlay,
+.workspace-modal-overlay {
+  backdrop-filter: blur(10px);
+}
+
+.palette-modal,
+.workspace-modal {
+  border-radius: 16px;
+}
+
+.settings-shell,
+.shortcuts-shell,
+.agent-panel,
+.agent-list {
+  gap: 16px;
 }
 
 @media (max-width: 920px) {
-  .app-shell {
-    padding: var(--space-2);
-  }
-
+  .app-shell,
   .app-shell.app-shell-terminal {
-    padding: 0;
+    padding: 16px;
   }
 
-  .app-shell.app-shell-terminal .top-chrome {
-    padding: var(--space-1) var(--space-1) 0;
+  .app-layout,
+  .app-main,
+  .app-shell.app-shell-terminal .app-layout,
+  .app-shell.app-shell-terminal .app-main.app-main-terminal {
+    gap: 16px;
   }
 
   .app-sidebar {
-    top: var(--space-2);
-    bottom: var(--space-2);
-    left: var(--space-2);
+    top: 16px;
+    bottom: 16px;
+    left: 16px;
   }
 
   .top-chrome-terminal .top-chrome-row {

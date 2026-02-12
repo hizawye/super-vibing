@@ -347,3 +347,16 @@ Modal/palette readability kept via a faint translucent overlay panel.
 **Rationale:** Prevents silent metadata drift between tags and shipped updater manifests while making user-visible updater failures actionable.
 **Consequences:** Tag pushes fail fast when version metadata is stale; future releases keep updater JSON version aligned with tag semantics.
 **Alternatives Considered:** Manual release checklist without enforcement and tag-only derivation with runtime mutation.
+
+## [2026-02-12] - Soft UI (Minimalism 2.0) Frontend Redesign
+**Context:** The current UI still used hard 1px borders, chrome/pane wrappers, and dense card segmentation that conflicted with a softer open-canvas direction.
+**Decision:** Shift the desktop frontend to Soft UI Minimalism 2.0:
+- remove hard border/stroke segmentation from primary surfaces and controls in override layer,
+- use subtle elevation (`canvas` + ~2% lighter panes) as the primary pane/section separator,
+- define structural spacing at `24px` for layout openness,
+- make top chrome borderless and separate it from content using only slight tint (`--chrome-tint`),
+- keep all existing theme presets and remap them to the same elevation model,
+- preserve discoverability with hover-reveal fills/shadows and focus-visible glow.
+**Rationale:** Produces a cleaner Notion-like open layout while keeping panes and controls scannable without reintroducing hard edges.
+**Consequences:** Visual hierarchy now depends on tone, spacing, and shadow; style regressions are guarded by `styles.soft-ui.test.ts`.
+**Alternatives Considered:** Keeping single-layer fully flat styling and keeping prior border-based pane delineation.
