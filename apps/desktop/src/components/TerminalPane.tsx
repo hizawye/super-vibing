@@ -309,7 +309,7 @@ export function TerminalPane({ workspaceId, paneId, isActive = true, onFocusPane
   }, [highContrastAssist, reduceMotion, themeId]);
 
   return (
-    <div className="terminal-shell">
+    <div className="terminal-shell" data-terminal-pane="true">
       <div className="terminal-body" ref={containerRef} onMouseDown={() => onFocusPaneRef.current?.(paneId)} />
     </div>
   );

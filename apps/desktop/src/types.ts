@@ -13,6 +13,7 @@ export interface PaneModel {
 }
 
 export type AgentProfileKey = "claude" | "codex" | "gemini" | "cursor" | "opencode";
+export type AgentStartupDefaults = Record<AgentProfileKey, string>;
 
 export interface AgentAllocation {
   profile: AgentProfileKey;
@@ -71,6 +72,7 @@ export interface SessionState {
   activeSection: AppSection;
   echoInput: boolean;
   uiPreferences: UiPreferences;
+  agentStartupDefaults?: AgentStartupDefaults;
 }
 
 export interface LegacySessionState {

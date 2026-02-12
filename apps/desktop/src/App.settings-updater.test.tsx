@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsSection } from "./App";
 import * as updater from "./lib/updater";
@@ -14,6 +14,14 @@ vi.mock("./lib/updater", async () => {
 });
 
 describe("SettingsSection updater", () => {
+  const agentStartupDefaults = {
+    claude: "claude",
+    codex: "codex",
+    gemini: "gemini",
+    cursor: "cursor-agent",
+    opencode: "opencode",
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -28,10 +36,13 @@ describe("SettingsSection updater", () => {
         reduceMotion={false}
         highContrastAssist={false}
         density="comfortable"
+        agentStartupDefaults={agentStartupDefaults}
         onThemeChange={() => {}}
         onReduceMotionChange={() => {}}
         onHighContrastAssistChange={() => {}}
         onDensityChange={() => {}}
+        onAgentStartupDefaultChange={() => {}}
+        onResetAgentStartupDefaults={() => {}}
       />,
     );
 
@@ -50,10 +61,13 @@ describe("SettingsSection updater", () => {
         reduceMotion={false}
         highContrastAssist={false}
         density="comfortable"
+        agentStartupDefaults={agentStartupDefaults}
         onThemeChange={() => {}}
         onReduceMotionChange={() => {}}
         onHighContrastAssistChange={() => {}}
         onDensityChange={() => {}}
+        onAgentStartupDefaultChange={() => {}}
+        onResetAgentStartupDefaults={() => {}}
       />,
     );
 
@@ -62,5 +76,35 @@ describe("SettingsSection updater", () => {
     expect(
       await screen.findByText(/Unable to reach the update endpoint\. network unreachable/i),
     ).toBeInTheDocument();
+  });
+
+  it("emits startup-default command changes", async () => {
+    const onAgentStartupDefaultChange = vi.fn();
+
+    render(
+      <SettingsSection
+        themeId="apple-dark"
+        reduceMotion={false}
+        highContrastAssist={false}
+        density="comfortable"
+        agentStartupDefaults={agentStartupDefaults}
+        onThemeChange={() => {}}
+        onReduceMotionChange={() => {}}
+        onHighContrastAssistChange={() => {}}
+        onDensityChange={() => {}}
+        onAgentStartupDefaultChange={onAgentStartupDefaultChange}
+        onResetAgentStartupDefaults={() => {}}
+      />,
+    );
+
+    const codexInput = screen.getByLabelText("Codex");
+    fireEvent.change(codexInput, {
+      target: { value: "codex --dangerously-bypass-approvals-and-sandbox" },
+    });
+
+    expect(onAgentStartupDefaultChange).toHaveBeenCalledWith(
+      "codex",
+      "codex --dangerously-bypass-approvals-and-sandbox",
+    );
   });
 });

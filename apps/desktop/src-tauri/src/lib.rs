@@ -26,6 +26,23 @@ const AUTOMATION_HTTP_BIND: &str = "127.0.0.1:47631";
 const AUTOMATION_HTTP_MAX_BODY_BYTES: usize = 64 * 1024;
 const AUTOMATION_QUEUE_MAX: usize = 200;
 const AUTOMATION_FRONTEND_TIMEOUT_MS: u64 = 20_000;
+const AUTOMATION_COMPLETED_JOB_RETENTION_MAX: usize = 500;
+const AUTOMATION_MAX_COMMAND_BYTES: usize = 16 * 1024;
+
+#[derive(Debug)]
+struct HttpError {
+    status_code: u16,
+    message: String,
+}
+
+impl HttpError {
+    fn new(status_code: u16, message: impl Into<String>) -> Self {
+        Self {
+            status_code,
+            message: message.into(),
+        }
+    }
+}
 
 #[derive(Debug)]
 enum AppError {
@@ -438,12 +455,123 @@ fn now_millis() -> u128 {
         .unwrap_or(0)
 }
 
+fn configured_automation_token() -> Option<String> {
+    env::var("SUPERVIBING_AUTOMATION_TOKEN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn parse_bearer_token(authorization_header: Option<&str>) -> Option<&str> {
+    authorization_header
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn authorize_automation_request(
+    expected_token: Option<&str>,
+    authorization_header: Option<&str>,
+) -> Result<(), HttpError> {
+    let Some(expected_token) = expected_token else {
+        return Ok(());
+    };
+
+    let provided = parse_bearer_token(authorization_header)
+        .ok_or_else(|| HttpError::new(401, "missing automation bearer token"))?;
+
+    if provided != expected_token {
+        return Err(HttpError::new(401, "invalid automation bearer token"));
+    }
+
+    Ok(())
+}
+
+fn validate_external_command_request(
+    automation: &Arc<AutomationState>,
+    request: &ExternalCommandRequest,
+) -> Result<(), HttpError> {
+    let resolve_workspace = |workspace_id: &str| -> Result<AutomationWorkspaceSnapshot, HttpError> {
+        if workspace_id.trim().is_empty() {
+            return Err(HttpError::new(400, "workspaceId is required"));
+        }
+
+        workspace_for_automation(automation, workspace_id).map_err(|error| match error {
+            AppError::NotFound(message) => HttpError::new(404, message),
+            _ => HttpError::new(500, error.to_string()),
+        })
+    };
+
+    match request {
+        ExternalCommandRequest::CreatePanes {
+            workspace_id,
+            pane_count,
+        } => {
+            let _ = resolve_workspace(workspace_id)?;
+            if *pane_count < 1 || *pane_count > 16 {
+                return Err(HttpError::new(
+                    400,
+                    format!("paneCount must be between 1 and 16, received {pane_count}"),
+                ));
+            }
+        }
+        ExternalCommandRequest::CreateWorktree {
+            workspace_id,
+            branch,
+            ..
+        } => {
+            let _ = resolve_workspace(workspace_id)?;
+            if branch.trim().is_empty() {
+                return Err(HttpError::new(400, "branch is required"));
+            }
+        }
+        ExternalCommandRequest::CreateBranch {
+            workspace_id,
+            branch,
+            ..
+        } => {
+            let _ = resolve_workspace(workspace_id)?;
+            if branch.trim().is_empty() {
+                return Err(HttpError::new(400, "branch is required"));
+            }
+        }
+        ExternalCommandRequest::RunCommand {
+            workspace_id,
+            command,
+            ..
+        } => {
+            let workspace = resolve_workspace(workspace_id)?;
+            if workspace.runtime_pane_ids.is_empty() {
+                return Err(HttpError::new(
+                    409,
+                    "workspace has no active panes to run commands",
+                ));
+            }
+            let command = command.trim();
+            if command.is_empty() {
+                return Err(HttpError::new(400, "command is required"));
+            }
+            if command.len() > AUTOMATION_MAX_COMMAND_BYTES {
+                return Err(HttpError::new(
+                    400,
+                    format!(
+                        "command is too large (max {} bytes)",
+                        AUTOMATION_MAX_COMMAND_BYTES
+                    ),
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn queue_automation_job(
     automation: &Arc<AutomationState>,
     request: ExternalCommandRequest,
-) -> Result<SubmitCommandResponse, String> {
+) -> Result<SubmitCommandResponse, HttpError> {
     if automation.queued_jobs.load(Ordering::Relaxed) >= AUTOMATION_QUEUE_MAX {
-        return Err(AppError::conflict("automation queue is full").to_string());
+        return Err(HttpError::new(429, "automation queue is full"));
     }
 
     let job_id = Uuid::new_v4().to_string();
@@ -462,7 +590,7 @@ fn queue_automation_job(
         let mut jobs = automation
             .jobs
             .write()
-            .map_err(|_| AppError::system("automation job store lock poisoned").to_string())?;
+            .map_err(|_| HttpError::new(500, "automation job store lock poisoned"))?;
         jobs.insert(job_id.clone(), job);
     }
 
@@ -478,9 +606,12 @@ fn queue_automation_job(
         let mut jobs = automation
             .jobs
             .write()
-            .map_err(|_| AppError::system("automation job store lock poisoned").to_string())?;
+            .map_err(|_| HttpError::new(500, "automation job store lock poisoned"))?;
         jobs.remove(&job_id);
-        return Err(AppError::system(format!("failed to enqueue automation job: {err}")).to_string());
+        return Err(HttpError::new(
+            500,
+            format!("failed to enqueue automation job: {err}"),
+        ));
     }
 
     Ok(SubmitCommandResponse {
@@ -498,6 +629,42 @@ fn get_automation_job(
         .read()
         .map_err(|_| AppError::system("automation job store lock poisoned").to_string())?;
     Ok(jobs.get(job_id).cloned())
+}
+
+fn prune_completed_jobs_with_limit(automation: &Arc<AutomationState>, limit: usize) {
+    if let Ok(mut jobs) = automation.jobs.write() {
+        let mut completed = jobs
+            .iter()
+            .filter_map(|(job_id, job)| {
+                if matches!(job.status, AutomationJobStatus::Succeeded | AutomationJobStatus::Failed)
+                {
+                    Some((
+                        job_id.clone(),
+                        job.finished_at_ms.unwrap_or(job.created_at_ms),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if completed.len() <= limit {
+            return;
+        }
+
+        completed.sort_by_key(|(_, finished_at)| *finished_at);
+        let remove_count = completed.len().saturating_sub(limit);
+        completed
+            .into_iter()
+            .take(remove_count)
+            .for_each(|(job_id, _)| {
+                jobs.remove(&job_id);
+            });
+    }
+}
+
+fn prune_completed_jobs(automation: &Arc<AutomationState>) {
+    prune_completed_jobs_with_limit(automation, AUTOMATION_COMPLETED_JOB_RETENTION_MAX);
 }
 
 fn update_job_status(
@@ -520,20 +687,24 @@ fn update_job_status(
             job.error = error;
         }
     }
+
+    if matches!(status, AutomationJobStatus::Succeeded | AutomationJobStatus::Failed) {
+        prune_completed_jobs(automation);
+    }
 }
 
 fn workspace_for_automation(
     automation: &Arc<AutomationState>,
     workspace_id: &str,
-) -> Result<AutomationWorkspaceSnapshot, String> {
+) -> Result<AutomationWorkspaceSnapshot, AppError> {
     let registry = automation
         .workspace_registry
         .read()
-        .map_err(|_| AppError::system("workspace registry lock poisoned").to_string())?;
+        .map_err(|_| AppError::system("workspace registry lock poisoned".to_string()))?;
     registry
         .get(workspace_id)
         .cloned()
-        .ok_or_else(|| AppError::not_found(format!("workspace `{workspace_id}` is not open")).to_string())
+        .ok_or_else(|| AppError::not_found(format!("workspace `{workspace_id}` is not open")))
 }
 
 fn start_automation_http_server(automation: Arc<AutomationState>) {
@@ -622,16 +793,32 @@ fn handle_automation_http_connection(
     let method = parts[0];
     let path = parts[1];
 
-    let content_length = lines
+    let headers = lines
         .filter_map(|line| line.split_once(':'))
-        .find_map(|(name, value)| {
-            if name.eq_ignore_ascii_case("content-length") {
-                value.trim().parse::<usize>().ok()
-            } else {
-                None
-            }
-        })
+        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_string()))
+        .collect::<HashMap<_, _>>();
+    let authorization_header = headers.get("authorization").map(String::as_str);
+    let auth_token = configured_automation_token();
+    if let Err(error) = authorize_automation_request(auth_token.as_deref(), authorization_header)
+    {
+        return write_http_json(
+            &mut stream,
+            error.status_code,
+            &serde_json::json!({ "error": error.message }),
+        );
+    }
+
+    let content_length = headers
+        .get("content-length")
+        .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
+    if content_length > AUTOMATION_HTTP_MAX_BODY_BYTES {
+        return write_http_json(
+            &mut stream,
+            413,
+            &serde_json::json!({ "error": "request body too large" }),
+        );
+    }
 
     let mut body = request_bytes[header_end..].to_vec();
     while body.len() < content_length {
@@ -662,14 +849,21 @@ fn handle_automation_http_connection(
             }),
         ),
         ("GET", "/v1/workspaces") => {
-            let workspaces = automation
-                .workspace_registry
-                .read()
-                .map_err(|_| AppError::system("workspace registry lock poisoned").to_string())?
-                .values()
-                .cloned()
-                .collect::<Vec<_>>();
-            write_http_json(&mut stream, 200, &serde_json::json!({ "workspaces": workspaces }))
+            let workspaces = match automation.workspace_registry.read() {
+                Ok(registry) => registry.values().cloned().collect::<Vec<_>>(),
+                Err(_) => {
+                    return write_http_json(
+                        &mut stream,
+                        500,
+                        &serde_json::json!({ "error": "workspace registry lock poisoned" }),
+                    )
+                }
+            };
+            write_http_json(
+                &mut stream,
+                200,
+                &serde_json::json!({ "workspaces": workspaces }),
+            )
         }
         ("POST", "/v1/commands") => {
             let request: ExternalCommandRequest = match serde_json::from_slice(&body) {
@@ -682,13 +876,31 @@ fn handle_automation_http_connection(
                     )
                 }
             };
+            if let Err(error) = validate_external_command_request(automation, &request) {
+                return write_http_json(
+                    &mut stream,
+                    error.status_code,
+                    &serde_json::json!({ "error": error.message }),
+                );
+            }
             match queue_automation_job(automation, request) {
                 Ok(response) => write_http_json(&mut stream, 202, &serde_json::json!(response)),
-                Err(err) => write_http_json(&mut stream, 400, &serde_json::json!({ "error": err })),
+                Err(error) => write_http_json(
+                    &mut stream,
+                    error.status_code,
+                    &serde_json::json!({ "error": error.message }),
+                ),
             }
         }
         _ if method == "GET" && path.starts_with("/v1/jobs/") => {
             let job_id = path.trim_start_matches("/v1/jobs/");
+            if job_id.trim().is_empty() {
+                return write_http_json(
+                    &mut stream,
+                    400,
+                    &serde_json::json!({ "error": "job id is required" }),
+                );
+            }
             let job = get_automation_job(automation, job_id)?;
             match job {
                 Some(job) => write_http_json(&mut stream, 200, &serde_json::json!(job)),
@@ -712,8 +924,11 @@ fn write_http_json(stream: &mut TcpStream, status_code: u16, value: &serde_json:
         200 => "OK",
         202 => "Accepted",
         400 => "Bad Request",
+        401 => "Unauthorized",
         404 => "Not Found",
+        409 => "Conflict",
         413 => "Payload Too Large",
+        429 => "Too Many Requests",
         _ => "Internal Server Error",
     };
     let body = serde_json::to_string(value)
@@ -920,7 +1135,8 @@ async fn process_external_command(
             workspace_id,
             pane_count,
         } => {
-            let _workspace = workspace_for_automation(automation, &workspace_id)?;
+            let _workspace =
+                workspace_for_automation(automation, &workspace_id).map_err(|err| err.to_string())?;
             dispatch_frontend_automation(
                 app_handle,
                 automation,
@@ -939,7 +1155,8 @@ async fn process_external_command(
             base_ref,
             open_after_create,
         } => {
-            let workspace = workspace_for_automation(automation, &workspace_id)?;
+            let workspace =
+                workspace_for_automation(automation, &workspace_id).map_err(|err| err.to_string())?;
             let entry = create_worktree(CreateWorktreeRequest {
                 repo_root: workspace.repo_root.clone(),
                 mode,
@@ -968,7 +1185,8 @@ async fn process_external_command(
             base_ref,
             checkout,
         } => {
-            let workspace = workspace_for_automation(automation, &workspace_id)?;
+            let workspace =
+                workspace_for_automation(automation, &workspace_id).map_err(|err| err.to_string())?;
             create_branch_for_workspace(
                 &workspace,
                 &branch,
@@ -981,7 +1199,8 @@ async fn process_external_command(
             command,
             execute,
         } => {
-            let workspace = workspace_for_automation(automation, &workspace_id)?;
+            let workspace =
+                workspace_for_automation(automation, &workspace_id).map_err(|err| err.to_string())?;
             let results = run_command_on_panes(
                 Arc::clone(pane_registry),
                 workspace.runtime_pane_ids,
@@ -1890,6 +2109,173 @@ prunable stale path
             Some("workspace-main")
         );
         assert_eq!(value.get("paneCount").and_then(|v| v.as_u64()), Some(3));
+    }
+
+    #[test]
+    fn parse_bearer_token_extracts_token_value() {
+        assert_eq!(parse_bearer_token(Some("Bearer abc123")), Some("abc123"));
+        assert_eq!(parse_bearer_token(Some("Bearer   abc123   ")), Some("abc123"));
+        assert_eq!(parse_bearer_token(Some("Token abc123")), None);
+        assert_eq!(parse_bearer_token(None), None);
+    }
+
+    #[test]
+    fn authorize_automation_request_allows_missing_configured_token() {
+        let result = authorize_automation_request(None, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn authorize_automation_request_rejects_missing_or_invalid_token() {
+        let missing = authorize_automation_request(Some("secret"), None).expect_err("missing header");
+        assert_eq!(missing.status_code, 401);
+
+        let wrong = authorize_automation_request(Some("secret"), Some("Bearer nope"))
+            .expect_err("wrong token");
+        assert_eq!(wrong.status_code, 401);
+
+        let ok = authorize_automation_request(Some("secret"), Some("Bearer secret"));
+        assert!(ok.is_ok());
+    }
+
+    #[test]
+    fn validate_external_command_request_rejects_invalid_payloads() {
+        let (state, _receiver) = AppState::new();
+        let automation = Arc::clone(&state.automation);
+
+        let missing_workspace = validate_external_command_request(
+            &automation,
+            &ExternalCommandRequest::CreatePanes {
+                workspace_id: "workspace-main".to_string(),
+                pane_count: 2,
+            },
+        )
+        .expect_err("missing workspace should fail");
+        assert_eq!(missing_workspace.status_code, 404);
+
+        {
+            let mut registry = automation
+                .workspace_registry
+                .write()
+                .expect("workspace registry write");
+            registry.insert(
+                "workspace-main".to_string(),
+                AutomationWorkspaceSnapshot {
+                    workspace_id: "workspace-main".to_string(),
+                    name: "Main".to_string(),
+                    repo_root: "/repo".to_string(),
+                    worktree_path: "/repo".to_string(),
+                    runtime_pane_ids: vec!["workspace-main::pane-1".to_string()],
+                },
+            );
+        }
+
+        let invalid_pane_count = validate_external_command_request(
+            &automation,
+            &ExternalCommandRequest::CreatePanes {
+                workspace_id: "workspace-main".to_string(),
+                pane_count: 0,
+            },
+        )
+        .expect_err("pane_count=0 should fail");
+        assert_eq!(invalid_pane_count.status_code, 400);
+
+        let empty_command = validate_external_command_request(
+            &automation,
+            &ExternalCommandRequest::RunCommand {
+                workspace_id: "workspace-main".to_string(),
+                command: "   ".to_string(),
+                execute: Some(true),
+            },
+        )
+        .expect_err("empty command should fail");
+        assert_eq!(empty_command.status_code, 400);
+    }
+
+    #[test]
+    fn prune_completed_jobs_with_limit_keeps_running_jobs_and_newest_completed() {
+        let (state, _receiver) = AppState::new();
+        let automation = Arc::clone(&state.automation);
+
+        {
+            let mut jobs = automation.jobs.write().expect("jobs lock");
+            jobs.insert(
+                "running".to_string(),
+                AutomationJobRecord {
+                    job_id: "running".to_string(),
+                    status: AutomationJobStatus::Running,
+                    request: ExternalCommandRequest::RunCommand {
+                        workspace_id: "workspace-main".to_string(),
+                        command: "echo 1".to_string(),
+                        execute: Some(true),
+                    },
+                    result: None,
+                    error: None,
+                    created_at_ms: 1,
+                    started_at_ms: Some(2),
+                    finished_at_ms: None,
+                },
+            );
+            jobs.insert(
+                "done-1".to_string(),
+                AutomationJobRecord {
+                    job_id: "done-1".to_string(),
+                    status: AutomationJobStatus::Succeeded,
+                    request: ExternalCommandRequest::RunCommand {
+                        workspace_id: "workspace-main".to_string(),
+                        command: "echo 2".to_string(),
+                        execute: Some(true),
+                    },
+                    result: None,
+                    error: None,
+                    created_at_ms: 10,
+                    started_at_ms: Some(11),
+                    finished_at_ms: Some(12),
+                },
+            );
+            jobs.insert(
+                "done-2".to_string(),
+                AutomationJobRecord {
+                    job_id: "done-2".to_string(),
+                    status: AutomationJobStatus::Failed,
+                    request: ExternalCommandRequest::RunCommand {
+                        workspace_id: "workspace-main".to_string(),
+                        command: "echo 3".to_string(),
+                        execute: Some(true),
+                    },
+                    result: None,
+                    error: Some("x".to_string()),
+                    created_at_ms: 20,
+                    started_at_ms: Some(21),
+                    finished_at_ms: Some(22),
+                },
+            );
+            jobs.insert(
+                "done-3".to_string(),
+                AutomationJobRecord {
+                    job_id: "done-3".to_string(),
+                    status: AutomationJobStatus::Succeeded,
+                    request: ExternalCommandRequest::RunCommand {
+                        workspace_id: "workspace-main".to_string(),
+                        command: "echo 4".to_string(),
+                        execute: Some(true),
+                    },
+                    result: None,
+                    error: None,
+                    created_at_ms: 30,
+                    started_at_ms: Some(31),
+                    finished_at_ms: Some(32),
+                },
+            );
+        }
+
+        prune_completed_jobs_with_limit(&automation, 2);
+
+        let jobs = automation.jobs.read().expect("jobs read lock");
+        assert!(jobs.contains_key("running"));
+        assert!(!jobs.contains_key("done-1"));
+        assert!(jobs.contains_key("done-2"));
+        assert!(jobs.contains_key("done-3"));
     }
 }
 

@@ -52,6 +52,14 @@ function baseTmuxContext() {
   };
 }
 
+function createTerminalEditableTarget(): HTMLTextAreaElement {
+  const shell = document.createElement("div");
+  shell.setAttribute("data-terminal-pane", "true");
+  const target = document.createElement("textarea");
+  shell.appendChild(target);
+  return target;
+}
+
 describe("handleAppKeydown", () => {
   it("opens new workspace with Ctrl/Cmd+N", () => {
     const context = baseAppContext();
@@ -108,6 +116,20 @@ describe("handleAppKeydown", () => {
     expect(context.setNewWorkspaceOpen).not.toHaveBeenCalled();
     expect(context.setPaletteOpen).not.toHaveBeenCalled();
     expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("handles global shortcuts while terminal pane is focused", () => {
+    const context = baseAppContext();
+    const event = createEvent({
+      key: "p",
+      ctrlKey: true,
+      target: createTerminalEditableTarget(),
+    });
+
+    handleAppKeydown(event, context);
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(context.setPaletteOpen).toHaveBeenCalledWith(true);
   });
 });
 
@@ -220,5 +242,23 @@ describe("createTmuxPrefixController", () => {
 
     expect(controller.handleKeydown(prefix, context)).toBe(false);
     expect(prefix.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("allows tmux prefix when terminal pane input target is focused", () => {
+    const context = baseTmuxContext();
+    const controller = createTmuxPrefixController();
+    const prefix = createEvent({
+      key: "b",
+      ctrlKey: true,
+      target: createTerminalEditableTarget(),
+    });
+    const next = createEvent({
+      key: "n",
+      target: createTerminalEditableTarget(),
+    });
+
+    expect(controller.handleKeydown(prefix, context)).toBe(true);
+    expect(controller.handleKeydown(next, context)).toBe(true);
+    expect(context.setFocusedPane).toHaveBeenCalledWith("workspace-main", "pane-3");
   });
 });

@@ -19,9 +19,22 @@ import {
   type PendingAppUpdate,
 } from "./lib/updater";
 import { reportAutomationResult } from "./lib/tauri";
-import { useWorkspaceStore } from "./store/workspace";
+import {
+  getAgentDefaults,
+  getAgentProfileOptions,
+  useWorkspaceStore,
+} from "./store/workspace";
 import { THEME_DEFINITIONS, THEME_IDS } from "./theme/themes";
-import type { AppSection, DensityMode, FrontendAutomationRequest, LayoutMode, ThemeId, WorkspaceBootSession } from "./types";
+import type {
+  AgentProfileKey,
+  AgentStartupDefaults,
+  AppSection,
+  DensityMode,
+  FrontendAutomationRequest,
+  LayoutMode,
+  ThemeId,
+  WorkspaceBootSession,
+} from "./types";
 
 const NewWorkspaceModal = lazy(() =>
   import("./components/NewWorkspaceModal").then((module) => ({ default: module.NewWorkspaceModal })),
@@ -70,21 +83,30 @@ interface TerminalWorkspaceView extends ActiveWorkspaceView {}
 
 const WORKSPACE_NAV_KEY_SEPARATOR = "\u0001";
 const LOCKED_SECTIONS: AppSection[] = ["kanban", "agents", "prompts"];
+const TERMINAL_SHORTCUT_SCOPE_SELECTOR = "[data-terminal-pane=\"true\"]";
+const AGENT_PROFILE_OPTIONS = getAgentProfileOptions();
 type UpdateStatus = "idle" | "checking" | "available" | "installing" | "installed" | "upToDate" | "error";
 type WorkspaceStoreState = ReturnType<typeof useWorkspaceStore.getState>;
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!target) {
+function isTerminalShortcutScope(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
     return false;
   }
 
-  const element = target as HTMLElement;
-  const tag = element.tagName?.toLowerCase();
-  if (tag === "input" || tag === "textarea" || tag === "select") {
-    return true;
+  return Boolean(target.closest(TERMINAL_SHORTCUT_SCOPE_SELECTOR));
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
   }
 
-  return element.isContentEditable;
+  const tag = target.tagName?.toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") {
+    return !isTerminalShortcutScope(target);
+  }
+
+  return target.isContentEditable && !isTerminalShortcutScope(target);
 }
 
 interface AppShortcutContext {
@@ -370,10 +392,13 @@ interface SettingsSectionProps {
   reduceMotion: boolean;
   highContrastAssist: boolean;
   density: DensityMode;
+  agentStartupDefaults: AgentStartupDefaults;
   onThemeChange: (themeId: ThemeId) => void;
   onReduceMotionChange: (enabled: boolean) => void;
   onHighContrastAssistChange: (enabled: boolean) => void;
   onDensityChange: (density: DensityMode) => void;
+  onAgentStartupDefaultChange: (profile: AgentProfileKey, command: string) => void;
+  onResetAgentStartupDefaults: () => void;
 }
 
 export function selectWorktreeManagerCore(state: WorkspaceStoreState) {
@@ -396,10 +421,13 @@ export function SettingsSection({
   reduceMotion,
   highContrastAssist,
   density,
+  agentStartupDefaults,
   onThemeChange,
   onReduceMotionChange,
   onHighContrastAssistChange,
   onDensityChange,
+  onAgentStartupDefaultChange,
+  onResetAgentStartupDefaults,
 }: SettingsSectionProps) {
   const canUseUpdater = useMemo(() => updatesSupported(), []);
   const [pendingUpdate, setPendingUpdate] = useState<PendingAppUpdate | null>(null);
@@ -611,6 +639,33 @@ export function SettingsSection({
         </section>
 
         <section className="settings-block">
+          <h3>Agent Startup Commands</h3>
+          <p className="settings-caption">Defaults used for new workspace allocations.</p>
+          <div className="settings-toggle-list">
+            {AGENT_PROFILE_OPTIONS.map((agent) => (
+              <div key={agent.profile} className="settings-agent-row">
+                <label className="input-label" htmlFor={`agent-default-${agent.profile}`}>
+                  {agent.label}
+                </label>
+                <input
+                  id={`agent-default-${agent.profile}`}
+                  className="text-input"
+                  value={agentStartupDefaults[agent.profile]}
+                  onChange={(event) => {
+                    onAgentStartupDefaultChange(agent.profile, event.currentTarget.value);
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="settings-inline-actions">
+            <button type="button" className="subtle-btn" onClick={onResetAgentStartupDefaults}>
+              Reset defaults
+            </button>
+          </div>
+        </section>
+
+        <section className="settings-block">
           <h3>App Updates</h3>
           <p className="settings-caption">Check for signed GitHub releases and install updates in place.</p>
 
@@ -706,6 +761,7 @@ function App() {
     reduceMotion,
     highContrastAssist,
     density,
+    agentStartupDefaults,
   } = useWorkspaceStore(
     useShallow((state) => ({
       initialized: state.initialized,
@@ -718,6 +774,7 @@ function App() {
       reduceMotion: state.reduceMotion,
       highContrastAssist: state.highContrastAssist,
       density: state.density,
+      agentStartupDefaults: state.agentStartupDefaults,
     })),
   );
 
@@ -808,6 +865,8 @@ function App() {
   const setReduceMotion = useWorkspaceStore((state) => state.setReduceMotion);
   const setHighContrastAssist = useWorkspaceStore((state) => state.setHighContrastAssist);
   const setDensity = useWorkspaceStore((state) => state.setDensity);
+  const setAgentStartupDefault = useWorkspaceStore((state) => state.setAgentStartupDefault);
+  const resetAgentStartupDefaults = useWorkspaceStore((state) => state.resetAgentStartupDefaults);
   const setPaletteOpen = useWorkspaceStore((state) => state.setPaletteOpen);
   const createWorkspace = useWorkspaceStore((state) => state.createWorkspace);
   const closeWorkspace = useWorkspaceStore((state) => state.closeWorkspace);
@@ -830,6 +889,10 @@ function App() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
+  const agentDefaults = useMemo(
+    () => getAgentDefaults(agentStartupDefaults),
+    [agentStartupDefaults],
+  );
 
   useEffect(() => {
     void bootstrap();
@@ -1208,10 +1271,13 @@ function App() {
               reduceMotion={reduceMotion}
               highContrastAssist={highContrastAssist}
               density={density}
+              agentStartupDefaults={agentStartupDefaults}
               onThemeChange={setTheme}
               onReduceMotionChange={setReduceMotion}
               onHighContrastAssistChange={setHighContrastAssist}
               onDensityChange={setDensity}
+              onAgentStartupDefaultChange={setAgentStartupDefault}
+              onResetAgentStartupDefaults={resetAgentStartupDefaults}
             />
           ) : null}
         </div>
@@ -1222,6 +1288,7 @@ function App() {
           <NewWorkspaceModal
             open={newWorkspaceOpen}
             defaultDirectory={activeWorkspace?.worktreePath ?? ""}
+            agentDefaults={agentDefaults}
             onClose={() => setNewWorkspaceOpen(false)}
             onSubmit={(input: WorkspaceCreationInput) => {
               void createWorkspace(input);

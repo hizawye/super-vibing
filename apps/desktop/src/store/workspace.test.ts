@@ -139,6 +139,13 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
     highContrastAssist: false,
     density: "comfortable",
   };
+  const agentStartupDefaults = overrides.agentStartupDefaults ?? {
+    claude: "claude",
+    codex: "codex",
+    gemini: "gemini",
+    cursor: "cursor-agent",
+    opencode: "opencode",
+  };
 
   useWorkspaceStore.setState({
     initialized: true,
@@ -151,6 +158,7 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
     reduceMotion: uiPreferences.reduceMotion,
     highContrastAssist: uiPreferences.highContrastAssist,
     density: uiPreferences.density,
+    agentStartupDefaults,
     workspaces,
     activeWorkspaceId,
     focusedPaneByWorkspace: Object.fromEntries(
@@ -229,6 +237,13 @@ describe("workspace store", () => {
       reduceMotion: false,
       highContrastAssist: false,
       density: "comfortable",
+      agentStartupDefaults: {
+        claude: "claude",
+        codex: "codex",
+        gemini: "gemini",
+        cursor: "cursor-agent",
+        opencode: "opencode",
+      },
       workspaces: [],
       activeWorkspaceId: null,
       focusedPaneByWorkspace: {},
@@ -305,6 +320,52 @@ describe("workspace store", () => {
         },
       }),
     );
+  });
+
+  it("persists global agent startup defaults and keeps existing workspaces unchanged", async () => {
+    const existing = workspace("workspace-main", "Workspace 1", 1, ["running"]);
+    existing.agentAllocation = allocation({ profile: "codex", enabled: true, count: 1 }).map((item) =>
+      item.profile === "codex" ? { ...item, command: "codex-old" } : item,
+    );
+
+    resetStore({
+      workspaces: [existing],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    useWorkspaceStore.getState().setAgentStartupDefault("codex", "codex --model gpt-5");
+    await useWorkspaceStore.getState().persistSession();
+
+    const state = useWorkspaceStore.getState();
+    expect(state.agentStartupDefaults.codex).toBe("codex --model gpt-5");
+    expect(state.workspaces[0]?.agentAllocation.find((item) => item.profile === "codex")?.command).toBe("codex-old");
+    expect(persistence.saveSessionState).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        agentStartupDefaults: expect.objectContaining({
+          codex: "codex --model gpt-5",
+        }),
+      }),
+    );
+  });
+
+  it("uses global startup defaults for newly imported worktrees", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["running"], "/repo")],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    useWorkspaceStore.getState().setAgentStartupDefault("claude", "claude --print");
+    useWorkspaceStore.getState().setAgentStartupDefault("codex", "codex --sandbox read-only");
+
+    await useWorkspaceStore.getState().importWorktreeAsWorkspace("/repo/.worktrees/feature-defaults");
+
+    const createdWorkspace = useWorkspaceStore.getState().workspaces.find(
+      (item) => item.worktreePath === "/repo/.worktrees/feature-defaults",
+    );
+
+    expect(createdWorkspace).toBeDefined();
+    expect(createdWorkspace?.agentAllocation.find((item) => item.profile === "claude")?.command).toBe("claude --print");
+    expect(createdWorkspace?.agentAllocation.find((item) => item.profile === "codex")?.command).toBe("codex --sandbox read-only");
   });
 
   it("rebalances pane layout in tiling mode when pane count changes", async () => {
@@ -655,6 +716,13 @@ describe("workspace store", () => {
       reduceMotion: false,
       highContrastAssist: false,
       density: "comfortable",
+      agentStartupDefaults: {
+        claude: "claude",
+        codex: "codex",
+        gemini: "gemini",
+        cursor: "cursor-agent",
+        opencode: "opencode",
+      },
       workspaces: [],
       activeWorkspaceId: null,
       focusedPaneByWorkspace: {},
@@ -709,6 +777,13 @@ describe("workspace store", () => {
       reduceMotion: false,
       highContrastAssist: false,
       density: "comfortable",
+      agentStartupDefaults: {
+        claude: "claude",
+        codex: "codex",
+        gemini: "gemini",
+        cursor: "cursor-agent",
+        opencode: "opencode",
+      },
       workspaces: [],
       activeWorkspaceId: null,
       focusedPaneByWorkspace: {},
@@ -1045,6 +1120,63 @@ describe("workspace store", () => {
     await useWorkspaceStore.getState().importWorktreeAsWorkspace("/repo/.worktrees/feature-auth");
 
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("workspace-auth");
+  });
+
+  it("creates managed worktree without opening workspace when openAfterCreate is false", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["running"], "/repo")],
+      activeWorkspaceId: "workspace-main",
+    });
+    useWorkspaceStore.setState((state) => ({
+      worktreeManager: {
+        ...state.worktreeManager,
+        repoRoot: "/repo",
+      },
+    }));
+
+    await useWorkspaceStore.getState().createManagedWorktree({
+      mode: "newBranch",
+      branch: "feature/no-open",
+      openAfterCreate: false,
+    });
+
+    expect(tauriApi.createWorktree).toHaveBeenCalledWith({
+      repoRoot: "/repo",
+      mode: "newBranch",
+      branch: "feature/no-open",
+      baseRef: undefined,
+    });
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
+  });
+
+  it("removes managed worktree after closing matching open workspace tabs", async () => {
+    resetStore({
+      workspaces: [
+        workspace("workspace-main", "Workspace 1", 1, ["running"], "/repo"),
+        workspace("workspace-auth", "Workspace Auth", 1, ["running"], "/repo/.worktrees/feature-auth"),
+      ],
+      activeWorkspaceId: "workspace-main",
+    });
+    useWorkspaceStore.setState((state) => ({
+      worktreeManager: {
+        ...state.worktreeManager,
+        repoRoot: "/repo",
+      },
+    }));
+
+    await useWorkspaceStore.getState().removeManagedWorktree({
+      worktreePath: "/repo/.worktrees/feature-auth",
+      force: false,
+      deleteBranch: false,
+    });
+
+    expect(tauriApi.removeWorktree).toHaveBeenCalledWith({
+      repoRoot: "/repo",
+      worktreePath: "/repo/.worktrees/feature-auth",
+      force: false,
+      deleteBranch: false,
+    });
+    expect(useWorkspaceStore.getState().workspaces.map((item) => item.id)).not.toContain("workspace-auth");
   });
 
   it("blocks worktree removal when it is the only open workspace", async () => {

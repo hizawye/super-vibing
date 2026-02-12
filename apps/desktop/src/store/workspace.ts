@@ -30,6 +30,7 @@ import { DEFAULT_THEME_ID, isThemeId } from "../theme/themes";
 import type {
   AgentAllocation,
   AgentProfileKey,
+  AgentStartupDefaults,
   AppSection,
   Blueprint,
   DensityMode,
@@ -98,6 +99,7 @@ interface WorkspaceStore {
   reduceMotion: boolean;
   highContrastAssist: boolean;
   density: DensityMode;
+  agentStartupDefaults: AgentStartupDefaults;
   workspaces: WorkspaceRuntime[];
   activeWorkspaceId: string | null;
   focusedPaneByWorkspace: Record<string, string | null>;
@@ -117,6 +119,8 @@ interface WorkspaceStore {
   setReduceMotion: (enabled: boolean) => void;
   setHighContrastAssist: (enabled: boolean) => void;
   setDensity: (density: DensityMode) => void;
+  setAgentStartupDefault: (profile: AgentProfileKey, command: string) => void;
+  resetAgentStartupDefaults: () => void;
   createWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
   closeWorkspace: (workspaceId: string) => Promise<void>;
   setActiveWorkspace: (workspaceId: string) => Promise<void>;
@@ -172,6 +176,20 @@ const AGENT_PROFILE_CONFIG: Array<{ profile: AgentProfileKey; label: string; com
   { profile: "opencode", label: "OpenCode", command: "opencode" },
 ];
 
+const AGENT_PROFILE_DEFAULTS: AgentStartupDefaults = AGENT_PROFILE_CONFIG.reduce<AgentStartupDefaults>(
+  (acc, item) => {
+    acc[item.profile] = item.command;
+    return acc;
+  },
+  {
+    claude: "claude",
+    codex: "codex",
+    gemini: "gemini",
+    cursor: "cursor-agent",
+    opencode: "opencode",
+  },
+);
+
 function defaultUiPreferences(): UiPreferences {
   return {
     theme: DEFAULT_THEME_ID,
@@ -179,6 +197,10 @@ function defaultUiPreferences(): UiPreferences {
     highContrastAssist: false,
     density: "comfortable",
   };
+}
+
+function defaultAgentStartupDefaults(): AgentStartupDefaults {
+  return { ...AGENT_PROFILE_DEFAULTS };
 }
 
 function formatStartupError(error: unknown): string {
@@ -210,6 +232,23 @@ function sanitizeUiPreferences(preferences?: Partial<UiPreferences> | null): UiP
         : defaults.highContrastAssist,
     density: density === "compact" || density === "comfortable" ? density : defaults.density,
   };
+}
+
+function sanitizeAgentStartupDefaults(
+  defaults?: Partial<AgentStartupDefaults> | null,
+): AgentStartupDefaults {
+  const normalized = defaultAgentStartupDefaults();
+  AGENT_PROFILE_CONFIG.forEach(({ profile }) => {
+    const value = defaults?.[profile];
+    if (typeof value !== "string") {
+      return;
+    }
+
+    const command = value.trim();
+    normalized[profile] = command.length > 0 ? command : AGENT_PROFILE_DEFAULTS[profile];
+  });
+
+  return normalized;
 }
 
 function defaultWorktreeManagerState(): WorktreeManagerState {
@@ -825,24 +864,28 @@ function toIdlePanes(panes: Record<string, PaneModel>): Record<string, PaneModel
   return next;
 }
 
-function defaultAgentAllocation(): AgentAllocation[] {
+function defaultAgentAllocation(agentStartupDefaults = defaultAgentStartupDefaults()): AgentAllocation[] {
   return AGENT_PROFILE_CONFIG.map((item) => ({
     profile: item.profile,
     label: item.label,
-    command: item.command,
+    command: agentStartupDefaults[item.profile],
     enabled: false,
     count: 0,
   }));
 }
 
-function normalizeAgentAllocation(input?: AgentAllocation[]): AgentAllocation[] {
+function normalizeAgentAllocation(
+  input: AgentAllocation[] | undefined,
+  agentStartupDefaults: AgentStartupDefaults,
+): AgentAllocation[] {
   const byProfile = new Map((input ?? []).map((item) => [item.profile, item]));
   return AGENT_PROFILE_CONFIG.map((base) => {
     const existing = byProfile.get(base.profile);
+    const command = existing?.command?.trim();
     return {
       profile: base.profile,
       label: existing?.label ?? base.label,
-      command: existing?.command ?? base.command,
+      command: command && command.length > 0 ? command : agentStartupDefaults[base.profile],
       enabled: existing?.enabled ?? false,
       count: Math.max(0, Math.min(MAX_PANES, existing?.count ?? 0)),
     };
@@ -859,6 +902,7 @@ function createWorkspaceRuntime(args: {
   layoutMode?: LayoutMode;
   paneCount: number;
   agentAllocation?: AgentAllocation[];
+  agentStartupDefaults?: AgentStartupDefaults;
   createdAt?: string;
   paneOrder?: string[];
   panes?: Record<string, PaneModel>;
@@ -898,7 +942,10 @@ function createWorkspaceRuntime(args: {
       args.zoomedPaneId && paneOrder.includes(args.zoomedPaneId)
         ? args.zoomedPaneId
         : null,
-    agentAllocation: normalizeAgentAllocation(args.agentAllocation),
+    agentAllocation: normalizeAgentAllocation(
+      args.agentAllocation,
+      args.agentStartupDefaults ?? defaultAgentStartupDefaults(),
+    ),
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -949,6 +996,7 @@ function serializeSessionState(state: WorkspaceStore): SessionState {
       highContrastAssist: state.highContrastAssist,
       density: state.density,
     },
+    agentStartupDefaults: state.agentStartupDefaults,
   };
 }
 
@@ -957,6 +1005,7 @@ function isLegacySessionState(session: SessionState | LegacySessionState): sessi
 }
 
 function migrateLegacySession(session: LegacySessionState): SessionState {
+  const agentStartupDefaults = defaultAgentStartupDefaults();
   const paneCount = clampPaneCount(session.paneCount);
   const paneOrder = session.paneOrder.slice(0, paneCount);
   const normalizedOrder = paneOrder.length > 0 ? paneOrder : [paneIdAt(0)];
@@ -981,7 +1030,8 @@ function migrateLegacySession(session: LegacySessionState): SessionState {
       panes: toIdlePanes(session.panes),
       layouts: session.layouts,
       zoomedPaneId: session.zoomedPaneId,
-      agentAllocation: defaultAgentAllocation(),
+      agentAllocation: defaultAgentAllocation(agentStartupDefaults),
+      agentStartupDefaults,
     }),
   );
 
@@ -991,10 +1041,12 @@ function migrateLegacySession(session: LegacySessionState): SessionState {
     activeSection: "terminal",
     echoInput: session.echoInput,
     uiPreferences: defaultUiPreferences(),
+    agentStartupDefaults,
   };
 }
 
 function sanitizeSession(session: SessionState): SessionState {
+  const agentStartupDefaults = sanitizeAgentStartupDefaults(session.agentStartupDefaults);
   const workspaces = session.workspaces.map((workspace) => {
     const paneCount = clampPaneCount(workspace.paneCount);
     const paneOrder = workspace.paneOrder.slice(0, paneCount);
@@ -1021,6 +1073,7 @@ function sanitizeSession(session: SessionState): SessionState {
       layouts: workspace.layouts,
       zoomedPaneId: workspace.zoomedPaneId,
       agentAllocation: workspace.agentAllocation,
+      agentStartupDefaults,
       createdAt: workspace.createdAt,
     });
   });
@@ -1033,6 +1086,7 @@ function sanitizeSession(session: SessionState): SessionState {
     activeSection: session.activeSection,
     echoInput: session.echoInput,
     uiPreferences: sanitizeUiPreferences(session.uiPreferences),
+    agentStartupDefaults,
   };
 }
 
@@ -1496,6 +1550,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   reduceMotion: false,
   highContrastAssist: false,
   density: "comfortable",
+  agentStartupDefaults: defaultAgentStartupDefaults(),
   workspaces: [],
   activeWorkspaceId: null,
   focusedPaneByWorkspace: {},
@@ -1533,6 +1588,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
 
       if (!session || session.workspaces.length === 0) {
+        const agentStartupDefaults = defaultAgentStartupDefaults();
         const cwd = await getDefaultCwd();
         const context = await resolveRepoContextSafe(cwd);
 
@@ -1544,6 +1600,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           worktreePath: context.worktreePath,
           branch: context.branch,
           paneCount: 1,
+          agentStartupDefaults,
         });
 
         session = {
@@ -1552,6 +1609,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           activeSection: "terminal",
           echoInput: false,
           uiPreferences: defaultUiPreferences(),
+          agentStartupDefaults,
         };
       }
 
@@ -1562,6 +1620,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         reduceMotion: session.uiPreferences.reduceMotion,
         highContrastAssist: session.uiPreferences.highContrastAssist,
         density: session.uiPreferences.density,
+        agentStartupDefaults: sanitizeAgentStartupDefaults(session.agentStartupDefaults),
         workspaces: session.workspaces,
         activeWorkspaceId: session.activeWorkspaceId,
         focusedPaneByWorkspace: buildFocusedPaneMap(session.workspaces),
@@ -1623,6 +1682,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       reduceMotion: false,
       highContrastAssist: false,
       density: "comfortable",
+      agentStartupDefaults: defaultAgentStartupDefaults(),
       workspaces: [],
       activeWorkspaceId: null,
       focusedPaneByWorkspace: {},
@@ -1670,6 +1730,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     enqueuePersist(get);
   },
 
+  setAgentStartupDefault: (profile: AgentProfileKey, command: string) => {
+    const trimmed = command.trim();
+    set((state) => ({
+      agentStartupDefaults: {
+        ...state.agentStartupDefaults,
+        [profile]: trimmed.length > 0 ? trimmed : AGENT_PROFILE_DEFAULTS[profile],
+      },
+    }));
+    enqueuePersist(get);
+  },
+
+  resetAgentStartupDefaults: () => {
+    set({ agentStartupDefaults: defaultAgentStartupDefaults() });
+    enqueuePersist(get);
+  },
+
   createWorkspace: async (input: CreateWorkspaceInput) => {
     const directory = input.directory.trim() || (await getDefaultCwd());
     const context = await resolveRepoContextSafe(directory);
@@ -1687,6 +1763,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       branch: context.branch,
       paneCount: input.paneCount,
       agentAllocation: input.agentAllocation,
+      agentStartupDefaults: get().agentStartupDefaults,
     });
 
     const launchPlan = buildLaunchPlan(nextWorkspace.paneOrder, nextWorkspace.agentAllocation);
@@ -2543,7 +2620,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           name: `Workspace ${get().workspaces.length + 1}`,
           directory: targetPath,
           paneCount: blueprint.paneCount,
-          agentAllocation: normalizeAgentAllocation(blueprint.agentAllocation),
+          agentAllocation: normalizeAgentAllocation(blueprint.agentAllocation, get().agentStartupDefaults),
         });
       }
     }
@@ -2675,7 +2752,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       name: "",
       directory: worktreePath,
       paneCount: 1,
-      agentAllocation: defaultAgentAllocation(),
+      agentAllocation: defaultAgentAllocation(get().agentStartupDefaults),
     });
   },
 
@@ -2739,6 +2816,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 }));
 
-export function getAgentDefaults(): AgentAllocation[] {
-  return defaultAgentAllocation();
+export function getAgentDefaults(agentStartupDefaults?: AgentStartupDefaults): AgentAllocation[] {
+  return defaultAgentAllocation(agentStartupDefaults ?? defaultAgentStartupDefaults());
+}
+
+export function getAgentStartupDefaultCommands(): AgentStartupDefaults {
+  return defaultAgentStartupDefaults();
+}
+
+export function getAgentProfileOptions(): Array<{ profile: AgentProfileKey; label: string }> {
+  return AGENT_PROFILE_CONFIG.map(({ profile, label }) => ({ profile, label }));
 }

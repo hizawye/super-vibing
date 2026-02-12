@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { getAgentDefaults } from "../store/workspace";
 import type { AgentAllocation } from "../types";
 
 export interface WorkspaceCreationInput {
@@ -12,6 +11,7 @@ export interface WorkspaceCreationInput {
 interface NewWorkspaceModalProps {
   open: boolean;
   defaultDirectory: string;
+  agentDefaults: AgentAllocation[];
   onClose: () => void;
   onSubmit: (input: WorkspaceCreationInput) => void;
 }
@@ -22,11 +22,21 @@ function sanitizeAgentCount(count: number): number {
   return Math.max(0, Math.min(16, count));
 }
 
-export function NewWorkspaceModal({ open, defaultDirectory, onClose, onSubmit }: NewWorkspaceModalProps) {
+export function NewWorkspaceModal({
+  open,
+  defaultDirectory,
+  agentDefaults,
+  onClose,
+  onSubmit,
+}: NewWorkspaceModalProps) {
+  const freshAgentDefaults = useMemo(
+    () => agentDefaults.map((item) => ({ ...item })),
+    [agentDefaults],
+  );
   const [name, setName] = useState("");
   const [directory, setDirectory] = useState(defaultDirectory);
   const [paneCount, setPaneCount] = useState(1);
-  const [allocation, setAllocation] = useState<AgentAllocation[]>(() => getAgentDefaults());
+  const [allocation, setAllocation] = useState<AgentAllocation[]>(freshAgentDefaults);
   const [agentsOpen, setAgentsOpen] = useState(false);
 
   useEffect(() => {
@@ -37,9 +47,9 @@ export function NewWorkspaceModal({ open, defaultDirectory, onClose, onSubmit }:
     setName("");
     setDirectory(defaultDirectory);
     setPaneCount(1);
-    setAllocation(getAgentDefaults());
+    setAllocation(freshAgentDefaults);
     setAgentsOpen(false);
-  }, [defaultDirectory, open]);
+  }, [defaultDirectory, freshAgentDefaults, open]);
 
   const assignedAgents = useMemo(
     () => allocation.reduce((total, item) => total + (item.enabled ? item.count : 0), 0),
