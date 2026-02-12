@@ -74,6 +74,12 @@ describe("CommandPalette", () => {
             activeWorkspaceId: "workspace-1",
             activeSection: "terminal",
             echoInput: false,
+            uiPreferences: {
+              theme: "apple-dark",
+              reduceMotion: false,
+              highContrastAssist: false,
+              density: "comfortable",
+            },
           },
         },
       ],

@@ -24,6 +24,15 @@ export interface AgentAllocation {
 
 export type AppSection = "terminal" | "kanban" | "agents" | "prompts" | "settings";
 export type LayoutMode = "tiling" | "freeform";
+export type ThemeId = "apple-dark" | "apple-light" | "graphite" | "midnight" | "solarized" | "nord";
+export type DensityMode = "comfortable" | "compact";
+
+export interface UiPreferences {
+  theme: ThemeId;
+  reduceMotion: boolean;
+  highContrastAssist: boolean;
+  density: DensityMode;
+}
 
 export interface WorkspaceRuntime {
   id: string;
@@ -61,6 +70,7 @@ export interface SessionState {
   activeWorkspaceId: string | null;
   activeSection: AppSection;
   echoInput: boolean;
+  uiPreferences: UiPreferences;
 }
 
 export interface LegacySessionState {

@@ -5,6 +5,7 @@ import type { AgentAllocation, LayoutMode, SessionState, SpawnPaneRequest, Works
 import * as tauriApi from "../lib/tauri";
 import * as persistence from "../lib/persistence";
 import { toRuntimePaneId } from "../lib/panes";
+import { DEFAULT_THEME_ID } from "../theme/themes";
 
 vi.mock("../lib/tauri", () => ({
   closePane: vi.fn(async () => {}),
@@ -102,6 +103,12 @@ function workspace(
 
 function resetStore(overrides: Partial<SessionState> = {}): void {
   const baseWorkspace = workspace("workspace-main", "Workspace 1", 2, ["running", "running"]);
+  const uiPreferences = overrides.uiPreferences ?? {
+    theme: DEFAULT_THEME_ID,
+    reduceMotion: false,
+    highContrastAssist: false,
+    density: "comfortable",
+  };
 
   useWorkspaceStore.setState({
     initialized: true,
@@ -109,6 +116,10 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
     activeSection: overrides.activeSection ?? "terminal",
     paletteOpen: false,
     echoInput: overrides.echoInput ?? false,
+    themeId: uiPreferences.theme,
+    reduceMotion: uiPreferences.reduceMotion,
+    highContrastAssist: uiPreferences.highContrastAssist,
+    density: uiPreferences.density,
     workspaces: overrides.workspaces ?? [baseWorkspace],
     activeWorkspaceId: overrides.activeWorkspaceId ?? baseWorkspace.id,
     workspaceBootSessions: {},
@@ -146,6 +157,67 @@ describe("workspace store", () => {
     active = useWorkspaceStore.getState().workspaces[0];
     expect(active.paneCount).toBe(16);
     expect(active.paneOrder).toHaveLength(16);
+  });
+
+  it("defaults missing persisted ui preferences to apple-dark theme settings", async () => {
+    const restoredWorkspace = workspace("workspace-main", "Workspace 1", 1, ["idle"]);
+    const legacyLikeSession = {
+      workspaces: [restoredWorkspace],
+      activeWorkspaceId: "workspace-main",
+      activeSection: "terminal",
+      echoInput: false,
+    } as unknown as SessionState;
+
+    vi.mocked(persistence.loadPersistedPayload).mockResolvedValueOnce({
+      version: 2,
+      session: legacyLikeSession,
+      snapshots: [],
+      blueprints: [],
+    });
+
+    useWorkspaceStore.setState({
+      initialized: false,
+      bootstrapping: false,
+      activeSection: "terminal",
+      paletteOpen: false,
+      echoInput: false,
+      themeId: DEFAULT_THEME_ID,
+      reduceMotion: false,
+      highContrastAssist: false,
+      density: "comfortable",
+      workspaces: [],
+      activeWorkspaceId: null,
+      workspaceBootSessions: {},
+      snapshots: [],
+      blueprints: [],
+    });
+
+    await useWorkspaceStore.getState().bootstrap();
+
+    const state = useWorkspaceStore.getState();
+    expect(state.themeId).toBe("apple-dark");
+    expect(state.reduceMotion).toBe(false);
+    expect(state.highContrastAssist).toBe(false);
+    expect(state.density).toBe("comfortable");
+  });
+
+  it("persists ui preferences in serialized session state", async () => {
+    useWorkspaceStore.getState().setTheme("nord");
+    useWorkspaceStore.getState().setReduceMotion(true);
+    useWorkspaceStore.getState().setHighContrastAssist(true);
+    useWorkspaceStore.getState().setDensity("compact");
+    await useWorkspaceStore.getState().persistSession();
+
+    expect(persistence.saveSessionState).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        uiPreferences: {
+          theme: "nord",
+          reduceMotion: true,
+          highContrastAssist: true,
+          density: "compact",
+        },
+      }),
+    );
   });
 
   it("rebalances pane layout in tiling mode when pane count changes", async () => {
@@ -385,6 +457,12 @@ describe("workspace store", () => {
         activeWorkspaceId: "workspace-main",
         activeSection: "terminal",
         echoInput: false,
+        uiPreferences: {
+          theme: "apple-dark",
+          reduceMotion: false,
+          highContrastAssist: false,
+          density: "comfortable",
+        },
       },
       snapshots: [],
       blueprints: [],
@@ -396,6 +474,10 @@ describe("workspace store", () => {
       activeSection: "terminal",
       paletteOpen: false,
       echoInput: false,
+      themeId: DEFAULT_THEME_ID,
+      reduceMotion: false,
+      highContrastAssist: false,
+      density: "comfortable",
       workspaces: [],
       activeWorkspaceId: null,
       workspaceBootSessions: {},
@@ -424,6 +506,12 @@ describe("workspace store", () => {
         activeWorkspaceId: "workspace-main",
         activeSection: "terminal",
         echoInput: false,
+        uiPreferences: {
+          theme: "apple-dark",
+          reduceMotion: false,
+          highContrastAssist: false,
+          density: "comfortable",
+        },
       } as unknown as SessionState,
       snapshots: [],
       blueprints: [],
@@ -435,6 +523,10 @@ describe("workspace store", () => {
       activeSection: "terminal",
       paletteOpen: false,
       echoInput: false,
+      themeId: DEFAULT_THEME_ID,
+      reduceMotion: false,
+      highContrastAssist: false,
+      density: "comfortable",
       workspaces: [],
       activeWorkspaceId: null,
       workspaceBootSessions: {},
@@ -676,6 +768,12 @@ describe("workspace store", () => {
             activeWorkspaceId: "workspace-main",
             activeSection: "terminal",
             echoInput: false,
+            uiPreferences: {
+              theme: "apple-dark",
+              reduceMotion: false,
+              highContrastAssist: false,
+              density: "comfortable",
+            },
           },
         },
       ],

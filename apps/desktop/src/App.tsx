@@ -6,7 +6,8 @@ import { TopChrome, type WorkspaceTabView } from "./components/TopChrome";
 import { EmptyStatePage } from "./components/EmptyStatePage";
 import type { WorkspaceCreationInput } from "./components/NewWorkspaceModal";
 import { useWorkspaceStore } from "./store/workspace";
-import type { LayoutMode, WorkspaceBootSession } from "./types";
+import { THEME_DEFINITIONS, THEME_IDS } from "./theme/themes";
+import type { DensityMode, LayoutMode, ThemeId, WorkspaceBootSession } from "./types";
 
 const SectionMenu = lazy(() =>
   import("./components/SectionMenu").then((module) => ({ default: module.SectionMenu })),
@@ -57,35 +58,140 @@ interface ActiveWorkspaceView {
 
 const WORKSPACE_TAB_KEY_SEPARATOR = "\u0001";
 
-function SettingsSection() {
+interface SettingsSectionProps {
+  themeId: ThemeId;
+  reduceMotion: boolean;
+  highContrastAssist: boolean;
+  density: DensityMode;
+  onThemeChange: (themeId: ThemeId) => void;
+  onReduceMotionChange: (enabled: boolean) => void;
+  onHighContrastAssistChange: (enabled: boolean) => void;
+  onDensityChange: (density: DensityMode) => void;
+}
+
+function SettingsSection({
+  themeId,
+  reduceMotion,
+  highContrastAssist,
+  density,
+  onThemeChange,
+  onReduceMotionChange,
+  onHighContrastAssistChange,
+  onDensityChange,
+}: SettingsSectionProps) {
   return (
     <section className="section-surface">
       <header className="section-head">
-        <h2>Keyboard Shortcuts</h2>
-        <p>Reference frequently used shortcuts for workspace and pane actions.</p>
+        <h2>Appearance and Accessibility</h2>
+        <p>Choose theme presets and comfort settings for daily workflows.</p>
       </header>
 
-      <div className="shortcuts-shell">
-        {SHORTCUT_GROUPS.map((group) => (
-          <div key={group.title} className="shortcuts-group">
-            <h3>{group.title}</h3>
-            <div className="shortcut-list">
-              {group.shortcuts.map(([label, keys]) => (
-                <div key={label} className="shortcut-row">
-                  <span>{label}</span>
-                  <kbd>{keys}</kbd>
-                </div>
-              ))}
-            </div>
+      <div className="settings-shell">
+        <section className="settings-block">
+          <h3>Theme Presets</h3>
+          <p className="settings-caption">Global app style across terminal, menus, and modal surfaces.</p>
+          <div className="theme-grid" role="radiogroup" aria-label="Theme presets">
+            {THEME_IDS.map((id) => {
+              const theme = THEME_DEFINITIONS[id];
+              const active = themeId === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className={`theme-card ${active ? "active" : ""}`}
+                  onClick={() => onThemeChange(id)}
+                >
+                  <span className="theme-card-name">{theme.label}</span>
+                  <small className="theme-card-description">{theme.description}</small>
+                  <span className="theme-card-swatches" aria-hidden="true">
+                    {theme.swatches.map((swatch) => (
+                      <span key={swatch} style={{ backgroundColor: swatch }} />
+                    ))}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        ))}
+        </section>
+
+        <section className="settings-block">
+          <h3>Accessibility</h3>
+          <div className="settings-toggle-list">
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={reduceMotion}
+                onChange={(event) => onReduceMotionChange(event.currentTarget.checked)}
+              />
+              Reduce motion
+            </label>
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={highContrastAssist}
+                onChange={(event) => onHighContrastAssistChange(event.currentTarget.checked)}
+              />
+              High contrast assist
+            </label>
+          </div>
+        </section>
+
+        <section className="settings-block">
+          <h3>Density</h3>
+          <div className="density-toggle" role="group" aria-label="Density">
+            <button
+              type="button"
+              className={`layout-mode-btn ${density === "comfortable" ? "active" : ""}`}
+              onClick={() => onDensityChange("comfortable")}
+            >
+              Comfortable
+            </button>
+            <button
+              type="button"
+              className={`layout-mode-btn ${density === "compact" ? "active" : ""}`}
+              onClick={() => onDensityChange("compact")}
+            >
+              Compact
+            </button>
+          </div>
+        </section>
+
+        <section className="settings-block shortcuts-shell">
+          <h3>Keyboard Shortcuts</h3>
+          {SHORTCUT_GROUPS.map((group) => (
+            <div key={group.title} className="shortcuts-group">
+              <h3>{group.title}</h3>
+              <div className="shortcut-list">
+                {group.shortcuts.map(([label, keys]) => (
+                  <div key={label} className="shortcut-row">
+                    <span>{label}</span>
+                    <kbd>{keys}</kbd>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
       </div>
     </section>
   );
 }
 
 function App() {
-  const { initialized, bootstrapping, activeSection, echoInput, paletteOpen, activeWorkspaceId } = useWorkspaceStore(
+  const {
+    initialized,
+    bootstrapping,
+    activeSection,
+    echoInput,
+    paletteOpen,
+    activeWorkspaceId,
+    themeId,
+    reduceMotion,
+    highContrastAssist,
+    density,
+  } = useWorkspaceStore(
     useShallow((state) => ({
       initialized: state.initialized,
       bootstrapping: state.bootstrapping,
@@ -93,6 +199,10 @@ function App() {
       echoInput: state.echoInput,
       paletteOpen: state.paletteOpen,
       activeWorkspaceId: state.activeWorkspaceId,
+      themeId: state.themeId,
+      reduceMotion: state.reduceMotion,
+      highContrastAssist: state.highContrastAssist,
+      density: state.density,
     })),
   );
 
@@ -167,6 +277,10 @@ function App() {
   const bootstrap = useWorkspaceStore((state) => state.bootstrap);
   const setActiveSection = useWorkspaceStore((state) => state.setActiveSection);
   const setEchoInput = useWorkspaceStore((state) => state.setEchoInput);
+  const setTheme = useWorkspaceStore((state) => state.setTheme);
+  const setReduceMotion = useWorkspaceStore((state) => state.setReduceMotion);
+  const setHighContrastAssist = useWorkspaceStore((state) => state.setHighContrastAssist);
+  const setDensity = useWorkspaceStore((state) => state.setDensity);
   const setPaletteOpen = useWorkspaceStore((state) => state.setPaletteOpen);
   const createWorkspace = useWorkspaceStore((state) => state.createWorkspace);
   const closeWorkspace = useWorkspaceStore((state) => state.closeWorkspace);
@@ -185,6 +299,14 @@ function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = themeId;
+    root.dataset.density = density;
+    root.classList.toggle("reduce-motion", reduceMotion);
+    root.classList.toggle("high-contrast", highContrastAssist);
+  }, [density, highContrastAssist, reduceMotion, themeId]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -397,7 +519,18 @@ function App() {
         />
       ) : null}
 
-      {activeSection === "settings" ? <SettingsSection /> : null}
+      {activeSection === "settings" ? (
+        <SettingsSection
+          themeId={themeId}
+          reduceMotion={reduceMotion}
+          highContrastAssist={highContrastAssist}
+          density={density}
+          onThemeChange={setTheme}
+          onReduceMotionChange={setReduceMotion}
+          onHighContrastAssistChange={setHighContrastAssist}
+          onDensityChange={setDensity}
+        />
+      ) : null}
 
       <Suspense fallback={null}>
         <SectionMenu

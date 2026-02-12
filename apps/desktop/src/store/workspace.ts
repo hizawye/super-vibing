@@ -13,17 +13,21 @@ import {
 import { toRuntimePaneId } from "../lib/panes";
 import { generateTilingLayouts } from "../lib/tiling";
 import { loadPersistedPayload, saveBlueprints, saveSessionState, saveSnapshots } from "../lib/persistence";
+import { DEFAULT_THEME_ID, isThemeId } from "../theme/themes";
 import type {
   AgentAllocation,
   AgentProfileKey,
   AppSection,
   Blueprint,
+  DensityMode,
   LayoutMode,
   LegacySessionState,
   PaneCommandResult,
   PaneModel,
   SessionState,
   Snapshot,
+  ThemeId,
+  UiPreferences,
   WorkspaceBootSession,
   WorkspaceRuntime,
 } from "../types";
@@ -50,6 +54,10 @@ interface WorkspaceStore {
   activeSection: AppSection;
   paletteOpen: boolean;
   echoInput: boolean;
+  themeId: ThemeId;
+  reduceMotion: boolean;
+  highContrastAssist: boolean;
+  density: DensityMode;
   workspaces: WorkspaceRuntime[];
   activeWorkspaceId: string | null;
   workspaceBootSessions: Record<string, WorkspaceBootSession>;
@@ -60,6 +68,10 @@ interface WorkspaceStore {
   setActiveSection: (section: AppSection) => void;
   setPaletteOpen: (open: boolean) => void;
   setEchoInput: (enabled: boolean) => void;
+  setTheme: (themeId: ThemeId) => void;
+  setReduceMotion: (enabled: boolean) => void;
+  setHighContrastAssist: (enabled: boolean) => void;
+  setDensity: (density: DensityMode) => void;
   createWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
   closeWorkspace: (workspaceId: string) => Promise<void>;
   setActiveWorkspace: (workspaceId: string) => Promise<void>;
@@ -101,6 +113,31 @@ const AGENT_PROFILE_CONFIG: Array<{ profile: AgentProfileKey; label: string; com
   { profile: "cursor", label: "Cursor", command: "cursor-agent" },
   { profile: "opencode", label: "OpenCode", command: "opencode" },
 ];
+
+function defaultUiPreferences(): UiPreferences {
+  return {
+    theme: DEFAULT_THEME_ID,
+    reduceMotion: false,
+    highContrastAssist: false,
+    density: "comfortable",
+  };
+}
+
+function sanitizeUiPreferences(preferences?: Partial<UiPreferences> | null): UiPreferences {
+  const defaults = defaultUiPreferences();
+  const theme = preferences?.theme;
+  const density = preferences?.density;
+
+  return {
+    theme: theme && isThemeId(theme) ? theme : defaults.theme,
+    reduceMotion: typeof preferences?.reduceMotion === "boolean" ? preferences.reduceMotion : defaults.reduceMotion,
+    highContrastAssist:
+      typeof preferences?.highContrastAssist === "boolean"
+        ? preferences.highContrastAssist
+        : defaults.highContrastAssist,
+    density: density === "compact" || density === "comfortable" ? density : defaults.density,
+  };
+}
 
 interface PendingPaneInit {
   command: string;
@@ -637,6 +674,12 @@ function serializeSessionState(state: WorkspaceStore): SessionState {
     activeWorkspaceId: state.activeWorkspaceId,
     activeSection: state.activeSection,
     echoInput: state.echoInput,
+    uiPreferences: {
+      theme: state.themeId,
+      reduceMotion: state.reduceMotion,
+      highContrastAssist: state.highContrastAssist,
+      density: state.density,
+    },
   };
 }
 
@@ -676,6 +719,7 @@ function migrateLegacySession(session: LegacySessionState): SessionState {
     activeWorkspaceId: session.activeWorkspaceId ?? migratedWorkspaces[0]?.id ?? null,
     activeSection: "terminal",
     echoInput: session.echoInput,
+    uiPreferences: defaultUiPreferences(),
   };
 }
 
@@ -715,6 +759,7 @@ function sanitizeSession(session: SessionState): SessionState {
       : workspaces[0]?.id ?? null,
     activeSection: session.activeSection,
     echoInput: session.echoInput,
+    uiPreferences: sanitizeUiPreferences(session.uiPreferences),
   };
 }
 
@@ -1172,6 +1217,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   activeSection: "terminal",
   paletteOpen: false,
   echoInput: false,
+  themeId: DEFAULT_THEME_ID,
+  reduceMotion: false,
+  highContrastAssist: false,
+  density: "comfortable",
   workspaces: [],
   activeWorkspaceId: null,
   workspaceBootSessions: {},
@@ -1222,12 +1271,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         activeWorkspaceId: workspace.id,
         activeSection: "terminal",
         echoInput: false,
+        uiPreferences: defaultUiPreferences(),
       };
     }
 
     set({
       activeSection: session.activeSection,
       echoInput: session.echoInput,
+      themeId: session.uiPreferences.theme,
+      reduceMotion: session.uiPreferences.reduceMotion,
+      highContrastAssist: session.uiPreferences.highContrastAssist,
+      density: session.uiPreferences.density,
       workspaces: session.workspaces,
       activeWorkspaceId: session.activeWorkspaceId,
       snapshots: persisted.snapshots,
@@ -1260,6 +1314,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setEchoInput: (enabled: boolean) => {
     set({ echoInput: enabled });
+    enqueuePersist(get);
+  },
+
+  setTheme: (themeId: ThemeId) => {
+    set({ themeId });
+    enqueuePersist(get);
+  },
+
+  setReduceMotion: (enabled: boolean) => {
+    set({ reduceMotion: enabled });
+    enqueuePersist(get);
+  },
+
+  setHighContrastAssist: (enabled: boolean) => {
+    set({ highContrastAssist: enabled });
+    enqueuePersist(get);
+  },
+
+  setDensity: (density: DensityMode) => {
+    set({ density });
     enqueuePersist(get);
   },
 
@@ -1867,6 +1941,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       activeWorkspaceId: restored.activeWorkspaceId,
       activeSection: restored.activeSection,
       echoInput: restored.echoInput,
+      themeId: restored.uiPreferences.theme,
+      reduceMotion: restored.uiPreferences.reduceMotion,
+      highContrastAssist: restored.uiPreferences.highContrastAssist,
+      density: restored.uiPreferences.density,
       workspaceBootSessions: {},
     });
 

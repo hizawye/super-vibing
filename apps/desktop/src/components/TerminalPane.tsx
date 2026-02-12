@@ -5,6 +5,7 @@ import type { FitAddon } from "@xterm/addon-fit";
 import { toRuntimePaneId } from "../lib/panes";
 import { resizePane, subscribeToPaneEvents } from "../lib/tauri";
 import { useWorkspaceStore } from "../store/workspace";
+import { resolveTerminalTheme } from "../theme/themes";
 
 interface TerminalPaneProps {
   workspaceId: string;
@@ -44,6 +45,9 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
   const markPaneExited = useWorkspaceStore((state) => state.markPaneExited);
   const updatePaneLastCommand = useWorkspaceStore((state) => state.updatePaneLastCommand);
   const sendInputFromPane = useWorkspaceStore((state) => state.sendInputFromPane);
+  const themeId = useWorkspaceStore((state) => state.themeId);
+  const reduceMotion = useWorkspaceStore((state) => state.reduceMotion);
+  const highContrastAssist = useWorkspaceStore((state) => state.highContrastAssist);
 
   useEffect(() => {
     void ensurePaneSpawned(workspaceId, paneId);
@@ -72,31 +76,10 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
 
       terminal = new Terminal({
         convertEol: true,
-        cursorBlink: true,
+        cursorBlink: !reduceMotion,
         fontFamily: '"JetBrains Mono", "Fira Code", monospace',
         fontSize: 13,
-        theme: {
-          background: "#0b1120",
-          foreground: "#d9e1ff",
-          cursor: "#f8fafc",
-          selectionBackground: "#1d4ed8",
-          black: "#0b1120",
-          red: "#ef4444",
-          green: "#22c55e",
-          yellow: "#eab308",
-          blue: "#3b82f6",
-          magenta: "#ec4899",
-          cyan: "#06b6d4",
-          white: "#e5e7eb",
-          brightBlack: "#334155",
-          brightRed: "#fb7185",
-          brightGreen: "#4ade80",
-          brightYellow: "#facc15",
-          brightBlue: "#60a5fa",
-          brightMagenta: "#f472b6",
-          brightCyan: "#22d3ee",
-          brightWhite: "#f8fafc",
-        },
+        theme: resolveTerminalTheme(themeId, highContrastAssist),
       });
 
       const fitAddon: FitAddon = new FitAddon();
@@ -241,7 +224,24 @@ export function TerminalPane({ workspaceId, paneId }: TerminalPaneProps) {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [markPaneExited, paneId, runtimePaneId, sendInputFromPane, updatePaneLastCommand, workspaceId]);
+  }, [
+    markPaneExited,
+    paneId,
+    runtimePaneId,
+    sendInputFromPane,
+    updatePaneLastCommand,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+
+    terminal.options.theme = resolveTerminalTheme(themeId, highContrastAssist);
+    terminal.options.cursorBlink = !reduceMotion;
+  }, [highContrastAssist, reduceMotion, themeId]);
 
   return (
     <div className="terminal-shell">
