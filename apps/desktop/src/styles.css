@@ -1081,6 +1081,22 @@ input[type="checkbox"] {
   gap: var(--space-2);
 }
 
+.settings-inline-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.update-feedback {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.update-feedback.error {
+  color: var(--danger);
+}
+
 .theme-grid {
   display: grid;
   gap: var(--space-2);

@@ -6,6 +6,14 @@ import { EmptyStatePage } from "./components/EmptyStatePage";
 import { PaneGrid } from "./components/PaneGrid";
 import { TopChrome } from "./components/TopChrome";
 import type { WorkspaceCreationInput } from "./components/NewWorkspaceModal";
+import {
+  checkForPendingUpdate,
+  closePendingUpdate,
+  installPendingUpdate,
+  restartToApplyUpdate,
+  updatesSupported,
+  type PendingAppUpdate,
+} from "./lib/updater";
 import { useWorkspaceStore } from "./store/workspace";
 import { THEME_DEFINITIONS, THEME_IDS } from "./theme/themes";
 import type { AppSection, DensityMode, LayoutMode, ThemeId, WorkspaceBootSession } from "./types";
@@ -56,6 +64,12 @@ interface ActiveWorkspaceView {
 
 const WORKSPACE_NAV_KEY_SEPARATOR = "\u0001";
 const LOCKED_SECTIONS: AppSection[] = ["kanban", "agents", "prompts"];
+type UpdateStatus = "idle" | "checking" | "available" | "installing" | "installed" | "upToDate" | "error";
+
+interface UpdateUiState {
+  status: UpdateStatus;
+  message: string;
+}
 
 interface SettingsSectionProps {
   themeId: ThemeId;
@@ -78,6 +92,136 @@ function SettingsSection({
   onHighContrastAssistChange,
   onDensityChange,
 }: SettingsSectionProps) {
+  const canUseUpdater = useMemo(() => updatesSupported(), []);
+  const [pendingUpdate, setPendingUpdate] = useState<PendingAppUpdate | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const [updateUi, setUpdateUi] = useState<UpdateUiState>({
+    status: "idle",
+    message: canUseUpdater ? "Ready to check for updates." : "Update checks are available in the desktop app only.",
+  });
+
+  useEffect(() => {
+    return () => {
+      void closePendingUpdate(pendingUpdate);
+    };
+  }, [pendingUpdate]);
+
+  const handleCheckForUpdates = async () => {
+    if (!canUseUpdater) {
+      setUpdateUi({
+        status: "error",
+        message: "Update checks are available in the desktop app only.",
+      });
+      return;
+    }
+
+    setUpdateUi({ status: "checking", message: "Checking for updates..." });
+    setDownloadProgress(null);
+
+    try {
+      const nextUpdate = await checkForPendingUpdate();
+      await closePendingUpdate(pendingUpdate);
+      setPendingUpdate(null);
+
+      if (!nextUpdate) {
+        setUpdateUi({
+          status: "upToDate",
+          message: "You're on the latest version.",
+        });
+        return;
+      }
+
+      setPendingUpdate(nextUpdate);
+      setUpdateUi({
+        status: "available",
+        message: `Version ${nextUpdate.version} is available (current ${nextUpdate.currentVersion}). Install now?`,
+      });
+    } catch (error) {
+      setUpdateUi({
+        status: "error",
+        message: error instanceof Error ? error.message : "Failed to check for updates.",
+      });
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!pendingUpdate) {
+      return;
+    }
+
+    const update = pendingUpdate;
+    let downloadedBytes = 0;
+    let totalBytes: number | undefined;
+
+    setDownloadProgress(0);
+    setUpdateUi({
+      status: "installing",
+      message: `Installing version ${update.version}...`,
+    });
+
+    try {
+      await installPendingUpdate(update, (event) => {
+        if (event.event === "Started") {
+          downloadedBytes = 0;
+          totalBytes = event.data.contentLength;
+          setDownloadProgress(totalBytes && totalBytes > 0 ? 0 : null);
+          return;
+        }
+
+        if (event.event === "Progress") {
+          downloadedBytes += event.data.chunkLength;
+          if (totalBytes && totalBytes > 0) {
+            const progress = Math.min(100, Math.round((downloadedBytes / totalBytes) * 100));
+            setDownloadProgress(progress);
+          }
+          return;
+        }
+
+        if (event.event === "Finished") {
+          setDownloadProgress(100);
+        }
+      });
+
+      await closePendingUpdate(update);
+      setPendingUpdate(null);
+      setUpdateUi({
+        status: "installed",
+        message: `Update ${update.version} installed. Restart now to apply it.`,
+      });
+    } catch (error) {
+      setUpdateUi({
+        status: "error",
+        message: error instanceof Error ? error.message : "Failed to install the update.",
+      });
+    }
+  };
+
+  const handleDismissUpdate = async () => {
+    await closePendingUpdate(pendingUpdate);
+    setPendingUpdate(null);
+    setDownloadProgress(null);
+    setUpdateUi({
+      status: "idle",
+      message: "Update dismissed. Check again any time.",
+    });
+  };
+
+  const handleRestartNow = async () => {
+    setUpdateUi({
+      status: "installed",
+      message: "Restarting app to complete update...",
+    });
+
+    try {
+      await restartToApplyUpdate();
+    } catch (error) {
+      setUpdateUi({
+        status: "error",
+        message: error instanceof Error ? error.message : "Unable to restart automatically.",
+      });
+    }
+  };
+
   return (
     <section className="section-surface">
       <header className="section-head">
@@ -155,6 +299,69 @@ function SettingsSection({
               Compact
             </button>
           </div>
+        </section>
+
+        <section className="settings-block">
+          <h3>App Updates</h3>
+          <p className="settings-caption">Check for signed GitHub releases and install updates in place.</p>
+
+          <div className="settings-inline-actions">
+            <button
+              type="button"
+              className="subtle-btn"
+              onClick={() => {
+                void handleCheckForUpdates();
+              }}
+              disabled={updateUi.status === "checking" || updateUi.status === "installing"}
+            >
+              {updateUi.status === "checking" ? "Checking..." : "Check for updates"}
+            </button>
+
+            {updateUi.status === "available" && pendingUpdate ? (
+              <>
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => {
+                    void handleInstallUpdate();
+                  }}
+                >
+                  Install update
+                </button>
+                <button
+                  type="button"
+                  className="subtle-btn"
+                  onClick={() => {
+                    void handleDismissUpdate();
+                  }}
+                >
+                  Not now
+                </button>
+              </>
+            ) : null}
+
+            {updateUi.status === "installed" ? (
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => {
+                  void handleRestartNow();
+                }}
+              >
+                Restart now
+              </button>
+            ) : null}
+          </div>
+
+          <p className={`settings-caption update-feedback ${updateUi.status === "error" ? "error" : ""}`}>
+            {updateUi.message}
+          </p>
+          {updateUi.status === "installing" && downloadProgress !== null ? (
+            <p className="settings-caption update-feedback">Download {downloadProgress}%</p>
+          ) : null}
+          {updateUi.status === "available" && pendingUpdate?.body ? (
+            <p className="settings-caption update-feedback">{pendingUpdate.body}</p>
+          ) : null}
         </section>
 
         <section className="settings-block shortcuts-shell">

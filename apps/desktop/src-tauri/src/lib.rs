@@ -511,6 +511,11 @@ async fn get_runtime_stats(state: State<'_, AppState>) -> Result<RuntimeStats, S
 }
 
 #[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    app.request_restart();
+}
+
+#[tauri::command]
 async fn run_global_command(
     state: State<'_, AppState>,
     request: GlobalCommandRequest,
@@ -812,6 +817,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             get_default_cwd,
@@ -824,6 +830,7 @@ pub fn run() {
             resume_pane,
             run_global_command,
             get_runtime_stats,
+            restart_app,
             create_worktree,
             list_worktrees
         ])

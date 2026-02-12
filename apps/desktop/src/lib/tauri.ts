@@ -94,3 +94,7 @@ export async function runGlobalCommand(
 export async function getRuntimeStats(): Promise<RuntimeStats> {
   return invoke<RuntimeStats>("get_runtime_stats");
 }
+
+export async function restartApp(): Promise<void> {
+  await invoke("restart_app");
+}
