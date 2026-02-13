@@ -7,6 +7,17 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-13] - Git Control Center via Native `git` + `gh` Command Surface
+**Context:** Users requested lazygit/gitui-style visibility and control over local git state plus GitHub PR/issues/workflow operations without leaving the app.
+**Decision:** Introduce a dedicated `Git` app section with keyboard-first interaction, backed by new Tauri commands that shell out to `git` and `gh`:
+- local git operations (status/diff/stage/unstage/discard/commit/fetch/pull/push/branch control),
+- GitHub operations through `gh` (PRs/issues/actions read + key writes),
+- active-workspace-repo scoping only for v1,
+- explicit confirm gate for destructive actions.
+**Rationale:** `gh` reuses existing host auth/session context and reduces integration complexity compared to direct GitHub API/OAuth bootstrapping while still delivering broad coverage.
+**Consequences:** Backend command surface in `src-tauri/lib.rs` is larger and now depends on `gh` availability at runtime; frontend gains a new git view-state slice and command-palette navigation entries.
+**Alternatives Considered:** Direct GitHub REST/GraphQL integration, terminal-only workflows, and incremental read-only GitHub mode.
+
 ## [2026-02-13] - Explicit Focus Request Channel for tmux Pane Navigation
 **Context:** tmux-style pane movement (`Ctrl+B` then navigation keys) updated pane selection state, but terminal input focus could remain in the previously focused pane.
 **Decision:** Add an explicit per-workspace focus request signal (`focusRequestByWorkspace`) in store state and consume it in `TerminalPane` to call `terminal.focus()` when focus shifts.

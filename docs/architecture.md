@@ -48,6 +48,15 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 - `prune_worktrees` supports dry-run and apply cleanup paths.
 - Top app bar displays active branch/worktree context.
 
+## Git control center
+- Frontend exposes a dedicated `Git` section (`apps/desktop/src/components/GitSection.tsx`) with keyboard-first list/detail interactions.
+- View-state for git panes is isolated in `apps/desktop/src/store/gitView.ts` (`activePanel`, `focusZone`, `cursorByPanel`).
+- Backend command surface in `apps/desktop/src-tauri/src/lib.rs` now includes:
+  - local git commands for status/diff/staging/commit/sync/branch lifecycle,
+  - GitHub commands via `gh` for PR/issue/workflow visibility and key mutations.
+- Request validation includes repo-root checks, repo-relative path checks, and bounded command output normalization.
+- Destructive actions remain UI-confirmed before invoking backend mutations.
+
 ## Automation bridge
 - Rust backend starts a local-only HTTP listener with deterministic bind fallback:
   - preferred bind from `SUPERVIBING_AUTOMATION_BIND` (default `127.0.0.1:47631`),

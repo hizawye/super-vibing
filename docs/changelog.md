@@ -1,5 +1,25 @@
 # Changelog
 
+## [2026-02-13] - Git Control Center (lazygit/gitui-style)
+### Added
+- Added a new sidebar `Git` section with keyboard-first 3-pane workflow (`Status`, `Branches`, `Worktrees`, `PRs`, `Issues`, `Actions`).
+- Added dedicated git view store state (`active panel`, `focus zone`, `per-panel cursor`) in `apps/desktop/src/store/gitView.ts`.
+- Added confirmation modal for destructive git/GitHub actions in `apps/desktop/src/components/git/GitActionConfirmModal.tsx`.
+
+### Changed
+- Extended frontend Tauri bridge and shared types to include local git and GitHub command contracts.
+- Extended command palette with direct Git-section jump actions (`Git`, `PRs`, `Actions`).
+
+### Backend
+- Added local git command APIs in Tauri backend:
+  - `git_status`, `git_diff`, `git_stage_paths`, `git_unstage_paths`, `git_discard_paths`,
+  - `git_commit`, `git_fetch`, `git_pull`, `git_push`,
+  - `git_list_branches`, `git_checkout_branch`, `git_create_branch`, `git_delete_branch`.
+- Added GitHub command APIs using `gh`:
+  - PRs: `gh_list_prs`, `gh_pr_detail`, `gh_pr_checkout`, `gh_pr_comment`, `gh_pr_merge_squash`,
+  - Issues: `gh_list_issues`, `gh_issue_detail`, `gh_issue_comment`, `gh_issue_edit_labels`, `gh_issue_edit_assignees`,
+  - Actions: `gh_list_workflows`, `gh_list_runs`, `gh_run_detail`, `gh_run_rerun_failed`, `gh_run_cancel`.
+
 ## [2026-02-13] - tmux `Prefix + C` Focuses New Pane
 ### Changed
 - Added a dedicated focused-create action for `Ctrl+B` then `c` so pane creation moves cursor/focus to the new pane.

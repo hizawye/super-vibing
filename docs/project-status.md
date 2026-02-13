@@ -1,8 +1,29 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (tmux-prefix-c-focus-follow)
+- Last Updated: 2026-02-13 (git-control-center-v1)
 
 - Current progress:
+  - Implemented a new keyboard-first `Git` section in desktop app navigation:
+    - `apps/desktop/src/components/GitSection.tsx` adds 3-pane control center (`Status`, `Branches`, `Worktrees`, `PRs`, `Issues`, `Actions`) scoped to active workspace repository.
+    - `apps/desktop/src/store/gitView.ts` adds view-state slice for active git panel, focus zone, and per-panel cursors.
+    - `apps/desktop/src/components/AppSidebar.tsx` and `apps/desktop/src/components/TopChrome.tsx` now expose first-class `Git` navigation context.
+  - Added local git backend command surface in `apps/desktop/src-tauri/src/lib.rs`:
+    - status/diff/stage/unstage/discard/commit/fetch/pull/push,
+    - branch list/checkout/create/delete,
+    - path and repo validation plus command output truncation guardrails.
+  - Added GitHub (`gh`) backend command surface in `apps/desktop/src-tauri/src/lib.rs`:
+    - PR list/detail/checkout/comment/squash-merge,
+    - issue list/detail/comment/label-edit/assignee-edit,
+    - workflow list/run list/run detail/rerun-failed/cancel.
+  - Added frontend bridge + typing for git/GitHub commands:
+    - `apps/desktop/src/lib/tauri.ts` now exports typed `invoke` wrappers for all new commands.
+    - `apps/desktop/src/types.ts` now includes git status/branch and GitHub PR/issue/workflow/run DTOs.
+  - Added Git command palette jump actions:
+    - `apps/desktop/src/components/CommandPalette.tsx` now supports quick jumps to Git section, PR panel, and Actions panel.
+  - Added confirm modal and action safety UX:
+    - `apps/desktop/src/components/git/GitActionConfirmModal.tsx` handles destructive-action confirmation.
+    - `GitSection` routes `x`-style destructive operations through explicit confirmation flow.
+  - Added Git section styling in `apps/desktop/src/styles.css` with Soft UI contract compatibility (no hard 1px border declarations in override layer).
   - Added focused pane-create action for tmux `Prefix + C`:
     - new store action `addPaneToActiveWorkspaceAndFocus()` in `apps/desktop/src/store/workspace.ts`,
     - `apps/desktop/src/App.tsx` now routes only `Ctrl+B` then `c` to the focused-create action,
@@ -166,6 +187,12 @@
     - health response bind field now reflects runtime-selected bridge bind address.
 
 - Verification:
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/components/AppSidebar.test.tsx src/components/CommandPalette.test.tsx tests/styles.soft-ui.test.ts` ✅
+    - desktop tests passed (18/18 files, 121/121 tests in resolved run scope).
+  - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+    - Rust tests passed (27/27).
   - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/store/workspace.test.ts src/App.terminal-persistence.test.tsx` ✅
     - desktop tests passed (18/18 files, 121/121 tests in resolved run scope).
   - `pnpm --filter @supervibing/desktop typecheck` ✅
@@ -259,8 +286,13 @@
   - Non-fatal shell startup warnings (`fnm/starship` permission and nvm prefix warnings) continue in command output and do not affect build/test outcomes.
   - Live skill smoke tests for `workspaces`/job execution remain blocked until SuperVibing desktop is running and serving the automation port.
   - By design, app tmux shortcut handling now captures `Ctrl+B` in eligible terminal scope; shell tmux users may need a non-default prefix or app shortcut changes.
+  - New Git section GitHub actions depend on host `gh` CLI auth/session; unauthenticated hosts will surface backend command errors until `gh auth login` is completed.
 
 - Next immediate starting point:
+  - Manual validation pass for new `Git` section:
+    - validate keyboard flows (`j/k`, `enter`, `r`, `s`, `d`, `c`, `b/p/i`, `a`, `x`) in active repository workspace,
+    - validate PR/issue/action operations on a repo with `gh` auth configured,
+    - validate destructive confirmation flows for discard/delete/merge/cancel actions.
   - Manual Discord Rich Presence validation pass:
     - verify `Settings -> Show activity in Discord` no longer freezes when Discord is open,
     - verify toggle remains responsive when Discord is closed and reconnects after Discord starts,

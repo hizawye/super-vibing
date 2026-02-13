@@ -5,6 +5,7 @@
   - `portable-pty` for native PTY instances
   - `tokio` runtime primitives
   - `tauri-plugin-store`, `tauri-plugin-opener`, `tauri-plugin-dialog`, `tauri-plugin-updater`
+  - host CLI integrations: `git`, `gh` (GitHub CLI)
 - Frontend UI:
   - React + Vite
   - Tailwind CSS
