@@ -37,10 +37,12 @@ describe("SettingsSection updater", () => {
         highContrastAssist={false}
         density="comfortable"
         agentStartupDefaults={agentStartupDefaults}
+        discordPresenceEnabled={false}
         onThemeChange={() => {}}
         onReduceMotionChange={() => {}}
         onHighContrastAssistChange={() => {}}
         onDensityChange={() => {}}
+        onDiscordPresenceEnabledChange={() => {}}
         onAgentStartupDefaultChange={() => {}}
         onResetAgentStartupDefaults={() => {}}
       />,
@@ -62,10 +64,12 @@ describe("SettingsSection updater", () => {
         highContrastAssist={false}
         density="comfortable"
         agentStartupDefaults={agentStartupDefaults}
+        discordPresenceEnabled={false}
         onThemeChange={() => {}}
         onReduceMotionChange={() => {}}
         onHighContrastAssistChange={() => {}}
         onDensityChange={() => {}}
+        onDiscordPresenceEnabledChange={() => {}}
         onAgentStartupDefaultChange={() => {}}
         onResetAgentStartupDefaults={() => {}}
       />,
@@ -88,10 +92,12 @@ describe("SettingsSection updater", () => {
         highContrastAssist={false}
         density="comfortable"
         agentStartupDefaults={agentStartupDefaults}
+        discordPresenceEnabled={false}
         onThemeChange={() => {}}
         onReduceMotionChange={() => {}}
         onHighContrastAssistChange={() => {}}
         onDensityChange={() => {}}
+        onDiscordPresenceEnabledChange={() => {}}
         onAgentStartupDefaultChange={onAgentStartupDefaultChange}
         onResetAgentStartupDefaults={() => {}}
       />,
@@ -106,5 +112,32 @@ describe("SettingsSection updater", () => {
       "codex",
       "codex --dangerously-bypass-approvals-and-sandbox",
     );
+  });
+
+  it("emits discord presence toggle changes", async () => {
+    const onDiscordPresenceEnabledChange = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <SettingsSection
+        themeId="apple-dark"
+        reduceMotion={false}
+        highContrastAssist={false}
+        density="comfortable"
+        agentStartupDefaults={agentStartupDefaults}
+        discordPresenceEnabled={false}
+        onThemeChange={() => {}}
+        onReduceMotionChange={() => {}}
+        onHighContrastAssistChange={() => {}}
+        onDensityChange={() => {}}
+        onDiscordPresenceEnabledChange={onDiscordPresenceEnabledChange}
+        onAgentStartupDefaultChange={() => {}}
+        onResetAgentStartupDefaults={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: /show activity in discord/i }));
+
+    expect(onDiscordPresenceEnabledChange).toHaveBeenCalledWith(true);
   });
 });

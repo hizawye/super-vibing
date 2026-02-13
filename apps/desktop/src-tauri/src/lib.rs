@@ -1,3 +1,4 @@
+use discord_rpc_client::Client as DiscordRpcClient;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -30,6 +31,10 @@ const AUTOMATION_QUEUE_MAX: usize = 200;
 const AUTOMATION_FRONTEND_TIMEOUT_MS: u64 = 20_000;
 const AUTOMATION_COMPLETED_JOB_RETENTION_MAX: usize = 500;
 const AUTOMATION_MAX_COMMAND_BYTES: usize = 16 * 1024;
+const DISCORD_APP_ID_ENV: &str = "SUPERVIBING_DISCORD_APP_ID";
+const DISCORD_DEFAULT_APP_ID: u64 = 1471970767083405549;
+const DISCORD_PRESENCE_DETAILS: &str = "SuperVibing";
+const DISCORD_PRESENCE_STATE: &str = "Working";
 
 #[derive(Debug)]
 struct HttpError {
@@ -125,6 +130,12 @@ struct AutomationWorkspaceSnapshot {
 #[serde(rename_all = "camelCase")]
 struct SyncAutomationWorkspacesRequest {
     workspaces: Vec<AutomationWorkspaceSnapshot>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordPresenceRequest {
+    enabled: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -255,9 +266,22 @@ impl AutomationState {
     }
 }
 
+struct DiscordPresenceState {
+    client: StdMutex<Option<DiscordRpcClient>>,
+}
+
+impl DiscordPresenceState {
+    fn new() -> Self {
+        Self {
+            client: StdMutex::new(None),
+        }
+    }
+}
+
 struct AppState {
     panes: Arc<RwLock<HashMap<String, Arc<PaneRuntime>>>>,
     automation: Arc<AutomationState>,
+    discord_presence: Arc<DiscordPresenceState>,
 }
 
 impl AppState {
@@ -266,6 +290,7 @@ impl AppState {
         let state = Self {
             panes: Arc::new(RwLock::new(HashMap::new())),
             automation: Arc::new(AutomationState::new(queue_tx)),
+            discord_presence: Arc::new(DiscordPresenceState::new()),
         };
 
         (state, queue_rx)
@@ -1743,6 +1768,43 @@ fn restart_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn set_discord_presence_enabled(
+    state: State<'_, AppState>,
+    request: DiscordPresenceRequest,
+) -> Result<(), String> {
+    let mut guard = state
+        .discord_presence
+        .client
+        .lock()
+        .map_err(|_| AppError::system("discord presence lock poisoned").to_string())?;
+
+    if !request.enabled {
+        if let Some(mut client) = guard.take() {
+            let _ = client.clear_activity();
+        }
+        return Ok(());
+    }
+
+    let app_id = env::var(DISCORD_APP_ID_ENV)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(DISCORD_DEFAULT_APP_ID);
+
+    if let Some(client) = guard.as_mut() {
+        let _ = client
+            .set_activity(|activity| activity.details(DISCORD_PRESENCE_DETAILS).state(DISCORD_PRESENCE_STATE));
+        return Ok(());
+    }
+
+    let mut client = DiscordRpcClient::new(app_id);
+    let _ = client.start();
+    let _ = client
+        .set_activity(|activity| activity.details(DISCORD_PRESENCE_DETAILS).state(DISCORD_PRESENCE_STATE));
+    *guard = Some(client);
+    Ok(())
+}
+
+#[tauri::command]
 async fn run_global_command(
     state: State<'_, AppState>,
     request: GlobalCommandRequest,
@@ -2696,6 +2758,7 @@ pub fn run() {
             run_global_command,
             get_runtime_stats,
             restart_app,
+            set_discord_presence_enabled,
             sync_automation_workspaces,
             automation_report,
             resolve_repo_context,

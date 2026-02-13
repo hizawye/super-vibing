@@ -119,6 +119,10 @@ export async function restartApp(): Promise<void> {
   await invoke("restart_app");
 }
 
+export async function setDiscordPresenceEnabled(enabled: boolean): Promise<void> {
+  await invoke("set_discord_presence_enabled", { request: { enabled } });
+}
+
 export async function pickDirectory(defaultPath?: string): Promise<string | null> {
   const normalizedDefaultPath = defaultPath?.trim();
   const selection = await openDialog({

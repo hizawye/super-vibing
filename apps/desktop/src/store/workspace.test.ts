@@ -40,6 +40,7 @@ vi.mock("../lib/tauri", () => ({
   }),
   resumePane: vi.fn(async () => {}),
   runGlobalCommand: vi.fn(async () => []),
+  setDiscordPresenceEnabled: vi.fn(async () => {}),
   syncAutomationWorkspaces: vi.fn(async () => {}),
   spawnPane: vi.fn(async ({ paneId, cwd }: SpawnPaneRequest) => ({
     paneId,
@@ -134,6 +135,7 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
   const baseWorkspace = workspace("workspace-main", "Workspace 1", 2, ["running", "running"]);
   const workspaces = overrides.workspaces ?? [baseWorkspace];
   const activeWorkspaceId = overrides.activeWorkspaceId ?? workspaces[0]?.id ?? null;
+  const discordPresenceEnabled = overrides.discordPresenceEnabled ?? false;
   const uiPreferences = overrides.uiPreferences ?? {
     theme: DEFAULT_THEME_ID,
     reduceMotion: false,
@@ -160,6 +162,7 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
     highContrastAssist: uiPreferences.highContrastAssist,
     density: uiPreferences.density,
     agentStartupDefaults,
+    discordPresenceEnabled,
     workspaces,
     activeWorkspaceId,
     focusedPaneByWorkspace: Object.fromEntries(
@@ -348,6 +351,7 @@ describe("workspace store", () => {
     expect(state.reduceMotion).toBe(false);
     expect(state.highContrastAssist).toBe(false);
     expect(state.density).toBe("comfortable");
+    expect(state.discordPresenceEnabled).toBe(false);
   });
 
   it("stores startup error and exits bootstrap mode when bootstrap fails", async () => {
@@ -406,6 +410,17 @@ describe("workspace store", () => {
           highContrastAssist: true,
           density: "compact",
         },
+      }),
+    );
+  });
+
+  it("persists discord presence toggle in serialized session state", async () => {
+    useWorkspaceStore.getState().setDiscordPresenceEnabled(true);
+    await useWorkspaceStore.getState().persistSession();
+
+    expect(persistence.saveSessionState).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        discordPresenceEnabled: true,
       }),
     );
   });

@@ -12,6 +12,7 @@ import {
   resolveRepoContext,
   resumePane,
   runGlobalCommand,
+  setDiscordPresenceEnabled as setDiscordPresenceEnabledApi,
   syncAutomationWorkspaces,
   spawnPane,
   suspendPane,
@@ -106,6 +107,7 @@ interface WorkspaceStore {
   highContrastAssist: boolean;
   density: DensityMode;
   agentStartupDefaults: AgentStartupDefaults;
+  discordPresenceEnabled: boolean;
   workspaces: WorkspaceRuntime[];
   activeWorkspaceId: string | null;
   focusedPaneByWorkspace: Record<string, string | null>;
@@ -128,6 +130,7 @@ interface WorkspaceStore {
   setDensity: (density: DensityMode) => void;
   setAgentStartupDefault: (profile: AgentProfileKey, command: string) => void;
   resetAgentStartupDefaults: () => void;
+  setDiscordPresenceEnabled: (enabled: boolean) => void;
   createWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
   closeWorkspace: (workspaceId: string) => Promise<void>;
   setActiveWorkspace: (workspaceId: string) => Promise<void>;
@@ -217,6 +220,18 @@ function defaultUiPreferences(): UiPreferences {
 
 function defaultAgentStartupDefaults(): AgentStartupDefaults {
   return { ...AGENT_PROFILE_DEFAULTS };
+}
+
+function sanitizeDiscordPresenceEnabled(value: unknown): boolean {
+  return typeof value === "boolean" ? value : false;
+}
+
+async function applyDiscordPresenceEnabled(enabled: boolean): Promise<void> {
+  try {
+    await setDiscordPresenceEnabledApi(enabled);
+  } catch {
+    // Non-fatal: presence requires desktop runtime and optional env config.
+  }
 }
 
 function formatStartupError(error: unknown): string {
@@ -1049,6 +1064,7 @@ function serializeSessionState(state: WorkspaceStore): SessionState {
     activeWorkspaceId: state.activeWorkspaceId,
     activeSection: state.activeSection,
     echoInput: state.echoInput,
+    discordPresenceEnabled: state.discordPresenceEnabled,
     uiPreferences: {
       theme: state.themeId,
       reduceMotion: state.reduceMotion,
@@ -1099,6 +1115,7 @@ function migrateLegacySession(session: LegacySessionState): SessionState {
     activeWorkspaceId: session.activeWorkspaceId ?? migratedWorkspaces[0]?.id ?? null,
     activeSection: "terminal",
     echoInput: session.echoInput,
+    discordPresenceEnabled: false,
     uiPreferences: defaultUiPreferences(),
     agentStartupDefaults,
   };
@@ -1156,6 +1173,7 @@ function sanitizeSession(session: SessionState): SessionState {
       : workspaces[0]?.id ?? null,
     activeSection: session.activeSection,
     echoInput: session.echoInput,
+    discordPresenceEnabled: sanitizeDiscordPresenceEnabled(session.discordPresenceEnabled),
     uiPreferences: sanitizeUiPreferences(session.uiPreferences),
     agentStartupDefaults,
   };
@@ -1625,6 +1643,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   highContrastAssist: false,
   density: "comfortable",
   agentStartupDefaults: defaultAgentStartupDefaults(),
+  discordPresenceEnabled: false,
   workspaces: [],
   activeWorkspaceId: null,
   focusedPaneByWorkspace: {},
@@ -1683,6 +1702,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           activeWorkspaceId: workspace.id,
           activeSection: "terminal",
           echoInput: false,
+          discordPresenceEnabled: false,
           uiPreferences: defaultUiPreferences(),
           agentStartupDefaults,
         };
@@ -1691,6 +1711,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       set({
         activeSection: session.activeSection,
         echoInput: session.echoInput,
+        discordPresenceEnabled: sanitizeDiscordPresenceEnabled(session.discordPresenceEnabled),
         themeId: session.uiPreferences.theme,
         reduceMotion: session.uiPreferences.reduceMotion,
         highContrastAssist: session.uiPreferences.highContrastAssist,
@@ -1708,6 +1729,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         bootstrapping: false,
         startupError: null,
       });
+      void applyDiscordPresenceEnabled(sanitizeDiscordPresenceEnabled(session.discordPresenceEnabled));
       enqueueAutomationSync(get);
 
       const activeWorkspace = activeWorkspaceOf(get());
@@ -1759,6 +1781,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       highContrastAssist: false,
       density: "comfortable",
       agentStartupDefaults: defaultAgentStartupDefaults(),
+      discordPresenceEnabled: false,
       workspaces: [],
       activeWorkspaceId: null,
       focusedPaneByWorkspace: {},
@@ -1805,6 +1828,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   setDensity: (density: DensityMode) => {
     set({ density });
     enqueuePersist(get);
+  },
+
+  setDiscordPresenceEnabled: (enabled: boolean) => {
+    set({ discordPresenceEnabled: enabled });
+    enqueuePersist(get);
+    void applyDiscordPresenceEnabled(enabled);
   },
 
   setAgentStartupDefault: (profile: AgentProfileKey, command: string) => {
@@ -2854,6 +2883,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       terminalReadyPanesByWorkspace: {},
       activeSection: restored.activeSection,
       echoInput: restored.echoInput,
+      discordPresenceEnabled: restored.discordPresenceEnabled,
       themeId: restored.uiPreferences.theme,
       reduceMotion: restored.uiPreferences.reduceMotion,
       highContrastAssist: restored.uiPreferences.highContrastAssist,
@@ -2861,6 +2891,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workspaceBootSessions: {},
       worktreeManager: defaultWorktreeManagerState(),
     });
+    void applyDiscordPresenceEnabled(restored.discordPresenceEnabled);
     enqueueAutomationSync(get);
 
     const nextActiveWorkspace = activeWorkspaceOf(get());

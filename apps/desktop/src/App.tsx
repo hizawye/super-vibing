@@ -456,10 +456,12 @@ interface SettingsSectionProps {
   highContrastAssist: boolean;
   density: DensityMode;
   agentStartupDefaults: AgentStartupDefaults;
+  discordPresenceEnabled: boolean;
   onThemeChange: (themeId: ThemeId) => void;
   onReduceMotionChange: (enabled: boolean) => void;
   onHighContrastAssistChange: (enabled: boolean) => void;
   onDensityChange: (density: DensityMode) => void;
+  onDiscordPresenceEnabledChange: (enabled: boolean) => void;
   onAgentStartupDefaultChange: (profile: AgentProfileKey, command: string) => void;
   onResetAgentStartupDefaults: () => void;
 }
@@ -485,10 +487,12 @@ export function SettingsSection({
   highContrastAssist,
   density,
   agentStartupDefaults,
+  discordPresenceEnabled,
   onThemeChange,
   onReduceMotionChange,
   onHighContrastAssistChange,
   onDensityChange,
+  onDiscordPresenceEnabledChange,
   onAgentStartupDefaultChange,
   onResetAgentStartupDefaults,
 }: SettingsSectionProps) {
@@ -682,6 +686,21 @@ export function SettingsSection({
         </section>
 
         <section className="settings-block">
+          <h3>Discord Rich Presence</h3>
+          <p className="settings-caption">Show SuperVibing as an active app in Discord.</p>
+          <div className="settings-toggle-list">
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={discordPresenceEnabled}
+                onChange={(event) => onDiscordPresenceEnabledChange(event.currentTarget.checked)}
+              />
+              Show activity in Discord
+            </label>
+          </div>
+        </section>
+
+        <section className="settings-block">
           <h3>Density</h3>
           <div className="density-toggle" role="group" aria-label="Density">
             <button
@@ -825,6 +844,7 @@ function App() {
     highContrastAssist,
     density,
     agentStartupDefaults,
+    discordPresenceEnabled,
   } = useWorkspaceStore(
     useShallow((state) => ({
       initialized: state.initialized,
@@ -838,6 +858,7 @@ function App() {
       highContrastAssist: state.highContrastAssist,
       density: state.density,
       agentStartupDefaults: state.agentStartupDefaults,
+      discordPresenceEnabled: state.discordPresenceEnabled,
     })),
   );
 
@@ -945,6 +966,7 @@ function App() {
   const setReduceMotion = useWorkspaceStore((state) => state.setReduceMotion);
   const setHighContrastAssist = useWorkspaceStore((state) => state.setHighContrastAssist);
   const setDensity = useWorkspaceStore((state) => state.setDensity);
+  const setDiscordPresenceEnabled = useWorkspaceStore((state) => state.setDiscordPresenceEnabled);
   const setAgentStartupDefault = useWorkspaceStore((state) => state.setAgentStartupDefault);
   const resetAgentStartupDefaults = useWorkspaceStore((state) => state.resetAgentStartupDefaults);
   const setPaletteOpen = useWorkspaceStore((state) => state.setPaletteOpen);
@@ -1468,10 +1490,12 @@ function App() {
               highContrastAssist={highContrastAssist}
               density={density}
               agentStartupDefaults={agentStartupDefaults}
+              discordPresenceEnabled={discordPresenceEnabled}
               onThemeChange={setTheme}
               onReduceMotionChange={setReduceMotion}
               onHighContrastAssistChange={setHighContrastAssist}
               onDensityChange={setDensity}
+              onDiscordPresenceEnabledChange={setDiscordPresenceEnabled}
               onAgentStartupDefaultChange={setAgentStartupDefault}
               onResetAgentStartupDefaults={resetAgentStartupDefaults}
             />

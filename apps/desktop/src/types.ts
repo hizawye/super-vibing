@@ -74,6 +74,7 @@ export interface SessionState {
   echoInput: boolean;
   uiPreferences: UiPreferences;
   agentStartupDefaults?: AgentStartupDefaults;
+  discordPresenceEnabled?: boolean;
 }
 
 export interface LegacySessionState {
