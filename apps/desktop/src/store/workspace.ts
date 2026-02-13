@@ -2874,6 +2874,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     state.workspaces.forEach((workspace) => clearWorkspacePaneInputBuffers(workspace.id));
 
     const restored = sanitizeSession(snapshot.state);
+    const discordPresenceEnabled = sanitizeDiscordPresenceEnabled(restored.discordPresenceEnabled);
 
     set({
       workspaces: restored.workspaces,
@@ -2883,7 +2884,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       terminalReadyPanesByWorkspace: {},
       activeSection: restored.activeSection,
       echoInput: restored.echoInput,
-      discordPresenceEnabled: restored.discordPresenceEnabled,
+      discordPresenceEnabled,
       themeId: restored.uiPreferences.theme,
       reduceMotion: restored.uiPreferences.reduceMotion,
       highContrastAssist: restored.uiPreferences.highContrastAssist,
@@ -2891,7 +2892,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workspaceBootSessions: {},
       worktreeManager: defaultWorktreeManagerState(),
     });
-    void applyDiscordPresenceEnabled(restored.discordPresenceEnabled);
+    void applyDiscordPresenceEnabled(discordPresenceEnabled);
     enqueueAutomationSync(get);
 
     const nextActiveWorkspace = activeWorkspaceOf(get());
