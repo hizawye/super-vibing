@@ -1172,8 +1172,12 @@ function App() {
             onOpenCommandPalette={openCommandPalette}
           />
 
-          {activeSection === "terminal" && terminalWorkspaces.length > 0 ? (
-            <section className="section-surface section-surface--body terminal-surface">
+          {terminalWorkspaces.length > 0 ? (
+            <section
+              className="section-surface section-surface--body terminal-surface"
+              hidden={!isTerminalSection}
+              aria-hidden={!isTerminalSection}
+            >
               <div className="grid-shell workspace-grid-stack">
                 {terminalWorkspaces.map((workspace) => (
                   <div
@@ -1183,7 +1187,7 @@ function App() {
                   >
                     <PaneGrid
                       workspaceId={workspace.id}
-                      isActive={workspace.id === activeWorkspaceId}
+                      isActive={isTerminalSection && workspace.id === activeWorkspaceId}
                       paneIds={workspace.paneOrder}
                       layouts={workspace.layouts}
                       layoutMode={workspace.layoutMode}

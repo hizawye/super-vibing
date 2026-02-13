@@ -595,3 +595,14 @@ Added regression tests in `apps/desktop/src/App.selectors.test.ts` to document a
 **Rationale:** Removes fragile single-port coupling while preserving predictable localhost-only operation and low-friction automation usability.
 **Consequences:** Bridge port may vary at runtime under contention; clients relying on implicit defaults must support discovery (now handled by wrapper script).
 **Alternatives Considered:** Fixed-port-only failure behavior, and random OS-assigned ports without deterministic scan range.
+
+## [2026-02-13] - Keep Terminal Surface Mounted Across Section Navigation
+**Context:** Users reported terminal history appearing to clear specifically on `Terminal -> Settings -> Terminal` navigation even though workspace-to-workspace switching had already been fixed.
+**Decision:** In `apps/desktop/src/App.tsx`, stop gating terminal surface rendering on `activeSection === "terminal"`:
+- keep terminal surface mounted whenever workspaces exist,
+- hide it with `hidden/aria-hidden` when section is not terminal,
+- pass `isActive={isTerminalSection && workspace.id === activeWorkspaceId}` to `PaneGrid` so pane refit still occurs on return.
+Added regression coverage in `apps/desktop/src/App.terminal-persistence.test.tsx` to ensure pane grids stay mounted during Settings navigation.
+**Rationale:** Prevents `TerminalPane` unmount/dispose cycles that wipe xterm in-memory viewport/scrollback between section switches.
+**Consequences:** Slightly higher background frontend memory while non-terminal sections are open; terminal continuity is preserved.
+**Alternatives Considered:** Keeping unmount behavior and attempting xterm buffer replay on remount.

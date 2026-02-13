@@ -1,6 +1,6 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (automation-bridge-port-fallback)
+- Last Updated: 2026-02-13 (automation-bridge-port-fallback-and-terminal-settings-persistence)
 
 - Current progress:
   - Hardened release/version pipeline guardrails:
@@ -43,6 +43,10 @@
     - `apps/desktop/src/App.tsx` now keeps all workspace `PaneGrid` instances mounted in Terminal section,
     - inactive workspace grids are hidden (not unmounted), preserving xterm buffer state,
     - `apps/desktop/src/styles.css` adds stacked grid panel visibility classes.
+  - Fixed terminal history clearing when leaving Terminal section (e.g., Settings) and coming back:
+    - `apps/desktop/src/App.tsx` now keeps terminal surface mounted whenever workspaces exist and toggles visibility via `hidden/aria-hidden`,
+    - `PaneGrid` `isActive` now depends on both active section and active workspace (`isTerminalSection && workspace.id === activeWorkspaceId`) so refit/resize behavior remains correct on return,
+    - added regression coverage in `apps/desktop/src/App.terminal-persistence.test.tsx` to prevent unmount regressions across `Terminal -> Settings -> Terminal`.
   - Fixed terminal copy + initial glyph spacing issues in frontend:
     - `apps/desktop/src/components/TerminalPane.tsx` now handles `Ctrl+Shift+C` via xterm custom key handler and copies current selection to clipboard,
     - empty-selection copy chord is consumed as no-op (no terminal input),
