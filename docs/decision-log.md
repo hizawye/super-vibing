@@ -616,3 +616,13 @@ Added regression coverage in `apps/desktop/src/App.terminal-persistence.test.tsx
 **Rationale:** Prevents `TerminalPane` unmount/dispose cycles that wipe xterm in-memory viewport/scrollback between section switches.
 **Consequences:** Slightly higher background frontend memory while non-terminal sections are open; terminal continuity is preserved.
 **Alternatives Considered:** Keeping unmount behavior and attempting xterm buffer replay on remount.
+
+## [2026-02-13] - Rebind App tmux Prefix to Ctrl+B in Terminal Scope
+**Context:** The requested keyboard behavior is to use plain `Ctrl+B` for SuperVibing pane-prefix actions, including while terminal pane input is focused.
+**Decision:** Update tmux prefix handling to arm on `Ctrl+B` without requiring Shift:
+- removed the `shiftKey` requirement in `isTmuxPrefixKey` within `apps/desktop/src/App.tsx`,
+- changed Settings shortcut copy from `Ctrl + Shift + B` to `Ctrl + B`,
+- updated `apps/desktop/src/App.shortcuts.test.ts` to validate `Ctrl+B` prefix handling and consume behavior in terminal pane input scope.
+**Rationale:** Restores single-keystroke tmux-style app muscle memory and makes prefix behavior consistent regardless of terminal focus state.
+**Consequences:** Shell-level tmux default prefix (`Ctrl+B`) is no longer passed through while app tmux prefix handling is eligible.
+**Alternatives Considered:** Keeping `Ctrl+Shift+B` to preserve shell tmux passthrough by default.

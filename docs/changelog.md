@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-02-13] - tmux App Prefix Rebound to Ctrl+B
+### Changed
+- Rebound SuperVibing pane keyboard prefix from `Ctrl+Shift+B` back to `Ctrl+B`.
+- Updated tmux prefix tests and shortcut docs to match plain `Ctrl+B` behavior in terminal and non-terminal shortcut scopes.
+
 ## [2026-02-13] - Release Tag Guard and v0.1.13 Recovery Path
 ### Added
 - Added `scripts/create-release-tag.sh` and root pnpm command `release:tag` to enforce clean-state release tagging.

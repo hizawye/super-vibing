@@ -32,8 +32,8 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 - Terminal rendering: Xterm.js + fit addon per pane component.
 - Keyboard model:
   - global app shortcuts remain available (`Ctrl/Cmd+N`, `Ctrl/Cmd+P`, `Escape`),
-  - tmux-style pane shortcuts are handled by a frontend prefix controller (`Ctrl+Shift+B`, 1000ms armed timeout),
-  - inside xterm pane scope, raw `Ctrl+B` is passed through to the shell so real tmux bindings work,
+  - tmux-style pane shortcuts are handled by a frontend prefix controller (`Ctrl+B`, 1000ms armed timeout),
+  - inside xterm pane scope, app prefix handling remains active so pane commands are consistent with terminal-focus and non-terminal-focus flows,
   - shortcut eligibility explicitly treats xterm pane scope as terminal-first,
   - prefix mappings route to pane count/focus/zoom/resize actions, with resize gated to `freeform` layout mode.
 

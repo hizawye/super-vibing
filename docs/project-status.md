@@ -1,6 +1,6 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (release-v0.1.13-recovery-and-guarded-tagging)
+- Last Updated: 2026-02-13 (tmux-ctrl-b-prefix-rebind)
 
 - Current progress:
   - Hardened release/version pipeline guardrails:
@@ -57,8 +57,8 @@
     - startup now performs staged refit/resize (open, next frame, fonts-ready) and refits again when a hidden workspace pane becomes active,
     - `apps/desktop/src/App.tsx` + `apps/desktop/src/components/PaneGrid.tsx` pass active visibility state to `TerminalPane`.
   - Added tmux-style core shortcut profile in frontend:
-    - `apps/desktop/src/App.tsx` now uses a `Ctrl+Shift+B` prefix controller with a `1000ms` timeout and tmux-like pane mappings (`%`, `"`, `c`, `n`, `p`, `o`, `0..9`, arrows, `z`, `x`, `&`, `Alt+Arrow`),
-    - raw `Ctrl+B` is no longer consumed by app pane shortcuts and now passes through to terminal shells (real tmux flow),
+    - `apps/desktop/src/App.tsx` now uses a `Ctrl+B` prefix controller with a `1000ms` timeout and tmux-like pane mappings (`%`, `"`, `c`, `n`, `p`, `o`, `0..9`, arrows, `z`, `x`, `&`, `Alt+Arrow`),
+    - app prefix handling remains active inside terminal pane input scope, so `Ctrl+B` is consumed by the app when tmux shortcut context is eligible,
     - legacy non-tmux pane hotkeys were removed from the global app shortcut handler; global app keys (`Ctrl/Cmd+N`, `Ctrl/Cmd+P`, `Escape`) remain,
     - Settings shortcut list now reflects tmux core bindings.
   - Added keyboard resize support for focused panes in freeform mode:
@@ -154,6 +154,8 @@
     - with `127.0.0.1:47631` occupied, backend logged fallback bind success on `127.0.0.1:47632`.
   - `python3 ~/.codex/skills/supervibing-automation/scripts/supervibing_automation.py --json health` ✅
     - wrapper output now includes `baseUrl` alongside health payload.
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts` ✅
+    - desktop tests passed (94/94 in run scope).
 
 - Blockers/Bugs:
   - Historical note: failed tag `v0.1.12` remains in history (manifest mismatch); immutable recovery was shipped as successful `v0.1.13`.
@@ -163,6 +165,7 @@
   - Automation bearer-token auth is optional and env-driven; hosts that need stricter local protection should set `SUPERVIBING_AUTOMATION_TOKEN`.
   - Non-fatal shell startup warnings (`fnm/starship` permission and nvm prefix warnings) continue in command output and do not affect build/test outcomes.
   - Live skill smoke tests for `workspaces`/job execution remain blocked until SuperVibing desktop is running and serving the automation port.
+  - By design, app tmux shortcut handling now captures `Ctrl+B` in eligible terminal scope; shell tmux users may need a non-default prefix or app shortcut changes.
 
 - Next immediate starting point:
   - Use guarded release checklist for future versions:
@@ -173,7 +176,7 @@
     - monitor `Release` workflow completion.
   - Manual UX pass:
     - verify settings-edited startup commands are applied for new workspaces and imports,
-    - verify shell tmux `Ctrl+B` passthrough plus app pane prefix `Ctrl+Shift+B` while cursor is inside active xterm pane in a real desktop run.
+    - verify app pane prefix `Ctrl+B` works while cursor is inside active xterm pane and while terminal panes are not focused.
   - Automation fallback validation pass:
     - launch app with `SUPERVIBING_AUTOMATION_BIND=127.0.0.1:47631` while `47631` is occupied and verify fallback range bind selection,
     - verify CLI auto-discovery by running wrapper without `--base-url` or `SUPERVIBING_AUTOMATION_URL`.
