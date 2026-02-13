@@ -30,6 +30,8 @@ function baseAppContext() {
 function baseTmuxContext() {
   return {
     activeSection: "terminal" as const,
+    activeWorkspaceId: "workspace-main",
+    workspaceOrder: ["workspace-main", "workspace-alt", "workspace-third"],
     activeWorkspace: {
       id: "workspace-main",
       name: "Workspace 1",
@@ -44,6 +46,7 @@ function baseTmuxContext() {
     },
     paletteOpen: false,
     newWorkspaceOpen: false,
+    setActiveWorkspace: vi.fn(),
     setActiveWorkspacePaneCount: vi.fn(),
     setFocusedPane: vi.fn(),
     moveFocusedPane: vi.fn(),
@@ -215,6 +218,46 @@ describe("createTmuxPrefixController", () => {
     controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     controller.handleKeydown(createEvent({ key: "&" }), context);
     expect(context.setActiveWorkspacePaneCount).toHaveBeenNthCalledWith(2, 2);
+  });
+
+  it("cycles workspaces with prefix+) and prefix+(", () => {
+    const context = baseTmuxContext();
+    const controller = createTmuxPrefixController();
+
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
+    controller.handleKeydown(createEvent({ key: ")" }), context);
+    expect(context.setActiveWorkspace).toHaveBeenNthCalledWith(1, "workspace-alt");
+
+    context.activeWorkspaceId = "workspace-alt";
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "(" }), context);
+    expect(context.setActiveWorkspace).toHaveBeenNthCalledWith(2, "workspace-main");
+  });
+
+  it("wraps workspace cycling at boundaries", () => {
+    const context = baseTmuxContext();
+    const controller = createTmuxPrefixController();
+
+    context.activeWorkspaceId = "workspace-third";
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
+    controller.handleKeydown(createEvent({ key: ")" }), context);
+    expect(context.setActiveWorkspace).toHaveBeenNthCalledWith(1, "workspace-main");
+
+    context.activeWorkspaceId = "workspace-main";
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "(" }), context);
+    expect(context.setActiveWorkspace).toHaveBeenNthCalledWith(2, "workspace-third");
+  });
+
+  it("does not switch workspace when only one exists", () => {
+    const context = baseTmuxContext();
+    const controller = createTmuxPrefixController();
+    context.workspaceOrder = ["workspace-main"];
+
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
+    controller.handleKeydown(createEvent({ key: ")" }), context);
+
+    expect(context.setActiveWorkspace).not.toHaveBeenCalled();
   });
 
   it("expires armed prefix after timeout", () => {

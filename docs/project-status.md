@@ -1,8 +1,14 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (tmux-ctrl-b-prefix-rebind)
+- Last Updated: 2026-02-13 (tmux-prefix-workspace-cycle)
 
 - Current progress:
+  - Added tmux-style workspace cycling in frontend shortcuts:
+    - `apps/desktop/src/App.tsx` now maps `Ctrl+B` prefix + `)`/`(` to next/previous workspace activation with wrap-around order.
+    - tmux shortcut context now includes workspace order + active workspace setter for prefix-driven workspace switching.
+    - Settings shortcut list now documents `Prefix + ) / (` for workspace navigation.
+  - Added regression coverage for workspace prefix navigation:
+    - `apps/desktop/src/App.shortcuts.test.ts` now verifies next/previous workspace switching, boundary wrap-around, and one-workspace no-op behavior.
   - Hardened release/version pipeline guardrails:
     - `scripts/verify-release-version.sh` now validates parity across root/desktop/tauri manifests plus release tag,
     - failure output now reports all detected versions and a direct remediation command.
@@ -98,6 +104,9 @@
     - health response bind field now reflects runtime-selected bridge bind address.
 
 - Verification:
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts` ✅
+    - desktop tests passed (97/97 in run scope).
   - `pnpm run release:verify -- v0.1.11` ✅
   - `pnpm run release:tag -- 0.1.13` ✅ expected fail on dirty tree (guard behavior verified).
   - `pnpm run release:prepare -- 0.1.13` ✅

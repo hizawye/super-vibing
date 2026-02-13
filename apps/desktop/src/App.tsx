@@ -56,6 +56,7 @@ const SHORTCUT_GROUPS = [
     shortcuts: [
       ["Prefix", "Ctrl + B"],
       ["Split pane", "Prefix + % or \""],
+      ["Next/prev workspace", "Prefix + ) / ("],
       ["Next/prev pane", "Prefix + N / P / O"],
       ["Focus by index", "Prefix + 0..9"],
       ["Move focus", "Prefix + Arrow"],
@@ -122,8 +123,11 @@ interface AppShortcutContext {
 interface TmuxShortcutContext {
   activeSection: AppSection;
   activeWorkspace: ActiveWorkspaceView | null;
+  activeWorkspaceId: string | null;
+  workspaceOrder: string[];
   paletteOpen: boolean;
   newWorkspaceOpen: boolean;
+  setActiveWorkspace: (workspaceId: string) => Promise<void> | void;
   setActiveWorkspacePaneCount: (count: number) => void;
   setFocusedPane: (workspaceId: string, paneId: string) => void;
   moveFocusedPane: (workspaceId: string, direction: "left" | "right" | "up" | "down") => void;
@@ -160,6 +164,17 @@ function cyclePaneId(paneOrder: string[], focusedPaneId: string | null, delta: n
   const baseIndex = currentIndex >= 0 ? currentIndex : 0;
   const nextIndex = (baseIndex + delta + paneOrder.length) % paneOrder.length;
   return paneOrder[nextIndex] ?? null;
+}
+
+function cycleWorkspaceId(workspaceOrder: string[], activeWorkspaceId: string | null, delta: number): string | null {
+  if (workspaceOrder.length === 0) {
+    return null;
+  }
+
+  const currentIndex = activeWorkspaceId ? workspaceOrder.indexOf(activeWorkspaceId) : -1;
+  const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+  const nextIndex = (baseIndex + delta + workspaceOrder.length) % workspaceOrder.length;
+  return workspaceOrder[nextIndex] ?? null;
 }
 
 function paneIndexFromTmuxKey(key: string): number | null {
@@ -248,6 +263,15 @@ export function handleTmuxPrefixedKey(event: KeyboardEvent, context: TmuxShortcu
 
   if (keyLower === "z" && focusedPaneId) {
     context.toggleActiveWorkspaceZoom(focusedPaneId);
+    return true;
+  }
+
+  if (key === "(" || key === ")") {
+    const delta = key === ")" ? 1 : -1;
+    const nextWorkspaceId = cycleWorkspaceId(context.workspaceOrder, context.activeWorkspaceId, delta);
+    if (nextWorkspaceId && nextWorkspaceId !== context.activeWorkspaceId) {
+      void context.setActiveWorkspace(nextWorkspaceId);
+    }
     return true;
   }
 
@@ -913,8 +937,11 @@ function App() {
         tmuxController.handleKeydown(event, {
           activeSection,
           activeWorkspace,
+          activeWorkspaceId,
+          workspaceOrder: terminalWorkspaces.map((workspace) => workspace.id),
           paletteOpen,
           newWorkspaceOpen,
+          setActiveWorkspace,
           setActiveWorkspacePaneCount: (count) => {
             void setActiveWorkspacePaneCount(count);
           },
@@ -946,15 +973,18 @@ function App() {
   }, [
     activeSection,
     activeWorkspace,
+    activeWorkspaceId,
     moveFocusedPane,
     newWorkspaceOpen,
     paletteOpen,
     resizeFocusedPaneByDelta,
+    setActiveWorkspace,
     setActiveSection,
     setActiveWorkspacePaneCount,
     setFocusedPane,
     setPaletteOpen,
     sidebarOpen,
+    terminalWorkspaces,
     toggleActiveWorkspaceZoom,
   ]);
 

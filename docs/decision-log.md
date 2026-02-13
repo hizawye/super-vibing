@@ -626,3 +626,15 @@ Added regression coverage in `apps/desktop/src/App.terminal-persistence.test.tsx
 **Rationale:** Restores single-keystroke tmux-style app muscle memory and makes prefix behavior consistent regardless of terminal focus state.
 **Consequences:** Shell-level tmux default prefix (`Ctrl+B`) is no longer passed through while app tmux prefix handling is eligible.
 **Alternatives Considered:** Keeping `Ctrl+Shift+B` to preserve shell tmux passthrough by default.
+
+## [2026-02-13] - Add tmux Prefix Workspace Cycling on `(` / `)`
+**Context:** The tmux-style pane prefix already existed (`Ctrl+B`) but did not provide workspace-level previous/next navigation.
+**Decision:** Extend prefixed shortcut handling in `apps/desktop/src/App.tsx`:
+- map `Ctrl+B` then `)` to next workspace and `Ctrl+B` then `(` to previous workspace,
+- cycle workspace selection with wrap-around using current workspace order,
+- wire `setActiveWorkspace` and workspace ordering into tmux shortcut context,
+- update Settings shortcut copy to include `Prefix + ) / (`,
+- add regression tests in `apps/desktop/src/App.shortcuts.test.ts` for forward/backward switch, boundary wrap, and single-workspace no-op.
+**Rationale:** Aligns workspace navigation with tmux window switching muscle memory while preserving existing pane-prefixed behavior.
+**Consequences:** Prefix handling now affects both pane and workspace navigation; workspace cycling remains scoped to existing tmux-eligible terminal context.
+**Alternatives Considered:** Adding separate non-prefixed workspace hotkeys and clamping at first/last workspace instead of wrap-around.
