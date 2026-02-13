@@ -32,8 +32,9 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 - Terminal rendering: Xterm.js + fit addon per pane component.
 - Keyboard model:
   - global app shortcuts remain available (`Ctrl/Cmd+N`, `Ctrl/Cmd+P`, `Escape`),
-  - tmux-style pane shortcuts are handled by a frontend prefix controller (`Ctrl+B`, 1000ms armed timeout),
-  - shortcut eligibility explicitly treats xterm pane scope as terminal-first (shortcuts are allowed while cursor is in terminal input),
+  - tmux-style pane shortcuts are handled by a frontend prefix controller (`Ctrl+Shift+B`, 1000ms armed timeout),
+  - inside xterm pane scope, raw `Ctrl+B` is passed through to the shell so real tmux bindings work,
+  - shortcut eligibility explicitly treats xterm pane scope as terminal-first,
   - prefix mappings route to pane count/focus/zoom/resize actions, with resize gated to `freeform` layout mode.
 
 ## Git manager
@@ -45,7 +46,9 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 - Top app bar displays active branch/worktree context.
 
 ## Automation bridge
-- Rust backend starts a local-only HTTP listener on `127.0.0.1:47631`.
+- Rust backend starts a local-only HTTP listener with deterministic bind fallback:
+  - preferred bind from `SUPERVIBING_AUTOMATION_BIND` (default `127.0.0.1:47631`),
+  - on port collision, scans `127.0.0.1:47631..47641` and binds first available port.
 - API surface:
   - `GET /v1/health`,
   - `GET /v1/workspaces`,

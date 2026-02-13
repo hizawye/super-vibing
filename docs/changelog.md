@@ -1,5 +1,25 @@
 # Changelog
 
+## [2026-02-13] - Automation Bridge Dynamic Bind and CLI Port Auto-Discovery
+### Added
+- Added backend env override `SUPERVIBING_AUTOMATION_BIND` for preferred automation bridge bind (`host:port`).
+
+### Changed
+- Automation bridge bind is no longer fixed to one port:
+  - preferred bind is `SUPERVIBING_AUTOMATION_BIND` or default `127.0.0.1:47631`,
+  - if preferred port is occupied, backend scans `127.0.0.1:47631..47641` and binds first available port.
+- `GET /v1/health` now reports the runtime-selected bind address.
+- SuperVibing automation CLI now auto-probes `127.0.0.1:47631..47641` when using implicit default URL and `47631` is unavailable.
+
+## [2026-02-13] - tmux Passthrough and App Prefix Rebind
+### Changed
+- Rebound SuperVibing pane keyboard prefix from `Ctrl+B` to `Ctrl+Shift+B` to avoid conflicting with shell tmux defaults.
+- Updated keyboard event wiring to listen in capture phase for more reliable app-prefix handling across terminal internals.
+- Updated settings shortcut copy to reflect the new pane-control prefix.
+
+### Fixed
+- Fixed real tmux shortcut flow in terminal panes by allowing raw `Ctrl+B` to pass through to the running shell process.
+
 ## [2026-02-12] - Release Workflow Parity Hardening and v0.1.11 Recovery
 ### Added
 - Added `scripts/prepare-release-version.sh` and root pnpm command `release:prepare` to update release versions in all app manifests (`package.json`, `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`) in one step.

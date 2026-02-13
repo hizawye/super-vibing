@@ -8,10 +8,9 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{
-        atomic::{AtomicBool, Ordering},
         atomic::AtomicUsize,
-        Mutex as StdMutex, RwLock as StdRwLock,
-        Arc,
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex as StdMutex, RwLock as StdRwLock,
     },
     thread,
     time::Duration,
@@ -22,7 +21,10 @@ use uuid::Uuid;
 
 const PTY_READ_BUFFER_BYTES: usize = 4096;
 const PTY_READER_STACK_BYTES: usize = 256 * 1024;
-const AUTOMATION_HTTP_BIND: &str = "127.0.0.1:47631";
+const AUTOMATION_HTTP_BIND_ENV: &str = "SUPERVIBING_AUTOMATION_BIND";
+const AUTOMATION_DEFAULT_HOST: &str = "127.0.0.1";
+const AUTOMATION_DEFAULT_PORT: u16 = 47631;
+const AUTOMATION_FALLBACK_PORT_END: u16 = 47641;
 const AUTOMATION_HTTP_MAX_BODY_BYTES: usize = 64 * 1024;
 const AUTOMATION_QUEUE_MAX: usize = 200;
 const AUTOMATION_FRONTEND_TIMEOUT_MS: u64 = 20_000;
@@ -205,7 +207,11 @@ struct SubmitCommandResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "snake_case", rename_all_fields = "camelCase", tag = "action")]
+#[serde(
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    tag = "action"
+)]
 enum FrontendAutomationRequest {
     CreatePanes {
         job_id: String,
@@ -230,6 +236,7 @@ impl FrontendAutomationRequest {
 struct AutomationState {
     jobs: StdRwLock<HashMap<String, AutomationJobRecord>>,
     workspace_registry: StdRwLock<HashMap<String, AutomationWorkspaceSnapshot>>,
+    selected_bind: StdRwLock<String>,
     queued_jobs: AtomicUsize,
     queue_tx: mpsc::UnboundedSender<QueuedAutomationJob>,
     pending_frontend: StdMutex<HashMap<String, oneshot::Sender<FrontendAutomationAck>>>,
@@ -240,6 +247,7 @@ impl AutomationState {
         Self {
             jobs: StdRwLock::new(HashMap::new()),
             workspace_registry: StdRwLock::new(HashMap::new()),
+            selected_bind: StdRwLock::new(default_automation_bind()),
             queued_jobs: AtomicUsize::new(0),
             queue_tx,
             pending_frontend: StdMutex::new(HashMap::new()),
@@ -455,6 +463,120 @@ fn now_millis() -> u128 {
         .unwrap_or(0)
 }
 
+fn default_automation_bind() -> String {
+    format!("{AUTOMATION_DEFAULT_HOST}:{AUTOMATION_DEFAULT_PORT}")
+}
+
+fn parse_automation_bind(value: &str) -> Result<(String, u16), String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err("bind value is empty".to_string());
+    }
+
+    let (host, port) = value
+        .rsplit_once(':')
+        .ok_or_else(|| format!("expected host:port, received `{value}`"))?;
+    if host.is_empty() {
+        return Err("bind host is empty".to_string());
+    }
+    if host != "127.0.0.1" && host != "localhost" {
+        return Err(format!(
+            "bind host must be localhost-only (`127.0.0.1` or `localhost`), received `{host}`"
+        ));
+    }
+
+    let port: u16 = port
+        .parse()
+        .map_err(|_| format!("bind port must be a valid u16, received `{port}`"))?;
+    if port == 0 {
+        return Err("bind port must be greater than 0".to_string());
+    }
+
+    Ok((host.to_string(), port))
+}
+
+fn configured_automation_bind() -> (String, u16) {
+    let configured = env::var(AUTOMATION_HTTP_BIND_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let Some(configured) = configured else {
+        return (AUTOMATION_DEFAULT_HOST.to_string(), AUTOMATION_DEFAULT_PORT);
+    };
+
+    match parse_automation_bind(&configured) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            eprintln!(
+                "automation bridge invalid {AUTOMATION_HTTP_BIND_ENV} `{configured}`: {err}; using {}",
+                default_automation_bind()
+            );
+            (AUTOMATION_DEFAULT_HOST.to_string(), AUTOMATION_DEFAULT_PORT)
+        }
+    }
+}
+
+fn fallback_automation_bind_candidates(host: &str, preferred_port: u16) -> Vec<String> {
+    (AUTOMATION_DEFAULT_PORT..=AUTOMATION_FALLBACK_PORT_END)
+        .filter(|port| *port != preferred_port)
+        .map(|port| format!("{host}:{port}"))
+        .collect()
+}
+
+fn bind_automation_listener(
+    host: &str,
+    preferred_port: u16,
+) -> Result<(TcpListener, String, bool), String> {
+    let preferred_addr = format!("{host}:{preferred_port}");
+    match TcpListener::bind(&preferred_addr) {
+        Ok(listener) => return Ok((listener, preferred_addr, false)),
+        Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => {
+            eprintln!("automation bridge preferred bind in use on {preferred_addr}: {err}");
+        }
+        Err(err) => {
+            return Err(format!(
+                "automation bridge bind failed on {preferred_addr}: {err}"
+            ));
+        }
+    }
+
+    let mut last_error = String::new();
+    for candidate in fallback_automation_bind_candidates(host, preferred_port) {
+        match TcpListener::bind(&candidate) {
+            Ok(listener) => return Ok((listener, candidate, true)),
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => {
+                last_error = err.to_string();
+                continue;
+            }
+            Err(err) => {
+                return Err(format!(
+                    "automation bridge bind failed on {candidate}: {err}"
+                ));
+            }
+        }
+    }
+
+    let scan = format!("{host}:{AUTOMATION_DEFAULT_PORT}-{host}:{AUTOMATION_FALLBACK_PORT_END}");
+    if last_error.is_empty() {
+        Err(format!(
+            "automation bridge bind failed: no available address in fallback scan {scan}"
+        ))
+    } else {
+        Err(format!(
+            "automation bridge bind failed: no available address in fallback scan {scan} ({last_error})"
+        ))
+    }
+}
+
+fn current_automation_bind(automation: &Arc<AutomationState>) -> String {
+    automation
+        .selected_bind
+        .read()
+        .map(|value| value.clone())
+        .unwrap_or_else(|_| default_automation_bind())
+}
+
 fn configured_automation_token() -> Option<String> {
     env::var("SUPERVIBING_AUTOMATION_TOKEN")
         .ok()
@@ -595,13 +717,10 @@ fn queue_automation_job(
     }
 
     automation.queued_jobs.fetch_add(1, Ordering::Relaxed);
-    if let Err(err) = automation
-        .queue_tx
-        .send(QueuedAutomationJob {
-            job_id: job_id.clone(),
-            request,
-        })
-    {
+    if let Err(err) = automation.queue_tx.send(QueuedAutomationJob {
+        job_id: job_id.clone(),
+        request,
+    }) {
         automation.queued_jobs.fetch_sub(1, Ordering::Relaxed);
         let mut jobs = automation
             .jobs
@@ -636,8 +755,10 @@ fn prune_completed_jobs_with_limit(automation: &Arc<AutomationState>, limit: usi
         let mut completed = jobs
             .iter()
             .filter_map(|(job_id, job)| {
-                if matches!(job.status, AutomationJobStatus::Succeeded | AutomationJobStatus::Failed)
-                {
+                if matches!(
+                    job.status,
+                    AutomationJobStatus::Succeeded | AutomationJobStatus::Failed
+                ) {
                     Some((
                         job_id.clone(),
                         job.finished_at_ms.unwrap_or(job.created_at_ms),
@@ -680,7 +801,10 @@ fn update_job_status(
             if matches!(status, AutomationJobStatus::Running) {
                 job.started_at_ms = Some(now_millis());
             }
-            if matches!(status, AutomationJobStatus::Succeeded | AutomationJobStatus::Failed) {
+            if matches!(
+                status,
+                AutomationJobStatus::Succeeded | AutomationJobStatus::Failed
+            ) {
                 job.finished_at_ms = Some(now_millis());
             }
             job.result = result;
@@ -688,7 +812,10 @@ fn update_job_status(
         }
     }
 
-    if matches!(status, AutomationJobStatus::Succeeded | AutomationJobStatus::Failed) {
+    if matches!(
+        status,
+        AutomationJobStatus::Succeeded | AutomationJobStatus::Failed
+    ) {
         prune_completed_jobs(automation);
     }
 }
@@ -709,13 +836,26 @@ fn workspace_for_automation(
 
 fn start_automation_http_server(automation: Arc<AutomationState>) {
     thread::spawn(move || {
-        let listener = match TcpListener::bind(AUTOMATION_HTTP_BIND) {
-            Ok(listener) => listener,
-            Err(err) => {
-                eprintln!("automation bridge bind failed on {AUTOMATION_HTTP_BIND}: {err}");
-                return;
-            }
-        };
+        let (host, preferred_port) = configured_automation_bind();
+        let preferred_bind = format!("{host}:{preferred_port}");
+        let (listener, selected_bind, used_fallback) =
+            match bind_automation_listener(&host, preferred_port) {
+                Ok(result) => result,
+                Err(err) => {
+                    eprintln!("{err}");
+                    return;
+                }
+            };
+        if let Ok(mut bind) = automation.selected_bind.write() {
+            *bind = selected_bind.clone();
+        }
+        if used_fallback {
+            eprintln!(
+                "automation bridge listening on {selected_bind} (preferred {preferred_bind} was unavailable)"
+            );
+        } else {
+            eprintln!("automation bridge listening on {selected_bind}");
+        }
 
         for stream in listener.incoming() {
             let Ok(stream) = stream else {
@@ -734,7 +874,9 @@ fn handle_automation_http_connection(
 ) -> Result<(), String> {
     stream
         .set_read_timeout(Some(Duration::from_millis(1500)))
-        .map_err(|err| AppError::system(format!("failed to set read timeout: {err}")).to_string())?;
+        .map_err(|err| {
+            AppError::system(format!("failed to set read timeout: {err}")).to_string()
+        })?;
 
     let mut request_bytes = Vec::new();
     let mut buffer = [0_u8; 2048];
@@ -799,8 +941,7 @@ fn handle_automation_http_connection(
         .collect::<HashMap<_, _>>();
     let authorization_header = headers.get("authorization").map(String::as_str);
     let auth_token = configured_automation_token();
-    if let Err(error) = authorize_automation_request(auth_token.as_deref(), authorization_header)
-    {
+    if let Err(error) = authorize_automation_request(auth_token.as_deref(), authorization_header) {
         return write_http_json(
             &mut stream,
             error.status_code,
@@ -844,7 +985,7 @@ fn handle_automation_http_connection(
             200,
             &serde_json::json!(AutomationHealthResponse {
                 status: "ok".to_string(),
-                bind: AUTOMATION_HTTP_BIND.to_string(),
+                bind: current_automation_bind(automation),
                 queued_jobs: automation.queued_jobs.load(Ordering::Relaxed),
             }),
         ),
@@ -919,7 +1060,11 @@ fn handle_automation_http_connection(
     }
 }
 
-fn write_http_json(stream: &mut TcpStream, status_code: u16, value: &serde_json::Value) -> Result<(), String> {
+fn write_http_json(
+    stream: &mut TcpStream,
+    status_code: u16,
+    value: &serde_json::Value,
+) -> Result<(), String> {
     let status_text = match status_code {
         200 => "OK",
         202 => "Accepted",
@@ -931,8 +1076,9 @@ fn write_http_json(stream: &mut TcpStream, status_code: u16, value: &serde_json:
         429 => "Too Many Requests",
         _ => "Internal Server Error",
     };
-    let body = serde_json::to_string(value)
-        .map_err(|err| AppError::system(format!("failed to serialize response: {err}")).to_string())?;
+    let body = serde_json::to_string(value).map_err(|err| {
+        AppError::system(format!("failed to serialize response: {err}")).to_string()
+    })?;
     let response = format!(
         "HTTP/1.1 {status_code} {status_text}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         body.len(),
@@ -1022,10 +1168,13 @@ async fn dispatch_frontend_automation(
         if let Ok(mut pending) = automation.pending_frontend.lock() {
             pending.remove(&job_id);
         }
-        return Err(AppError::system(format!("failed to emit automation request: {err}")).to_string());
+        return Err(
+            AppError::system(format!("failed to emit automation request: {err}")).to_string(),
+        );
     }
 
-    let outcome = tokio::time::timeout(Duration::from_millis(AUTOMATION_FRONTEND_TIMEOUT_MS), rx).await;
+    let outcome =
+        tokio::time::timeout(Duration::from_millis(AUTOMATION_FRONTEND_TIMEOUT_MS), rx).await;
 
     {
         let mut pending = automation
@@ -1040,7 +1189,9 @@ async fn dispatch_frontend_automation(
         .map_err(|_| AppError::system("frontend automation response channel closed").to_string())?;
 
     if outcome.ok {
-        Ok(outcome.result.unwrap_or_else(|| serde_json::json!({ "ok": true })))
+        Ok(outcome
+            .result
+            .unwrap_or_else(|| serde_json::json!({ "ok": true })))
     } else {
         Err(outcome
             .error
@@ -1065,7 +1216,9 @@ fn create_branch_for_workspace(
         .arg("--branch")
         .arg(branch)
         .status()
-        .map_err(|err| AppError::git(format!("failed to validate branch name: {err}")).to_string())?;
+        .map_err(|err| {
+            AppError::git(format!("failed to validate branch name: {err}")).to_string()
+        })?;
     if !branch_check.success() {
         return Err(AppError::validation(format!("invalid branch name: {branch}")).to_string());
     }
@@ -1108,9 +1261,9 @@ fn create_branch_for_workspace(
             .arg(base_ref.unwrap_or("HEAD"));
     }
 
-    let output = command
-        .output()
-        .map_err(|err| AppError::git(format!("failed to run git branch command: {err}")).to_string())?;
+    let output = command.output().map_err(|err| {
+        AppError::git(format!("failed to run git branch command: {err}")).to_string()
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(AppError::git(format!("git branch command failed: {stderr}")).to_string());
@@ -1135,8 +1288,8 @@ async fn process_external_command(
             workspace_id,
             pane_count,
         } => {
-            let _workspace =
-                workspace_for_automation(automation, &workspace_id).map_err(|err| err.to_string())?;
+            let _workspace = workspace_for_automation(automation, &workspace_id)
+                .map_err(|err| err.to_string())?;
             dispatch_frontend_automation(
                 app_handle,
                 automation,
@@ -1155,8 +1308,8 @@ async fn process_external_command(
             base_ref,
             open_after_create,
         } => {
-            let workspace =
-                workspace_for_automation(automation, &workspace_id).map_err(|err| err.to_string())?;
+            let workspace = workspace_for_automation(automation, &workspace_id)
+                .map_err(|err| err.to_string())?;
             let entry = create_worktree(CreateWorktreeRequest {
                 repo_root: workspace.repo_root.clone(),
                 mode,
@@ -1176,8 +1329,9 @@ async fn process_external_command(
                 .await?;
             }
 
-            serde_json::to_value(entry)
-                .map_err(|err| AppError::system(format!("failed to serialize worktree result: {err}")).to_string())
+            serde_json::to_value(entry).map_err(|err| {
+                AppError::system(format!("failed to serialize worktree result: {err}")).to_string()
+            })
         }
         ExternalCommandRequest::CreateBranch {
             workspace_id,
@@ -1185,8 +1339,8 @@ async fn process_external_command(
             base_ref,
             checkout,
         } => {
-            let workspace =
-                workspace_for_automation(automation, &workspace_id).map_err(|err| err.to_string())?;
+            let workspace = workspace_for_automation(automation, &workspace_id)
+                .map_err(|err| err.to_string())?;
             create_branch_for_workspace(
                 &workspace,
                 &branch,
@@ -1199,8 +1353,8 @@ async fn process_external_command(
             command,
             execute,
         } => {
-            let workspace =
-                workspace_for_automation(automation, &workspace_id).map_err(|err| err.to_string())?;
+            let workspace = workspace_for_automation(automation, &workspace_id)
+                .map_err(|err| err.to_string())?;
             let results = run_command_on_panes(
                 Arc::clone(pane_registry),
                 workspace.runtime_pane_ids,
@@ -1209,8 +1363,9 @@ async fn process_external_command(
             )
             .await;
 
-            serde_json::to_value(results)
-                .map_err(|err| AppError::system(format!("failed to serialize command result: {err}")).to_string())
+            serde_json::to_value(results).map_err(|err| {
+                AppError::system(format!("failed to serialize command result: {err}")).to_string()
+            })
         }
     }
 }
@@ -1592,15 +1747,13 @@ async fn run_global_command(
     state: State<'_, AppState>,
     request: GlobalCommandRequest,
 ) -> Result<Vec<PaneCommandResult>, String> {
-    Ok(
-        run_command_on_panes(
-            Arc::clone(&state.panes),
-            request.pane_ids,
-            &request.command,
-            request.execute,
-        )
-        .await,
+    Ok(run_command_on_panes(
+        Arc::clone(&state.panes),
+        request.pane_ids,
+        &request.command,
+        request.execute,
     )
+    .await)
 }
 
 #[tauri::command]
@@ -1630,9 +1783,13 @@ fn automation_report(
         .pending_frontend
         .lock()
         .map_err(|_| AppError::system("frontend automation ack lock poisoned").to_string())?;
-    let sender = pending
-        .remove(&request.job_id)
-        .ok_or_else(|| AppError::not_found(format!("pending automation job `{}` not found", request.job_id)).to_string())?;
+    let sender = pending.remove(&request.job_id).ok_or_else(|| {
+        AppError::not_found(format!(
+            "pending automation job `{}` not found",
+            request.job_id
+        ))
+        .to_string()
+    })?;
     sender
         .send(FrontendAutomationAck {
             job_id: request.job_id,
@@ -1652,10 +1809,11 @@ fn resolve_repo_context(request: ResolveRepoContextRequest) -> Result<RepoContex
 
     let cwd_path = PathBuf::from(cwd);
     if !cwd_path.exists() {
-        return Err(
-            AppError::validation(format!("cwd does not exist: {}", cwd_path.to_string_lossy()))
-                .to_string(),
-        );
+        return Err(AppError::validation(format!(
+            "cwd does not exist: {}",
+            cwd_path.to_string_lossy()
+        ))
+        .to_string());
     }
 
     let normalized_cwd = normalize_existing_path(&cwd_path);
@@ -1712,7 +1870,9 @@ fn create_worktree(request: CreateWorktreeRequest) -> Result<WorktreeEntry, Stri
         .arg("--branch")
         .arg(branch)
         .status()
-        .map_err(|err| AppError::git(format!("failed to validate branch name: {err}")).to_string())?;
+        .map_err(|err| {
+            AppError::git(format!("failed to validate branch name: {err}")).to_string()
+        })?;
     if !branch_check.success() {
         return Err(AppError::validation(format!("invalid branch name: {branch}")).to_string());
     }
@@ -1759,7 +1919,9 @@ fn create_worktree(request: CreateWorktreeRequest) -> Result<WorktreeEntry, Stri
     let entries = list_worktrees_internal(&request.repo_root)?;
     entries
         .into_iter()
-        .find(|entry| normalize_existing_path(Path::new(&entry.worktree_path)) == normalized_worktree_path)
+        .find(|entry| {
+            normalize_existing_path(Path::new(&entry.worktree_path)) == normalized_worktree_path
+        })
         .ok_or_else(|| {
             AppError::system("created worktree but failed to load metadata".to_string()).to_string()
         })
@@ -1789,7 +1951,8 @@ fn remove_worktree(request: RemoveWorktreeRequest) -> Result<RemoveWorktreeRespo
     }
     if target.is_dirty && !request.force {
         return Err(
-            AppError::conflict("worktree has uncommitted changes; retry with force=true").to_string(),
+            AppError::conflict("worktree has uncommitted changes; retry with force=true")
+                .to_string(),
         );
     }
 
@@ -1804,11 +1967,13 @@ fn remove_worktree(request: RemoveWorktreeRequest) -> Result<RemoveWorktreeRespo
     }
     remove_cmd.arg(&target.worktree_path);
 
-    let remove_output = remove_cmd
-        .output()
-        .map_err(|err| AppError::git(format!("failed to run git worktree remove: {err}")).to_string())?;
+    let remove_output = remove_cmd.output().map_err(|err| {
+        AppError::git(format!("failed to run git worktree remove: {err}")).to_string()
+    })?;
     if !remove_output.status.success() {
-        let stderr = String::from_utf8_lossy(&remove_output.stderr).trim().to_string();
+        let stderr = String::from_utf8_lossy(&remove_output.stderr)
+            .trim()
+            .to_string();
         return Err(AppError::git(format!("git worktree remove failed: {stderr}")).to_string());
     }
 
@@ -1828,7 +1993,8 @@ fn remove_worktree(request: RemoveWorktreeRequest) -> Result<RemoveWorktreeRespo
                 .arg(if request.force { "-D" } else { "-d" })
                 .arg(&target.branch);
             let branch_output = branch_cmd.output().map_err(|err| {
-                AppError::git(format!("failed to delete branch {}: {err}", target.branch)).to_string()
+                AppError::git(format!("failed to delete branch {}: {err}", target.branch))
+                    .to_string()
             })?;
             if branch_output.status.success() {
                 branch_deleted = true;
@@ -1868,9 +2034,9 @@ fn prune_worktrees(request: PruneWorktreesRequest) -> Result<PruneWorktreesRespo
     }
     command.arg("--verbose");
 
-    let output = command
-        .output()
-        .map_err(|err| AppError::git(format!("failed to run git worktree prune: {err}")).to_string())?;
+    let output = command.output().map_err(|err| {
+        AppError::git(format!("failed to run git worktree prune: {err}")).to_string()
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -1942,7 +2108,9 @@ fn is_worktree_dirty(worktree_path: &str) -> bool {
         .arg("--porcelain")
         .output();
     match output {
-        Ok(data) if data.status.success() => !String::from_utf8_lossy(&data.stdout).trim().is_empty(),
+        Ok(data) if data.status.success() => {
+            !String::from_utf8_lossy(&data.stdout).trim().is_empty()
+        }
         _ => false,
     }
 }
@@ -2043,7 +2211,10 @@ prunable stale path
         fs::create_dir_all(root.join("feature-a-2")).expect("create second candidate");
 
         let path = next_available_worktree_path(&root, "feature-a");
-        assert_eq!(path.to_string_lossy(), root.join("feature-a-3").to_string_lossy());
+        assert_eq!(
+            path.to_string_lossy(),
+            root.join("feature-a-3").to_string_lossy()
+        );
 
         fs::remove_dir_all(root).expect("cleanup temp dir");
     }
@@ -2089,7 +2260,10 @@ prunable stale path
 
     #[test]
     fn resolve_pane_term_preserves_valid_values() {
-        assert_eq!(resolve_pane_term(Some("screen-256color")), "screen-256color");
+        assert_eq!(
+            resolve_pane_term(Some("screen-256color")),
+            "screen-256color"
+        );
         assert_eq!(resolve_pane_term(Some("xterm-kitty")), "xterm-kitty");
     }
 
@@ -2102,7 +2276,10 @@ prunable stale path
         };
         let value = serde_json::to_value(request).expect("serialize request");
 
-        assert_eq!(value.get("action").and_then(|v| v.as_str()), Some("create_panes"));
+        assert_eq!(
+            value.get("action").and_then(|v| v.as_str()),
+            Some("create_panes")
+        );
         assert_eq!(value.get("jobId").and_then(|v| v.as_str()), Some("job-1"));
         assert_eq!(
             value.get("workspaceId").and_then(|v| v.as_str()),
@@ -2114,9 +2291,50 @@ prunable stale path
     #[test]
     fn parse_bearer_token_extracts_token_value() {
         assert_eq!(parse_bearer_token(Some("Bearer abc123")), Some("abc123"));
-        assert_eq!(parse_bearer_token(Some("Bearer   abc123   ")), Some("abc123"));
+        assert_eq!(
+            parse_bearer_token(Some("Bearer   abc123   ")),
+            Some("abc123")
+        );
         assert_eq!(parse_bearer_token(Some("Token abc123")), None);
         assert_eq!(parse_bearer_token(None), None);
+    }
+
+    #[test]
+    fn parse_automation_bind_accepts_localhost_values() {
+        assert_eq!(
+            parse_automation_bind("127.0.0.1:47631").expect("parse ipv4 bind"),
+            ("127.0.0.1".to_string(), 47631)
+        );
+        assert_eq!(
+            parse_automation_bind("localhost:47640").expect("parse localhost bind"),
+            ("localhost".to_string(), 47640)
+        );
+    }
+
+    #[test]
+    fn parse_automation_bind_rejects_invalid_values() {
+        assert!(parse_automation_bind("").is_err());
+        assert!(parse_automation_bind("47631").is_err());
+        assert!(parse_automation_bind("0.0.0.0:47631").is_err());
+        assert!(parse_automation_bind("127.0.0.1:0").is_err());
+        assert!(parse_automation_bind("127.0.0.1:not-a-port").is_err());
+    }
+
+    #[test]
+    fn fallback_automation_bind_candidates_are_deterministic() {
+        let candidates = fallback_automation_bind_candidates("127.0.0.1", AUTOMATION_DEFAULT_PORT);
+        assert_eq!(
+            candidates.first().map(String::as_str),
+            Some("127.0.0.1:47632")
+        );
+        assert_eq!(
+            candidates.last().map(String::as_str),
+            Some("127.0.0.1:47641")
+        );
+        assert_eq!(
+            candidates.len(),
+            (AUTOMATION_FALLBACK_PORT_END - AUTOMATION_DEFAULT_PORT) as usize
+        );
     }
 
     #[test]
@@ -2127,7 +2345,8 @@ prunable stale path
 
     #[test]
     fn authorize_automation_request_rejects_missing_or_invalid_token() {
-        let missing = authorize_automation_request(Some("secret"), None).expect_err("missing header");
+        let missing =
+            authorize_automation_request(Some("secret"), None).expect_err("missing header");
         assert_eq!(missing.status_code, 401);
 
         let wrong = authorize_automation_request(Some("secret"), Some("Bearer nope"))
@@ -2136,6 +2355,24 @@ prunable stale path
 
         let ok = authorize_automation_request(Some("secret"), Some("Bearer secret"));
         assert!(ok.is_ok());
+    }
+
+    #[test]
+    fn current_automation_bind_reads_runtime_selected_bind() {
+        let (state, _receiver) = AppState::new();
+        {
+            let mut bind = state
+                .automation
+                .selected_bind
+                .write()
+                .expect("selected bind write");
+            *bind = "127.0.0.1:47640".to_string();
+        }
+
+        assert_eq!(
+            current_automation_bind(&state.automation),
+            "127.0.0.1:47640".to_string()
+        );
     }
 
     #[test]

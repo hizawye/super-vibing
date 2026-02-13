@@ -54,7 +54,7 @@ const SHORTCUT_GROUPS = [
   {
     title: "tmux Core",
     shortcuts: [
-      ["Prefix", "Ctrl + B"],
+      ["Prefix", "Ctrl + Shift + B"],
       ["Split pane", "Prefix + % or \""],
       ["Next/prev pane", "Prefix + N / P / O"],
       ["Focus by index", "Prefix + 0..9"],
@@ -144,7 +144,7 @@ function isTmuxPrefixKey(event: KeyboardEvent): boolean {
   return event.ctrlKey
     && !event.metaKey
     && !event.altKey
-    && !event.shiftKey
+    && event.shiftKey
     && event.key.toLowerCase() === "b";
 }
 
@@ -939,9 +939,9 @@ function App() {
       });
     };
 
-    window.addEventListener("keydown", listener);
+    window.addEventListener("keydown", listener, true);
     return () => {
-      window.removeEventListener("keydown", listener);
+      window.removeEventListener("keydown", listener, true);
       tmuxController.dispose();
     };
   }, [

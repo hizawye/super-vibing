@@ -1,6 +1,6 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (release-parity-hardening-and-v0.1.11-recovery)
+- Last Updated: 2026-02-13 (automation-bridge-port-fallback)
 
 - Current progress:
   - Hardened release/version pipeline guardrails:
@@ -14,7 +14,7 @@
     - `package.json`, `apps/desktop/package.json`, and `apps/desktop/src-tauri/tauri.conf.json` are now set to version `0.1.11`.
   - Worktree manager system remains in place across backend/store/UI with enriched worktree metadata and safe lifecycle actions.
   - Added local automation bridge in `apps/desktop/src-tauri/src/lib.rs`:
-    - HTTP listener on `127.0.0.1:47631`,
+    - HTTP listener uses preferred bind from `SUPERVIBING_AUTOMATION_BIND` (default `127.0.0.1:47631`) with fallback scan `127.0.0.1:47631..47641`,
     - endpoints `GET /v1/health`, `GET /v1/workspaces`, `POST /v1/commands`, `GET /v1/jobs/:jobId`,
     - queued async job processing for:
       - `create_panes`,
@@ -31,7 +31,8 @@
   - Added global Codex skill at `~/.codex/skills/supervibing-automation`:
     - `SKILL.md` with usage workflow and troubleshooting,
     - `scripts/supervibing_automation.py` wrapper CLI for health/workspaces/job and bridge command actions,
-    - `agents/openai.yaml` for UI metadata.
+    - `agents/openai.yaml` for UI metadata,
+    - wrapper now auto-discovers fallback bridge port range when implicit default URL is used.
   - Wrapper defaults are aligned with product decisions:
     - submit-and-wait by default,
     - optional `--no-wait`,
@@ -48,7 +49,8 @@
     - startup now performs staged refit/resize (open, next frame, fonts-ready) and refits again when a hidden workspace pane becomes active,
     - `apps/desktop/src/App.tsx` + `apps/desktop/src/components/PaneGrid.tsx` pass active visibility state to `TerminalPane`.
   - Added tmux-style core shortcut profile in frontend:
-    - `apps/desktop/src/App.tsx` now uses a `Ctrl+B` prefix controller with a `1000ms` timeout and tmux-like pane mappings (`%`, `"`, `c`, `n`, `p`, `o`, `0..9`, arrows, `z`, `x`, `&`, `Alt+Arrow`),
+    - `apps/desktop/src/App.tsx` now uses a `Ctrl+Shift+B` prefix controller with a `1000ms` timeout and tmux-like pane mappings (`%`, `"`, `c`, `n`, `p`, `o`, `0..9`, arrows, `z`, `x`, `&`, `Alt+Arrow`),
+    - raw `Ctrl+B` is no longer consumed by app pane shortcuts and now passes through to terminal shells (real tmux flow),
     - legacy non-tmux pane hotkeys were removed from the global app shortcut handler; global app keys (`Ctrl/Cmd+N`, `Ctrl/Cmd+P`, `Escape`) remain,
     - Settings shortcut list now reflects tmux core bindings.
   - Added keyboard resize support for focused panes in freeform mode:
@@ -76,14 +78,16 @@
     - `apps/desktop/src/components/NewWorkspaceModal.tsx` now seeds agent command defaults from global settings.
   - Fixed keyboard shortcuts while terminal pane has focus:
     - `apps/desktop/src/components/TerminalPane.tsx` marks terminal shortcut scope with `data-terminal-pane`,
-    - `apps/desktop/src/App.tsx` no longer treats xterm input focus as a generic editable-target block for app/tmux shortcut handling.
+    - `apps/desktop/src/App.tsx` no longer treats xterm input focus as a generic editable-target block for app/tmux shortcut handling,
+    - window keydown listener now uses capture phase so app-prefixed pane shortcuts remain reliable around terminal event propagation.
   - Hardened worktree lifecycle UX coverage:
     - `apps/desktop/src/store/workspace.test.ts` now covers managed worktree create-without-open and remove-with-open-workspace cleanup paths.
   - Hardened Rust automation bridge request surface in `apps/desktop/src-tauri/src/lib.rs`:
     - optional bearer-token auth via `SUPERVIBING_AUTOMATION_TOKEN`,
     - request validation before queueing (`workspaceId`, `paneCount`, branch/command checks),
     - queue-full returns `429` and expanded HTTP status mapping,
-    - completed-job retention cap to bound in-memory automation job growth.
+    - completed-job retention cap to bound in-memory automation job growth,
+    - health response bind field now reflects runtime-selected bridge bind address.
 
 - Verification:
   - `pnpm run release:verify -- v0.1.10` ✅ (before version bump, parity passed at `0.1.10`)
@@ -124,6 +128,16 @@
   - `cargo test -q` (in `apps/desktop/src-tauri`) ✅
     - Rust tests passed (16/16).
   - `cargo check -q` (in `apps/desktop/src-tauri`) ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/components/TerminalPane.test.tsx` ✅
+    - desktop tests passed (93/93 in run scope).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `cargo test -q` (in `apps/desktop/src-tauri`) ✅
+    - Rust tests passed (20/20).
+  - `cargo check -q` (in `apps/desktop/src-tauri`) ✅
+  - `timeout 55s pnpm tauri:dev` ✅
+    - with `127.0.0.1:47631` occupied, backend logged fallback bind success on `127.0.0.1:47632`.
+  - `python3 ~/.codex/skills/supervibing-automation/scripts/supervibing_automation.py --json health` ✅
+    - wrapper output now includes `baseUrl` alongside health payload.
 
 - Blockers/Bugs:
   - `v0.1.11` release tag was previously published with stale `0.1.10` metadata and failed release parity; recovery uses force-repointed tag strategy.
@@ -132,7 +146,7 @@
   - Packaged-app Linux compositor compatibility still depends on host WebKit/GPU stack; diagnostics documented in `docs/architecture.md`.
   - Automation bearer-token auth is optional and env-driven; hosts that need stricter local protection should set `SUPERVIBING_AUTOMATION_TOKEN`.
   - Non-fatal shell startup warnings (`fnm/starship` permission and nvm prefix warnings) continue in command output and do not affect build/test outcomes.
-  - Live skill smoke tests for `workspaces`/job execution are blocked until SuperVibing desktop is running and serving the automation port.
+  - Live skill smoke tests for `workspaces`/job execution remain blocked until SuperVibing desktop is running and serving the automation port.
 
 - Next immediate starting point:
   - Push release parity/tooling changes and force-update annotated tag `v0.1.11`, then confirm `Release` workflow success on corrected tag.
@@ -142,7 +156,10 @@
     - tag/push and workflow monitoring.
   - Manual UX pass:
     - verify settings-edited startup commands are applied for new workspaces and imports,
-    - verify app/tmux shortcuts while cursor is inside active xterm pane in a real desktop run.
+    - verify shell tmux `Ctrl+B` passthrough plus app pane prefix `Ctrl+Shift+B` while cursor is inside active xterm pane in a real desktop run.
+  - Automation fallback validation pass:
+    - launch app with `SUPERVIBING_AUTOMATION_BIND=127.0.0.1:47631` while `47631` is occupied and verify fallback range bind selection,
+    - verify CLI auto-discovery by running wrapper without `--base-url` or `SUPERVIBING_AUTOMATION_URL`.
   - Automation smoke run with auth enabled:
     - launch app with `SUPERVIBING_AUTOMATION_TOKEN=<token>`,
     - validate `401` on missing token and success with valid `Bearer` token.

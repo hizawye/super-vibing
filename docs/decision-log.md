@@ -573,3 +573,25 @@ Added regression tests in `apps/desktop/src/App.selectors.test.ts` to document a
 **Rationale:** React 19 is stricter about snapshot stability; separating derived arrays from object selectors avoids false-positive selection changes and rerender thrashing.
 **Consequences:** App store subscriptions are more deterministic under frequent updates; selector intent is explicit and test-covered.
 **Alternatives Considered:** Keeping existing selector shape and suppressing runtime noise, or downgrading React instead of fixing selector semantics.
+
+## [2026-02-13] - Restore Shell tmux Prefix and Rebind App Pane Prefix
+**Context:** Users reported tmux shortcuts still failing inside SuperVibing terminal panes because app-level `Ctrl+B` prefix capture conflicted with real shell tmux flow.
+**Decision:** Prioritize terminal passthrough for shell tmux and move app pane prefix:
+- changed app pane prefix from `Ctrl+B` to `Ctrl+Shift+B` in `apps/desktop/src/App.tsx`,
+- left raw `Ctrl+B` unhandled at app shortcut layer so terminal process receives it,
+- registered keydown listener in capture phase for more reliable app-prefix handling across terminal internals,
+- updated shortcut tests and settings/docs to match the new contract.
+**Rationale:** Preserves expected tmux behavior in pane terminals while keeping app-level pane keyboard controls available on a non-conflicting prefix.
+**Consequences:** Existing muscle memory for app pane control must switch to `Ctrl+Shift+B`; real tmux workflows in terminal panes now work by default.
+**Alternatives Considered:** Keeping `Ctrl+B` for app controls only outside terminal focus, and disabling app keyboard pane controls entirely.
+
+## [2026-02-13] - Automation Bridge Port Collision Fallback and Discovery
+**Context:** Desktop startup logs showed automation bridge bind failures when `127.0.0.1:47631` was already occupied by another process.
+**Decision:** Make automation bridge bind configurable and collision-tolerant:
+- added `SUPERVIBING_AUTOMATION_BIND` for preferred bind selection (`host:port`, localhost-only),
+- fallback scan now binds first free port in `127.0.0.1:47631..47641` when preferred port is in use,
+- health endpoint now reports the runtime-selected bind from automation state,
+- CLI wrapper auto-probes that same range when running with implicit default URL.
+**Rationale:** Removes fragile single-port coupling while preserving predictable localhost-only operation and low-friction automation usability.
+**Consequences:** Bridge port may vary at runtime under contention; clients relying on implicit defaults must support discovery (now handled by wrapper script).
+**Alternatives Considered:** Fixed-port-only failure behavior, and random OS-assigned ports without deterministic scan range.
