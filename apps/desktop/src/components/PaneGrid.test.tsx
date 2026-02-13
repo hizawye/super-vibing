@@ -3,6 +3,19 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { PaneGrid } from "./PaneGrid";
 
+const paneMetaById = {
+  "pane-1": {
+    title: "pane-1",
+    worktreePath: "/repo",
+    status: "running" as const,
+  },
+  "pane-2": {
+    title: "pane-2",
+    worktreePath: "/repo/.worktrees/feature-two",
+    status: "running" as const,
+  },
+};
+
 vi.mock("react-grid-layout", () => {
   const MockGrid = ({
     children,
@@ -62,6 +75,7 @@ describe("PaneGrid", () => {
         workspaceId="workspace-1"
         isActive
         paneIds={["pane-1", "pane-2"]}
+        paneMetaById={paneMetaById}
         layouts={layouts}
         layoutMode="tiling"
         zoomedPaneId="pane-2"
@@ -88,6 +102,7 @@ describe("PaneGrid", () => {
         workspaceId="workspace-1"
         isActive
         paneIds={["pane-1", "pane-2"]}
+        paneMetaById={paneMetaById}
         layouts={layouts}
         layoutMode="freeform"
         zoomedPaneId={null}
@@ -116,6 +131,7 @@ describe("PaneGrid", () => {
         workspaceId="workspace-1"
         isActive
         paneIds={["pane-1", "pane-2"]}
+        paneMetaById={paneMetaById}
         layouts={layouts}
         layoutMode="tiling"
         zoomedPaneId={null}
@@ -128,5 +144,28 @@ describe("PaneGrid", () => {
 
     expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-draggable", "false");
     expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-resizable", "false");
+  });
+
+  it("emits pane worktree change request from header action", () => {
+    const onRequestPaneWorktreeChange = vi.fn();
+    render(
+      <PaneGrid
+        workspaceId="workspace-1"
+        isActive
+        paneIds={["pane-1", "pane-2"]}
+        paneMetaById={paneMetaById}
+        layouts={layouts}
+        layoutMode="tiling"
+        zoomedPaneId={null}
+        focusedPaneId="pane-1"
+        onLayoutsChange={vi.fn()}
+        onToggleZoom={vi.fn()}
+        onPaneFocus={vi.fn()}
+        onRequestPaneWorktreeChange={onRequestPaneWorktreeChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("pane-worktree-btn-pane-1"));
+    expect(onRequestPaneWorktreeChange).toHaveBeenCalledWith("pane-1");
   });
 });

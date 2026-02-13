@@ -19,11 +19,13 @@ function baseAppContext() {
   return {
     paletteOpen: false,
     newWorkspaceOpen: false,
+    paneCreatorOpen: false,
     sidebarOpen: false,
     setActiveSection: vi.fn(),
     setSidebarOpen: vi.fn(),
     setPaletteOpen: vi.fn(),
     setNewWorkspaceOpen: vi.fn(),
+    setPaneCreatorOpen: vi.fn(),
   };
 }
 
@@ -39,6 +41,11 @@ function baseTmuxContext() {
       worktreePath: "/repo",
       paneCount: 3,
       paneOrder: ["pane-1", "pane-2", "pane-3"],
+      paneMetaById: {
+        "pane-1": { title: "pane-1", worktreePath: "/repo", status: "running" as const },
+        "pane-2": { title: "pane-2", worktreePath: "/repo", status: "running" as const },
+        "pane-3": { title: "pane-3", worktreePath: "/repo", status: "running" as const },
+      },
       layouts: [],
       layoutMode: "freeform" as const,
       zoomedPaneId: null,
@@ -46,6 +53,8 @@ function baseTmuxContext() {
     },
     paletteOpen: false,
     newWorkspaceOpen: false,
+    paneCreatorOpen: false,
+    openPaneCreator: vi.fn(),
     setActiveWorkspace: vi.fn(),
     setActiveWorkspacePaneCount: vi.fn(),
     setFocusedPane: vi.fn(),
@@ -72,6 +81,7 @@ describe("handleAppKeydown", () => {
 
     expect(event.preventDefault).toHaveBeenCalledTimes(1);
     expect(context.setActiveSection).toHaveBeenCalledWith("terminal");
+    expect(context.setPaneCreatorOpen).toHaveBeenCalledWith(false);
     expect(context.setNewWorkspaceOpen).toHaveBeenCalledWith(true);
   });
 
@@ -82,20 +92,24 @@ describe("handleAppKeydown", () => {
     handleAppKeydown(event, context);
 
     expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(context.setPaneCreatorOpen).toHaveBeenCalledWith(false);
     expect(context.setPaletteOpen).toHaveBeenCalledWith(true);
   });
 
   it("closes overlays in Escape priority order", () => {
     const paletteContext = { ...baseAppContext(), paletteOpen: true };
     const newWorkspaceContext = { ...baseAppContext(), newWorkspaceOpen: true };
+    const paneCreatorContext = { ...baseAppContext(), paneCreatorOpen: true };
     const sidebarContext = { ...baseAppContext(), sidebarOpen: true };
 
     handleAppKeydown(createEvent({ key: "Escape" }), paletteContext);
     handleAppKeydown(createEvent({ key: "Escape" }), newWorkspaceContext);
+    handleAppKeydown(createEvent({ key: "Escape" }), paneCreatorContext);
     handleAppKeydown(createEvent({ key: "Escape" }), sidebarContext);
 
     expect(paletteContext.setPaletteOpen).toHaveBeenCalledWith(false);
     expect(newWorkspaceContext.setNewWorkspaceOpen).toHaveBeenCalledWith(false);
+    expect(paneCreatorContext.setPaneCreatorOpen).toHaveBeenCalledWith(false);
     expect(sidebarContext.setSidebarOpen).toHaveBeenCalledWith(false);
   });
 
@@ -218,6 +232,16 @@ describe("createTmuxPrefixController", () => {
     controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     controller.handleKeydown(createEvent({ key: "&" }), context);
     expect(context.setActiveWorkspacePaneCount).toHaveBeenNthCalledWith(2, 2);
+  });
+
+  it("opens worktree pane creator with prefix+w", () => {
+    const context = baseTmuxContext();
+    const controller = createTmuxPrefixController();
+
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "w" }), context);
+
+    expect(context.openPaneCreator).toHaveBeenCalledTimes(1);
   });
 
   it("cycles workspaces with prefix+) and prefix+(", () => {

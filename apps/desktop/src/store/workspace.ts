@@ -88,6 +88,12 @@ interface ManagedWorktreeRemoveInput {
   deleteBranch: boolean;
 }
 
+interface PaneWorktreeCreateInput {
+  mode: WorktreeCreateMode;
+  branch: string;
+  baseRef?: string;
+}
+
 interface WorkspaceStore {
   initialized: boolean;
   bootstrapping: boolean;
@@ -125,6 +131,13 @@ interface WorkspaceStore {
   closeWorkspace: (workspaceId: string) => Promise<void>;
   setActiveWorkspace: (workspaceId: string) => Promise<void>;
   setActiveWorkspacePaneCount: (count: number) => Promise<void>;
+  createPaneWithWorktree: (workspaceId: string, worktreePath: string) => Promise<string>;
+  setPaneWorktree: (
+    workspaceId: string,
+    paneId: string,
+    worktreePath: string,
+    options?: { restartRunning?: boolean },
+  ) => Promise<void>;
   startWorkspaceBoot: (workspaceId: string, options?: WorkspaceBootOptions) => Promise<void>;
   pauseWorkspaceBoot: (workspaceId: string) => void;
   resumeWorkspaceBoot: (workspaceId: string) => void;
@@ -148,6 +161,7 @@ interface WorkspaceStore {
   launchBlueprint: (blueprintId: string) => Promise<void>;
   openWorktreeManager: () => Promise<void>;
   refreshWorktrees: () => Promise<void>;
+  createWorktreeForWorkspace: (workspaceId: string, input: PaneWorktreeCreateInput) => Promise<WorktreeEntry>;
   createManagedWorktree: (input: ManagedWorktreeCreateInput) => Promise<void>;
   importWorktreeAsWorkspace: (worktreePath: string) => Promise<void>;
   removeManagedWorktree: (input: ManagedWorktreeRemoveInput) => Promise<void>;
@@ -562,6 +576,17 @@ function clearWorkspacePaneInputBuffers(workspaceId: string): void {
   });
 }
 
+function clearPaneInputBuffers(workspaceId: string, paneId: string): void {
+  const runtimePaneId = toRuntimePaneId(workspaceId, paneId);
+  const timer = paneInputTimers.get(runtimePaneId);
+  if (timer) {
+    clearTimeout(timer);
+  }
+  paneInputTimers.delete(runtimePaneId);
+  paneInputBuffers.delete(runtimePaneId);
+  paneInputFlushes.delete(runtimePaneId);
+}
+
 async function withConcurrency<T>(
   items: T[],
   limit: number,
@@ -775,12 +800,20 @@ function paneIdAt(index: number): string {
   return `pane-${index + 1}`;
 }
 
-function createPaneModel(id: string, title = id, cwd = "", shell = ""): PaneModel {
+function createPaneModel(args: {
+  id: string;
+  title?: string;
+  cwd?: string;
+  worktreePath?: string;
+  shell?: string;
+}): PaneModel {
+  const worktreePath = args.worktreePath ?? args.cwd ?? "";
   return {
-    id,
-    title,
-    cwd,
-    shell,
+    id: args.id,
+    title: args.title ?? args.id,
+    cwd: args.cwd ?? "",
+    worktreePath,
+    shell: args.shell ?? "",
     status: "idle",
     lastSubmittedCommand: "",
   };
@@ -855,8 +888,10 @@ function areLayoutsEquivalent(current: Layout[], next: Layout[]): boolean {
 function toIdlePanes(panes: Record<string, PaneModel>): Record<string, PaneModel> {
   const next: Record<string, PaneModel> = {};
   Object.entries(panes).forEach(([id, pane]) => {
+    const worktreePath = pane.worktreePath?.trim().length ? pane.worktreePath : pane.cwd;
     next[id] = {
       ...pane,
+      worktreePath: worktreePath ?? "",
       status: "idle",
       error: undefined,
     };
@@ -912,17 +947,33 @@ function createWorkspaceRuntime(args: {
   const layoutMode = args.layoutMode ?? "tiling";
   const paneCount = clampPaneCount(args.paneCount);
   const paneOrder = args.paneOrder ?? Array.from({ length: paneCount }, (_, index) => paneIdAt(index));
+  const defaultPaneWorktreePath = args.worktreePath ?? args.directory;
   const panes = args.panes
     ? { ...args.panes }
     : paneOrder.reduce<Record<string, PaneModel>>((acc, paneId) => {
-      acc[paneId] = createPaneModel(paneId);
+      acc[paneId] = createPaneModel({
+        id: paneId,
+        worktreePath: defaultPaneWorktreePath,
+      });
       return acc;
     }, {});
 
   paneOrder.forEach((paneId) => {
-    if (!panes[paneId]) {
-      panes[paneId] = createPaneModel(paneId);
+    const pane = panes[paneId];
+    if (!pane) {
+      panes[paneId] = createPaneModel({
+        id: paneId,
+        worktreePath: defaultPaneWorktreePath,
+      });
+      return;
     }
+
+    const normalizedPath = pane.worktreePath?.trim() || pane.cwd?.trim() || defaultPaneWorktreePath;
+    panes[paneId] = {
+      ...pane,
+      cwd: pane.cwd?.trim().length ? pane.cwd : normalizedPath,
+      worktreePath: normalizedPath,
+    };
   });
 
   const timestamp = args.createdAt ?? new Date().toISOString();
@@ -1052,11 +1103,23 @@ function sanitizeSession(session: SessionState): SessionState {
     const paneOrder = workspace.paneOrder.slice(0, paneCount);
     const normalizedOrder = paneOrder.length > 0 ? paneOrder : [paneIdAt(0)];
     const panes = toIdlePanes(workspace.panes ?? {});
+    const workspaceDefaultPath = workspace.worktreePath;
 
     normalizedOrder.forEach((paneId) => {
       if (!panes[paneId]) {
-        panes[paneId] = createPaneModel(paneId);
+        panes[paneId] = createPaneModel({
+          id: paneId,
+          worktreePath: workspaceDefaultPath,
+        });
+        return;
       }
+
+      const pane = panes[paneId];
+      const worktreePath = pane.worktreePath?.trim() || pane.cwd?.trim() || workspaceDefaultPath;
+      panes[paneId] = {
+        ...pane,
+        worktreePath,
+      };
     });
 
     return createWorkspaceRuntime({
@@ -1271,7 +1334,10 @@ function applyLaunchTitles(
 ): WorkspaceRuntime {
   const nextPanes: Record<string, PaneModel> = {};
   workspace.paneOrder.forEach((paneId) => {
-    const pane = workspace.panes[paneId] ?? createPaneModel(paneId);
+    const pane = workspace.panes[paneId] ?? createPaneModel({
+      id: paneId,
+      worktreePath: workspace.worktreePath,
+    });
     const launch = launchPlan.get(paneId);
     nextPanes[paneId] = {
       ...pane,
@@ -1928,7 +1994,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     nextPaneOrder.forEach((paneId) => {
       if (!nextPanes[paneId]) {
-        nextPanes[paneId] = createPaneModel(paneId);
+        nextPanes[paneId] = createPaneModel({
+          id: paneId,
+          worktreePath: activeWorkspace.worktreePath,
+        });
       }
     });
 
@@ -2006,6 +2075,165 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     await spawnWorkspacePanes(get, activeWorkspace.id, false);
     void get().startWorkspaceBoot(activeWorkspace.id, { eligiblePaneIds });
+
+    await flushPersist(get);
+  },
+
+  createPaneWithWorktree: async (workspaceId: string, worktreePath: string) => {
+    const normalizedPath = worktreePath.trim();
+    if (normalizedPath.length === 0) {
+      throw new Error("Worktree path is required.");
+    }
+
+    const state = get();
+    const workspace = state.workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) {
+      throw new Error("Workspace not found.");
+    }
+
+    if (workspace.paneCount >= MAX_PANES) {
+      throw new Error(`Cannot create more than ${MAX_PANES} panes in one workspace.`);
+    }
+
+    const paneId = paneIdAt(workspace.paneCount);
+    const nextPaneOrder = [...workspace.paneOrder, paneId];
+
+    set((current) => ({
+      focusedPaneByWorkspace: {
+        ...current.focusedPaneByWorkspace,
+        [workspaceId]: paneId,
+      },
+      workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => ({
+        ...target,
+        paneCount: nextPaneOrder.length,
+        paneOrder: nextPaneOrder,
+        panes: {
+          ...target.panes,
+          [paneId]: createPaneModel({
+            id: paneId,
+            worktreePath: normalizedPath,
+            cwd: normalizedPath,
+          }),
+        },
+        layouts: resolveWorkspaceLayouts(nextPaneOrder, target.layoutMode, target.layouts),
+        updatedAt: new Date().toISOString(),
+      })),
+    }));
+    enqueueAutomationSync(get);
+
+    if (get().activeWorkspaceId === workspaceId) {
+      await get().ensurePaneSpawned(workspaceId, paneId);
+    }
+
+    await flushPersist(get);
+    return paneId;
+  },
+
+  setPaneWorktree: async (
+    workspaceId: string,
+    paneId: string,
+    worktreePath: string,
+    options?: { restartRunning?: boolean },
+  ) => {
+    const normalizedPath = worktreePath.trim();
+    if (normalizedPath.length === 0) {
+      throw new Error("Worktree path is required.");
+    }
+
+    const state = get();
+    const workspace = state.workspaces.find((item) => item.id === workspaceId);
+    const pane = workspace?.panes[paneId];
+    if (!workspace || !pane) {
+      throw new Error("Pane not found.");
+    }
+
+    const shouldRestart = Boolean(
+      options?.restartRunning
+      && (pane.status === "running" || pane.status === "suspended" || pane.status === "spawning"),
+    );
+
+    set((current) => {
+      const workspaceReady = current.terminalReadyPanesByWorkspace[workspaceId] ?? {};
+      const nextWorkspaceReady = { ...workspaceReady };
+      if (shouldRestart) {
+        delete nextWorkspaceReady[paneId];
+      }
+
+      const nextReadyByWorkspace = { ...current.terminalReadyPanesByWorkspace };
+      if (Object.keys(nextWorkspaceReady).length === 0) {
+        delete nextReadyByWorkspace[workspaceId];
+      } else {
+        nextReadyByWorkspace[workspaceId] = nextWorkspaceReady;
+      }
+
+      return {
+        terminalReadyPanesByWorkspace: nextReadyByWorkspace,
+        workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
+          const targetPane = target.panes[paneId];
+          if (!targetPane) {
+            return target;
+          }
+          return {
+            ...target,
+            panes: {
+              ...target.panes,
+              [paneId]: {
+                ...targetPane,
+                worktreePath: normalizedPath,
+                cwd:
+                  targetPane.status === "running"
+                  || targetPane.status === "suspended"
+                  || targetPane.status === "spawning"
+                    ? targetPane.cwd
+                    : normalizedPath,
+              },
+            },
+            updatedAt: new Date().toISOString(),
+          };
+        }),
+      };
+    });
+
+    if (!shouldRestart) {
+      await flushPersist(get);
+      return;
+    }
+
+    clearPendingPaneInit(workspaceId, paneId);
+    clearPaneTerminalReadyWaiters(workspaceId, paneId);
+    clearPaneInputBuffers(workspaceId, paneId);
+
+    try {
+      await closePane(toRuntimePaneId(workspaceId, paneId));
+    } catch {
+      // best effort close before respawn in new worktree
+    }
+
+    set((current) => ({
+      workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => {
+        const targetPane = target.panes[paneId];
+        if (!targetPane) {
+          return target;
+        }
+        return {
+          ...target,
+          panes: {
+            ...target.panes,
+            [paneId]: {
+              ...targetPane,
+              cwd: normalizedPath,
+              status: "idle",
+              error: undefined,
+            },
+          },
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+    }));
+
+    if (get().activeWorkspaceId === workspaceId) {
+      await get().ensurePaneSpawned(workspaceId, paneId);
+    }
 
     await flushPersist(get);
   },
@@ -2214,7 +2442,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         const response = await withSpawnSlot(async () =>
           spawnPaneWithConflictRetry(
             toRuntimePaneId(workspaceId, paneId),
-            targetWorkspace.worktreePath,
+            targetPane.worktreePath || targetWorkspace.worktreePath,
           ),
         );
 
@@ -2705,6 +2933,37 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         },
       }));
     }
+  },
+
+  createWorktreeForWorkspace: async (workspaceId: string, input: PaneWorktreeCreateInput) => {
+    const workspace = get().workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) {
+      throw new Error("Workspace not found.");
+    }
+
+    const context = await resolveRepoContextSafe(workspace.worktreePath);
+    if (!context.isGitRepo) {
+      throw new Error("Active workspace is not a git repository.");
+    }
+
+    const entry = await createWorktreeApi({
+      repoRoot: context.repoRoot,
+      mode: input.mode,
+      branch: input.branch,
+      baseRef: input.baseRef,
+    });
+
+    if (get().activeWorkspaceId === workspaceId) {
+      await get().refreshWorktrees();
+    }
+    set((current) => ({
+      worktreeManager: {
+        ...current.worktreeManager,
+        lastActionMessage: `Created worktree ${entry.worktreePath}`,
+      },
+    }));
+
+    return entry;
   },
 
   createManagedWorktree: async (input: ManagedWorktreeCreateInput) => {

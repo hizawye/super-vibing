@@ -30,6 +30,7 @@ function workspace(id: string, name: string, branch: string, path: string): Work
         id: "pane-1",
         title: "pane-1",
         cwd: path,
+        worktreePath: path,
         shell: "/bin/bash",
         status: "running",
         lastSubmittedCommand: "",

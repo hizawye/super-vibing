@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import type { Layout } from "react-grid-layout";
 import { listen } from "@tauri-apps/api/event";
 import { useShallow } from "zustand/react/shallow";
@@ -9,6 +9,7 @@ import { StartupCrashScreen } from "./components/StartupCrashScreen";
 import { TopChrome } from "./components/TopChrome";
 import { WorktreeManagerSection } from "./components/WorktreeManagerSection";
 import type { WorkspaceCreationInput } from "./components/NewWorkspaceModal";
+import type { PaneWorktreeModalSubmitInput } from "./components/NewPaneModal";
 import {
   checkForPendingUpdate,
   closePendingUpdate,
@@ -32,6 +33,7 @@ import type {
   DensityMode,
   FrontendAutomationRequest,
   LayoutMode,
+  PaneStatus,
   ThemeId,
   WorkspaceBootSession,
 } from "./types";
@@ -41,6 +43,9 @@ const NewWorkspaceModal = lazy(() =>
 );
 const CommandPalette = lazy(() =>
   import("./components/CommandPalette").then((module) => ({ default: module.CommandPalette })),
+);
+const NewPaneModal = lazy(() =>
+  import("./components/NewPaneModal").then((module) => ({ default: module.NewPaneModal })),
 );
 
 const SHORTCUT_GROUPS = [
@@ -56,6 +61,7 @@ const SHORTCUT_GROUPS = [
     shortcuts: [
       ["Prefix", "Ctrl + B"],
       ["Split pane", "Prefix + % or \""],
+      ["Worktree pane creator", "Prefix + W"],
       ["Next/prev workspace", "Prefix + ) / ("],
       ["Next/prev pane", "Prefix + N / P / O"],
       ["Focus by index", "Prefix + 0..9"],
@@ -74,6 +80,7 @@ interface ActiveWorkspaceView {
   worktreePath: string;
   paneCount: number;
   paneOrder: string[];
+  paneMetaById: Record<string, { title: string; worktreePath: string; status: PaneStatus }>;
   layouts: Layout[];
   layoutMode: LayoutMode;
   zoomedPaneId: string | null;
@@ -88,6 +95,11 @@ const TERMINAL_SHORTCUT_SCOPE_SELECTOR = "[data-terminal-pane=\"true\"]";
 const AGENT_PROFILE_OPTIONS = getAgentProfileOptions();
 type UpdateStatus = "idle" | "checking" | "available" | "installing" | "installed" | "upToDate" | "error";
 type WorkspaceStoreState = ReturnType<typeof useWorkspaceStore.getState>;
+
+interface PaneCreatorTarget {
+  workspaceId: string;
+  paneId?: string;
+}
 
 function isTerminalShortcutScope(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -113,11 +125,13 @@ function isEditableTarget(target: EventTarget | null): boolean {
 interface AppShortcutContext {
   paletteOpen: boolean;
   newWorkspaceOpen: boolean;
+  paneCreatorOpen: boolean;
   sidebarOpen: boolean;
   setActiveSection: (section: AppSection) => void;
   setSidebarOpen: (open: boolean) => void;
   setPaletteOpen: (open: boolean) => void;
   setNewWorkspaceOpen: (open: boolean) => void;
+  setPaneCreatorOpen: (open: boolean) => void;
 }
 
 interface TmuxShortcutContext {
@@ -127,6 +141,8 @@ interface TmuxShortcutContext {
   workspaceOrder: string[];
   paletteOpen: boolean;
   newWorkspaceOpen: boolean;
+  paneCreatorOpen: boolean;
+  openPaneCreator: () => void;
   setActiveWorkspace: (workspaceId: string) => Promise<void> | void;
   setActiveWorkspacePaneCount: (count: number) => void;
   setFocusedPane: (workspaceId: string, paneId: string) => void;
@@ -141,7 +157,8 @@ function isTmuxEligibleContext(context: TmuxShortcutContext): boolean {
   return context.activeSection === "terminal"
     && Boolean(context.activeWorkspace)
     && !context.paletteOpen
-    && !context.newWorkspaceOpen;
+    && !context.newWorkspaceOpen
+    && !context.paneCreatorOpen;
 }
 
 function isTmuxPrefixKey(event: KeyboardEvent): boolean {
@@ -222,6 +239,10 @@ function resizeDeltaForArrowKey(key: string): { dx: number; dy: number } | null 
   return null;
 }
 
+function isPaneRunningLike(status: PaneStatus): boolean {
+  return status === "running" || status === "suspended" || status === "spawning";
+}
+
 export function handleTmuxPrefixedKey(event: KeyboardEvent, context: TmuxShortcutContext): boolean {
   const workspace = context.activeWorkspace;
   if (!workspace) {
@@ -253,6 +274,11 @@ export function handleTmuxPrefixedKey(event: KeyboardEvent, context: TmuxShortcu
 
   if (keyLower === "c") {
     context.setActiveWorkspacePaneCount(workspace.paneCount + 1);
+    return true;
+  }
+
+  if (keyLower === "w") {
+    context.openPaneCreator();
     return true;
   }
 
@@ -373,6 +399,7 @@ export function handleAppKeydown(event: KeyboardEvent, context: AppShortcutConte
     context.setActiveSection("terminal");
     context.setSidebarOpen(false);
     context.setPaletteOpen(false);
+    context.setPaneCreatorOpen(false);
     context.setNewWorkspaceOpen(true);
     return;
   }
@@ -380,6 +407,7 @@ export function handleAppKeydown(event: KeyboardEvent, context: AppShortcutConte
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
     event.preventDefault();
     context.setSidebarOpen(false);
+    context.setPaneCreatorOpen(false);
     context.setNewWorkspaceOpen(false);
     context.setPaletteOpen(true);
     return;
@@ -395,6 +423,12 @@ export function handleAppKeydown(event: KeyboardEvent, context: AppShortcutConte
     if (context.newWorkspaceOpen) {
       event.preventDefault();
       context.setNewWorkspaceOpen(false);
+      return;
+    }
+
+    if (context.paneCreatorOpen) {
+      event.preventDefault();
+      context.setPaneCreatorOpen(false);
       return;
     }
 
@@ -838,6 +872,16 @@ function App() {
         worktreePath: workspace.worktreePath,
         paneCount: workspace.paneCount,
         paneOrder: workspace.paneOrder,
+        paneMetaById: Object.fromEntries(
+          workspace.paneOrder.map((paneId) => [
+            paneId,
+            {
+              title: workspace.panes[paneId]?.title ?? paneId,
+              worktreePath: workspace.panes[paneId]?.worktreePath ?? workspace.worktreePath,
+              status: workspace.panes[paneId]?.status ?? "idle",
+            },
+          ]),
+        ),
         layouts: workspace.layouts,
         layoutMode: workspace.layoutMode,
         zoomedPaneId: workspace.zoomedPaneId,
@@ -895,6 +939,8 @@ function App() {
   const closeWorkspace = useWorkspaceStore((state) => state.closeWorkspace);
   const setActiveWorkspace = useWorkspaceStore((state) => state.setActiveWorkspace);
   const setActiveWorkspacePaneCount = useWorkspaceStore((state) => state.setActiveWorkspacePaneCount);
+  const createPaneWithWorktree = useWorkspaceStore((state) => state.createPaneWithWorktree);
+  const setPaneWorktree = useWorkspaceStore((state) => state.setPaneWorktree);
   const setActiveWorkspaceLayoutMode = useWorkspaceStore((state) => state.setActiveWorkspaceLayoutMode);
   const setActiveWorkspaceLayouts = useWorkspaceStore((state) => state.setActiveWorkspaceLayouts);
   const toggleActiveWorkspaceZoom = useWorkspaceStore((state) => state.toggleActiveWorkspaceZoom);
@@ -905,6 +951,7 @@ function App() {
   const resumeWorkspaceBoot = useWorkspaceStore((state) => state.resumeWorkspaceBoot);
   const openWorktreeManager = useWorkspaceStore((state) => state.openWorktreeManager);
   const refreshWorktrees = useWorkspaceStore((state) => state.refreshWorktrees);
+  const createWorktreeForWorkspace = useWorkspaceStore((state) => state.createWorktreeForWorkspace);
   const createManagedWorktree = useWorkspaceStore((state) => state.createManagedWorktree);
   const importWorktreeAsWorkspace = useWorkspaceStore((state) => state.importWorktreeAsWorkspace);
   const removeManagedWorktree = useWorkspaceStore((state) => state.removeManagedWorktree);
@@ -912,10 +959,12 @@ function App() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
+  const [paneCreatorTarget, setPaneCreatorTarget] = useState<PaneCreatorTarget | null>(null);
   const agentDefaults = useMemo(
     () => getAgentDefaults(agentStartupDefaults),
     [agentStartupDefaults],
   );
+  const paneCreatorOpen = paneCreatorTarget !== null;
 
   useEffect(() => {
     void bootstrap();
@@ -929,6 +978,22 @@ function App() {
     root.classList.toggle("high-contrast", highContrastAssist);
   }, [density, highContrastAssist, reduceMotion, themeId]);
 
+  const openPaneCreator = useCallback((paneId?: string) => {
+    if (!activeWorkspace) {
+      return;
+    }
+
+    setActiveSection("terminal");
+    setSidebarOpen(false);
+    setPaletteOpen(false);
+    setNewWorkspaceOpen(false);
+    setPaneCreatorTarget({
+      workspaceId: activeWorkspace.id,
+      paneId,
+    });
+    void refreshWorktrees();
+  }, [activeWorkspace, refreshWorktrees, setActiveSection, setPaletteOpen]);
+
   useEffect(() => {
     const tmuxController = createTmuxPrefixController();
 
@@ -941,6 +1006,8 @@ function App() {
           workspaceOrder: terminalWorkspaces.map((workspace) => workspace.id),
           paletteOpen,
           newWorkspaceOpen,
+          paneCreatorOpen,
+          openPaneCreator: () => openPaneCreator(),
           setActiveWorkspace,
           setActiveWorkspacePaneCount: (count) => {
             void setActiveWorkspacePaneCount(count);
@@ -957,11 +1024,17 @@ function App() {
       handleAppKeydown(event, {
         paletteOpen,
         newWorkspaceOpen,
+        paneCreatorOpen,
         sidebarOpen,
         setActiveSection,
         setSidebarOpen,
         setPaletteOpen,
         setNewWorkspaceOpen,
+        setPaneCreatorOpen: (open) => {
+          if (!open) {
+            setPaneCreatorTarget(null);
+          }
+        },
       });
     };
 
@@ -976,7 +1049,10 @@ function App() {
     activeWorkspaceId,
     moveFocusedPane,
     newWorkspaceOpen,
+    paneCreatorOpen,
     paletteOpen,
+    openPaneCreator,
+    refreshWorktrees,
     resizeFocusedPaneByDelta,
     setActiveWorkspace,
     setActiveSection,
@@ -1043,13 +1119,71 @@ function App() {
     setActiveSection("terminal");
     setSidebarOpen(false);
     setPaletteOpen(false);
+    setPaneCreatorTarget(null);
     setNewWorkspaceOpen(true);
   };
 
   const openCommandPalette = () => {
     setSidebarOpen(false);
+    setPaneCreatorTarget(null);
     setNewWorkspaceOpen(false);
     setPaletteOpen(true);
+  };
+
+  const paneCreatorWorkspace = useMemo(
+    () =>
+      paneCreatorTarget
+        ? workspaceRuntimes.find((workspace) => workspace.id === paneCreatorTarget.workspaceId) ?? null
+        : null,
+    [paneCreatorTarget, workspaceRuntimes],
+  );
+
+  const paneCreatorPane = useMemo(() => {
+    if (!paneCreatorTarget?.paneId || !paneCreatorWorkspace) {
+      return null;
+    }
+
+    return paneCreatorWorkspace.panes[paneCreatorTarget.paneId] ?? null;
+  }, [paneCreatorTarget, paneCreatorWorkspace]);
+
+  const handlePaneCreatorSubmit = async (input: PaneWorktreeModalSubmitInput): Promise<void> => {
+    const target = paneCreatorTarget;
+    if (!target) {
+      return;
+    }
+
+    let worktreePath = input.worktreePath;
+    if (input.mode === "create") {
+      const created = await createWorktreeForWorkspace(target.workspaceId, {
+        mode: "newBranch",
+        branch: input.branch,
+        baseRef: input.baseRef,
+      });
+      worktreePath = created.worktreePath;
+    }
+
+    if (target.paneId) {
+      const latestWorkspace = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === target.workspaceId);
+      const latestPane = latestWorkspace?.panes[target.paneId];
+      const restartNeeded = latestPane ? isPaneRunningLike(latestPane.status) : false;
+
+      if (restartNeeded) {
+        const confirmed = window.confirm(
+          "This pane is running. Reassigning worktree will restart that pane. Continue?",
+        );
+        if (!confirmed) {
+          return;
+        }
+      }
+
+      await setPaneWorktree(target.workspaceId, target.paneId, worktreePath, {
+        restartRunning: restartNeeded,
+      });
+    } else {
+      await createPaneWithWorktree(target.workspaceId, worktreePath);
+    }
+
+    setPaneCreatorTarget(null);
   };
 
   const terminalControls =
@@ -1080,6 +1214,13 @@ function App() {
             +
           </button>
         </div>
+        <button
+          type="button"
+          className="subtle-btn"
+          onClick={() => openPaneCreator()}
+        >
+          New Worktree Pane
+        </button>
         <div className="layout-mode-toggle" role="group" aria-label="Layout mode">
           <button
             type="button"
@@ -1218,6 +1359,7 @@ function App() {
                       workspaceId={workspace.id}
                       isActive={isTerminalSection && workspace.id === activeWorkspaceId}
                       paneIds={workspace.paneOrder}
+                      paneMetaById={workspace.paneMetaById}
                       layouts={workspace.layouts}
                       layoutMode={workspace.layoutMode}
                       zoomedPaneId={workspace.zoomedPaneId}
@@ -1236,6 +1378,12 @@ function App() {
                         if (workspace.id === activeWorkspaceId) {
                           setFocusedPane(workspace.id, paneId);
                         }
+                      }}
+                      onRequestPaneWorktreeChange={(paneId) => {
+                        if (workspace.id !== activeWorkspaceId) {
+                          return;
+                        }
+                        openPaneCreator(paneId);
                       }}
                     />
                   </div>
@@ -1317,6 +1465,24 @@ function App() {
       </div>
 
       <Suspense fallback={null}>
+        {paneCreatorOpen ? (
+          <NewPaneModal
+            open={paneCreatorOpen}
+            mode={paneCreatorTarget?.paneId ? "reassign" : "create"}
+            repoRoot={worktreeManager.repoRoot}
+            entries={worktreeManager.entries}
+            loading={worktreeManager.loading}
+            error={worktreeManager.error}
+            initialWorktreePath={paneCreatorPane?.worktreePath ?? paneCreatorWorkspace?.worktreePath ?? ""}
+            paneId={paneCreatorTarget?.paneId ?? null}
+            onClose={() => setPaneCreatorTarget(null)}
+            onRefresh={refreshWorktrees}
+            onSubmit={(input) => {
+              void handlePaneCreatorSubmit(input);
+            }}
+          />
+        ) : null}
+
         {newWorkspaceOpen ? (
           <NewWorkspaceModal
             open={newWorkspaceOpen}

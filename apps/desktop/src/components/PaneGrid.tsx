@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
-import type { LayoutMode } from "../types";
+import type { LayoutMode, PaneStatus } from "../types";
 import { TerminalPane } from "./TerminalPane";
 
 const FluidGridLayout = WidthProvider(GridLayout);
@@ -13,6 +13,7 @@ interface PaneGridProps {
   workspaceId: string;
   isActive: boolean;
   paneIds: string[];
+  paneMetaById: Record<string, { title: string; worktreePath: string; status: PaneStatus }>;
   layouts: Layout[];
   layoutMode: LayoutMode;
   zoomedPaneId: string | null;
@@ -20,12 +21,25 @@ interface PaneGridProps {
   onLayoutsChange: (next: Layout[]) => void;
   onToggleZoom: (paneId: string) => void;
   onPaneFocus: (paneId: string) => void;
+  onRequestPaneWorktreeChange?: (paneId: string) => void;
+}
+
+function formatWorktreeLabel(worktreePath: string): string {
+  const trimmed = worktreePath.trim();
+  if (trimmed.length === 0) {
+    return "no worktree";
+  }
+
+  const normalized = trimmed.replace(/\\/g, "/").replace(/\/+$/, "");
+  const segments = normalized.split("/");
+  return segments[segments.length - 1] ?? normalized;
 }
 
 export function PaneGrid({
   workspaceId,
   isActive,
   paneIds,
+  paneMetaById,
   layouts,
   layoutMode,
   zoomedPaneId,
@@ -33,6 +47,7 @@ export function PaneGrid({
   onLayoutsChange,
   onToggleZoom,
   onPaneFocus,
+  onRequestPaneWorktreeChange,
 }: PaneGridProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
@@ -70,15 +85,36 @@ export function PaneGrid({
   }, [containerHeight, rowCount]);
 
   if (zoomedPaneId) {
+    const paneMeta = paneMetaById[zoomedPaneId];
     return (
       <div className="zoom-grid">
         <div className={`pane-card is-zoomed ${focusedPaneId === zoomedPaneId ? "is-focused" : ""}`}>
           <div
-            className="pane-header"
+            className={`pane-header ${layoutMode === "freeform" ? "is-draggable" : ""}`}
             data-testid={`pane-handle-${zoomedPaneId}`}
             onDoubleClick={() => onToggleZoom(zoomedPaneId)}
             onMouseDown={() => onPaneFocus(zoomedPaneId)}
-          />
+          >
+            <div className="pane-header-main">
+              <strong>{paneMeta?.title ?? zoomedPaneId}</strong>
+              <small>{formatWorktreeLabel(paneMeta?.worktreePath ?? "")}</small>
+            </div>
+            {onRequestPaneWorktreeChange ? (
+              <button
+                type="button"
+                className="subtle-btn pane-worktree-btn"
+                data-testid={`pane-worktree-btn-${zoomedPaneId}`}
+                onMouseDown={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRequestPaneWorktreeChange(zoomedPaneId);
+                }}
+              >
+                Worktree
+              </button>
+            ) : null}
+          </div>
           <TerminalPane
             workspaceId={workspaceId}
             paneId={zoomedPaneId}
@@ -107,12 +143,37 @@ export function PaneGrid({
       >
         {paneIds.map((paneId) => (
           <div key={paneId} className={`pane-card ${focusedPaneId === paneId ? "is-focused" : ""}`}>
-            <div
-              className={`pane-header ${layoutMode === "freeform" ? "is-draggable" : ""}`}
-              data-testid={`pane-handle-${paneId}`}
-              onDoubleClick={() => onToggleZoom(paneId)}
-              onMouseDown={() => onPaneFocus(paneId)}
-            />
+            {(() => {
+              const paneMeta = paneMetaById[paneId];
+              return (
+                <div
+                  className={`pane-header ${layoutMode === "freeform" ? "is-draggable" : ""}`}
+                  data-testid={`pane-handle-${paneId}`}
+                  onDoubleClick={() => onToggleZoom(paneId)}
+                  onMouseDown={() => onPaneFocus(paneId)}
+                >
+                  <div className="pane-header-main">
+                    <strong>{paneMeta?.title ?? paneId}</strong>
+                    <small>{formatWorktreeLabel(paneMeta?.worktreePath ?? "")}</small>
+                  </div>
+                  {onRequestPaneWorktreeChange ? (
+                    <button
+                      type="button"
+                      className="subtle-btn pane-worktree-btn"
+                      data-testid={`pane-worktree-btn-${paneId}`}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onDoubleClick={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRequestPaneWorktreeChange(paneId);
+                      }}
+                    >
+                      Worktree
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })()}
             <TerminalPane workspaceId={workspaceId} paneId={paneId} isActive={isActive} onFocusPane={onPaneFocus} />
           </div>
         ))}

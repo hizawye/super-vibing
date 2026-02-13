@@ -995,10 +995,51 @@ input[type="checkbox"] {
 }
 
 .pane-header {
-  min-height: 10px;
+  min-height: 34px;
   border-bottom: 1px solid var(--line-hairline);
-  padding: 0;
+  padding: 6px 8px;
   cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.pane-header-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.pane-header-main strong {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-header-main small {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-worktree-btn {
+  font-size: 0.68rem;
+  padding: 3px 7px;
+  border-radius: 9px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pane-card:hover .pane-worktree-btn,
+.pane-card:focus-within .pane-worktree-btn {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .pane-header.is-draggable {
@@ -1423,6 +1464,14 @@ input[type="checkbox"] {
   padding: var(--space-3);
 }
 
+.pane-modal-overlay {
+  z-index: 24;
+}
+
+.pane-worktree-modal {
+  width: min(760px, calc(100% - 32px));
+}
+
 .workspace-modal-head {
   display: flex;
   justify-content: space-between;
@@ -1554,6 +1603,29 @@ input[type="checkbox"] {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-1);
+}
+
+.pane-worktree-list {
+  max-height: 280px;
+  overflow: auto;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.pane-worktree-option {
+  text-align: left;
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2);
+}
+
+.pane-worktree-option small {
+  color: var(--text-dim);
+}
+
+.pane-worktree-option.active {
+  background: color-mix(in oklab, var(--accent) 24%, var(--surface-2));
+  color: var(--text-main);
 }
 
 input[type="range"] {
@@ -1852,7 +1924,8 @@ body,
 }
 
 .pane-header {
-  min-height: 12px;
+  min-height: 34px;
+  padding: 6px 8px;
   border-bottom: 0;
   background: color-mix(in oklab, var(--pane-elev-2) 92%, var(--canvas-base));
 }

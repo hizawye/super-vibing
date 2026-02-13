@@ -6,6 +6,7 @@ export interface PaneModel {
   id: string;
   title: string;
   cwd: string;
+  worktreePath: string;
   shell: string;
   status: PaneStatus;
   lastSubmittedCommand: string;

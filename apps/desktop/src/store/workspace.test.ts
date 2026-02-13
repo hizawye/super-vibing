@@ -107,6 +107,7 @@ function workspace(
           id: paneId,
           title: paneId,
           cwd,
+          worktreePath: cwd,
           shell: "/bin/bash",
           status: statuses[index] ?? "idle",
           lastSubmittedCommand: "",
@@ -208,6 +209,90 @@ describe("workspace store", () => {
     active = useWorkspaceStore.getState().workspaces[0];
     expect(active.paneCount).toBe(16);
     expect(active.paneOrder).toHaveLength(16);
+  });
+
+  it("spawns pane using pane-level worktree path when available", async () => {
+    const active = workspace("workspace-main", "Workspace 1", 1, ["idle"], "/repo");
+    active.panes["pane-1"] = {
+      ...active.panes["pane-1"],
+      worktreePath: "/repo/.worktrees/feature-pane",
+    };
+
+    resetStore({
+      workspaces: [active],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await useWorkspaceStore.getState().ensurePaneSpawned("workspace-main", "pane-1");
+
+    expect(tauriApi.spawnPane).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paneId: runtimePaneId("workspace-main", "pane-1"),
+        cwd: "/repo/.worktrees/feature-pane",
+      }),
+    );
+  });
+
+  it("creates a new pane bound to a specific worktree", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["running"], "/repo")],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    const paneId = await useWorkspaceStore
+      .getState()
+      .createPaneWithWorktree("workspace-main", "/repo/.worktrees/feature-new-pane");
+
+    const active = useWorkspaceStore.getState().workspaces[0];
+    expect(paneId).toBe("pane-2");
+    expect(active.paneCount).toBe(2);
+    expect(active.panes["pane-2"]?.worktreePath).toBe("/repo/.worktrees/feature-new-pane");
+    expect(tauriApi.spawnPane).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paneId: runtimePaneId("workspace-main", "pane-2"),
+        cwd: "/repo/.worktrees/feature-new-pane",
+      }),
+    );
+  });
+
+  it("updates idle pane worktree without restarting process", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["idle"], "/repo")],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await useWorkspaceStore
+      .getState()
+      .setPaneWorktree("workspace-main", "pane-1", "/repo/.worktrees/feature-idle");
+
+    const pane = useWorkspaceStore.getState().workspaces[0].panes["pane-1"];
+    expect(pane?.worktreePath).toBe("/repo/.worktrees/feature-idle");
+    expect(pane?.cwd).toBe("/repo/.worktrees/feature-idle");
+    expect(tauriApi.closePane).not.toHaveBeenCalled();
+  });
+
+  it("restarts running pane when changing worktree with restart option", async () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 1, ["running"], "/repo")],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    await useWorkspaceStore.getState().setPaneWorktree(
+      "workspace-main",
+      "pane-1",
+      "/repo/.worktrees/feature-reroot",
+      { restartRunning: true },
+    );
+
+    expect(tauriApi.closePane).toHaveBeenCalledWith(runtimePaneId("workspace-main", "pane-1"));
+    expect(tauriApi.spawnPane).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paneId: runtimePaneId("workspace-main", "pane-1"),
+        cwd: "/repo/.worktrees/feature-reroot",
+      }),
+    );
+    expect(useWorkspaceStore.getState().workspaces[0].panes["pane-1"]?.worktreePath)
+      .toBe("/repo/.worktrees/feature-reroot");
   });
 
   it("defaults missing persisted ui preferences to apple-dark theme settings", async () => {
