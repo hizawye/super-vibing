@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-02-13] - Discord Rich Presence Toggle
+### Added
+- Added a global Discord Rich Presence toggle in Settings.
+- Presence shows minimal status (“SuperVibing / Working”) with a baked-in App ID and optional env override.
+
 ## [2026-02-13] - One-Pane tmux Close Now Closes Workspace
 ### Changed
 - Updated tmux `Prefix + X` and `Prefix + &` behavior:

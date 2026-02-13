@@ -676,3 +676,10 @@ Added `apps/desktop/src/components/NewWorkspaceModal.test.tsx` to cover browse s
 **Rationale:** Delivers faster and safer directory selection without removing power-user manual entry.
 **Consequences:** Workspace modal now depends on the Tauri dialog plugin/capability at runtime; picker failures are handled in-UI and do not block manual creation.
 **Alternatives Considered:** Keeping input-only path entry and replacing the input with picker-only selection.
+
+## [2026-02-13] - Discord Rich Presence Toggle
+**Context:** Users want SuperVibing to appear as an active app in Discord (Spotify-style) without exposing workspace details or requiring assets.
+**Decision:** Add a global Rich Presence toggle in Settings and a backend command to enable/disable presence using `discord-rpc-client` with a baked-in app ID (`1471970767083405549`) and optional `SUPERVIBING_DISCORD_APP_ID` override.
+**Rationale:** Provides a simple opt-in activity signal while keeping presence minimal and privacy-friendly.
+**Consequences:** Presence works out-of-the-box for shipped builds; env var can still override for forks/branding; presence state is persisted in session settings.
+**Alternatives Considered:** Per-workspace visibility controls and richer workspace-aware status strings.

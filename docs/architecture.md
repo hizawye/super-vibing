@@ -66,6 +66,11 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 - Frontend remains source-of-truth for open workspace/pane runtime mapping and syncs snapshots through `sync_automation_workspaces`.
 - Backend dispatches UI-bound actions (`create_panes`, `import_worktree`) through Tauri events (`automation:request`) and waits for explicit frontend ack (`automation_report`) with timeout handling.
 
+## Discord presence
+- Frontend exposes a global Settings toggle to enable Rich Presence.
+- Backend uses Discord RPC with a baked-in App ID and optional `SUPERVIBING_DISCORD_APP_ID` override.
+- Presence is minimal (“SuperVibing / Working”) and does not include workspace details.
+
 ## Persistence
 - Tauri plugin-store (`@tauri-apps/plugin-store` + `tauri-plugin-store`) stores:
   - last session state,
