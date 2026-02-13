@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type {
   AutomationReportRequest,
   AutomationWorkspaceSnapshot,
@@ -116,6 +117,19 @@ export async function getRuntimeStats(): Promise<RuntimeStats> {
 
 export async function restartApp(): Promise<void> {
   await invoke("restart_app");
+}
+
+export async function pickDirectory(defaultPath?: string): Promise<string | null> {
+  const normalizedDefaultPath = defaultPath?.trim();
+  const selection = await openDialog({
+    directory: true,
+    multiple: false,
+    defaultPath: normalizedDefaultPath && normalizedDefaultPath.length > 0
+      ? normalizedDefaultPath
+      : undefined,
+  });
+
+  return typeof selection === "string" ? selection : null;
 }
 
 export async function syncAutomationWorkspaces(workspaces: AutomationWorkspaceSnapshot[]): Promise<void> {

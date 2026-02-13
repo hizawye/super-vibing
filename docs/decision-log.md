@@ -638,3 +638,15 @@ Added regression coverage in `apps/desktop/src/App.terminal-persistence.test.tsx
 **Rationale:** Aligns workspace navigation with tmux window switching muscle memory while preserving existing pane-prefixed behavior.
 **Consequences:** Prefix handling now affects both pane and workspace navigation; workspace cycling remains scoped to existing tmux-eligible terminal context.
 **Alternatives Considered:** Adding separate non-prefixed workspace hotkeys and clamping at first/last workspace instead of wrap-around.
+
+## [2026-02-13] - Native Directory Picker for New Workspace Modal
+**Context:** Creating a new workspace relied on manual path typing, which made directory selection slower and error-prone compared to native folder selection.
+**Decision:** Add a native folder picker path in the workspace creation modal while retaining manual input:
+- introduced `pickDirectory` in `apps/desktop/src/lib/tauri.ts` using `@tauri-apps/plugin-dialog` `open(...)` with `directory: true`,
+- added `Browse` control, pending state, and inline error feedback in `apps/desktop/src/components/NewWorkspaceModal.tsx`,
+- kept free-form directory input and existing `Reset`/submit behavior unchanged,
+- enabled dialog runtime support via `@tauri-apps/plugin-dialog`, `tauri-plugin-dialog`, builder registration in `apps/desktop/src-tauri/src/lib.rs`, and `dialog:default` capability permission.
+Added `apps/desktop/src/components/NewWorkspaceModal.test.tsx` to cover browse success, cancel, error, and submit flows.
+**Rationale:** Delivers faster and safer directory selection without removing power-user manual entry.
+**Consequences:** Workspace modal now depends on the Tauri dialog plugin/capability at runtime; picker failures are handled in-UI and do not block manual creation.
+**Alternatives Considered:** Keeping input-only path entry and replacing the input with picker-only selection.

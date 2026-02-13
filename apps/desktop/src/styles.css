@@ -1475,8 +1475,14 @@ input[type="checkbox"] {
 
 .directory-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: var(--space-1);
+}
+
+.workspace-modal-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.78rem;
 }
 
 .expand-toggle {

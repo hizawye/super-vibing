@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { pickDirectory } from "../lib/tauri";
 import type { AgentAllocation } from "../types";
 
 export interface WorkspaceCreationInput {
@@ -38,6 +39,8 @@ export function NewWorkspaceModal({
   const [paneCount, setPaneCount] = useState(1);
   const [allocation, setAllocation] = useState<AgentAllocation[]>(freshAgentDefaults);
   const [agentsOpen, setAgentsOpen] = useState(false);
+  const [pathPickerPending, setPathPickerPending] = useState(false);
+  const [pathPickerError, setPathPickerError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -49,12 +52,33 @@ export function NewWorkspaceModal({
     setPaneCount(1);
     setAllocation(freshAgentDefaults);
     setAgentsOpen(false);
+    setPathPickerPending(false);
+    setPathPickerError(null);
   }, [defaultDirectory, freshAgentDefaults, open]);
 
   const assignedAgents = useMemo(
     () => allocation.reduce((total, item) => total + (item.enabled ? item.count : 0), 0),
     [allocation],
   );
+
+  const handleBrowseDirectory = async () => {
+    setPathPickerError(null);
+    setPathPickerPending(true);
+    try {
+      const preferredPath = directory.trim() || defaultDirectory.trim();
+      const selected = await pickDirectory(preferredPath);
+      if (selected && selected.trim().length > 0) {
+        setDirectory(selected);
+      }
+    } catch (error) {
+      const message = error instanceof Error && error.message.trim().length > 0
+        ? error.message.trim()
+        : "Failed to open directory picker.";
+      setPathPickerError(message);
+    } finally {
+      setPathPickerPending(false);
+    }
+  };
 
   if (!open) {
     return null;
@@ -109,12 +133,35 @@ export function NewWorkspaceModal({
               className="text-input"
               placeholder="/path/to/project"
               value={directory}
-              onChange={(event) => setDirectory(event.currentTarget.value)}
+              onChange={(event) => {
+                setDirectory(event.currentTarget.value);
+                if (pathPickerError) {
+                  setPathPickerError(null);
+                }
+              }}
             />
-            <button type="button" className="subtle-btn" onClick={() => setDirectory(defaultDirectory)}>
+            <button
+              type="button"
+              className="subtle-btn"
+              disabled={pathPickerPending}
+              onClick={() => void handleBrowseDirectory()}
+            >
+              {pathPickerPending ? "Opening..." : "Browse"}
+            </button>
+            <button
+              type="button"
+              className="subtle-btn"
+              onClick={() => {
+                setDirectory(defaultDirectory);
+                if (pathPickerError) {
+                  setPathPickerError(null);
+                }
+              }}
+            >
               Reset
             </button>
           </div>
+          {pathPickerError ? <p className="workspace-modal-error" role="alert">{pathPickerError}</p> : null}
         </div>
 
         <div className="workspace-modal-section">

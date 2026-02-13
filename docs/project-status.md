@@ -1,6 +1,6 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (tmux-prefix-workspace-cycle)
+- Last Updated: 2026-02-13 (new-workspace-path-picker)
 
 - Current progress:
   - Added tmux-style workspace cycling in frontend shortcuts:
@@ -9,6 +9,16 @@
     - Settings shortcut list now documents `Prefix + ) / (` for workspace navigation.
   - Added regression coverage for workspace prefix navigation:
     - `apps/desktop/src/App.shortcuts.test.ts` now verifies next/previous workspace switching, boundary wrap-around, and one-workspace no-op behavior.
+  - Implemented native directory picker for new workspace creation:
+    - `apps/desktop/src/components/NewWorkspaceModal.tsx` now supports `Browse` + `Reset` while keeping manual path entry,
+    - picker errors are shown inline in the modal and do not block manual entry or submit flow,
+    - directory browse is wired through new helper `pickDirectory` in `apps/desktop/src/lib/tauri.ts`.
+  - Enabled Tauri dialog plugin for desktop runtime:
+    - frontend dependency added: `@tauri-apps/plugin-dialog`,
+    - Rust plugin registered in `apps/desktop/src-tauri/src/lib.rs`,
+    - capability permission added: `dialog:default` in `apps/desktop/src-tauri/capabilities/default.json`.
+  - Added regression coverage for path picker UX:
+    - new `apps/desktop/src/components/NewWorkspaceModal.test.tsx` covers browse success, cancel, error handling, and submit with picked path.
   - Hardened release/version pipeline guardrails:
     - `scripts/verify-release-version.sh` now validates parity across root/desktop/tauri manifests plus release tag,
     - failure output now reports all detected versions and a direct remediation command.
@@ -104,9 +114,12 @@
     - health response bind field now reflects runtime-selected bridge bind address.
 
 - Verification:
+  - `pnpm --filter @supervibing/desktop test -- run src/components/NewWorkspaceModal.test.tsx` ✅
+    - desktop tests passed (99/99 in current run scope).
   - `pnpm --filter @supervibing/desktop typecheck` ✅
   - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts` ✅
     - desktop tests passed (97/97 in run scope).
+  - `cargo check` (in `apps/desktop/src-tauri`) ✅
   - `pnpm run release:verify -- v0.1.11` ✅
   - `pnpm run release:tag -- 0.1.13` ✅ expected fail on dirty tree (guard behavior verified).
   - `pnpm run release:prepare -- 0.1.13` ✅
@@ -177,6 +190,10 @@
   - By design, app tmux shortcut handling now captures `Ctrl+B` in eligible terminal scope; shell tmux users may need a non-default prefix or app shortcut changes.
 
 - Next immediate starting point:
+  - Manual UX pass for the new workspace path picker:
+    - verify `Browse` opens native directory dialog and selected path is preserved on create,
+    - verify cancel path-picker keeps current typed path unchanged,
+    - verify picker error state clears after typing/reset.
   - Use guarded release checklist for future versions:
     - `pnpm run release:prepare -- X.Y.Z`,
     - commit version parity changes,
