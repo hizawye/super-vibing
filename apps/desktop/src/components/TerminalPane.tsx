@@ -10,6 +10,7 @@ interface TerminalPaneProps {
   workspaceId: string;
   paneId: string;
   isActive?: boolean;
+  shouldGrabFocus?: boolean;
   onFocusPane?: (paneId: string) => void;
 }
 
@@ -26,7 +27,13 @@ function isCopyShortcut(event: KeyboardEvent): boolean {
     && event.key.toLowerCase() === "c";
 }
 
-export function TerminalPane({ workspaceId, paneId, isActive = true, onFocusPane }: TerminalPaneProps) {
+export function TerminalPane({
+  workspaceId,
+  paneId,
+  isActive = true,
+  shouldGrabFocus = false,
+  onFocusPane,
+}: TerminalPaneProps) {
   const runtimePaneId = toRuntimePaneId(workspaceId, paneId);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -37,6 +44,7 @@ export function TerminalPane({ workspaceId, paneId, isActive = true, onFocusPane
   const resizeTimerRef = useRef<number | null>(null);
   const onFocusPaneRef = useRef(onFocusPane);
   const isPaneActiveRef = useRef(isActive);
+  const shouldGrabFocusRef = useRef(shouldGrabFocus);
   const refitAndResizeRef = useRef<(() => void) | null>(null);
 
   const ensurePaneSpawned = useWorkspaceStore((state) => state.ensurePaneSpawned);
@@ -59,6 +67,21 @@ export function TerminalPane({ workspaceId, paneId, isActive = true, onFocusPane
       refitAndResizeRef.current?.();
     }
   }, [isActive]);
+
+  useEffect(() => {
+    shouldGrabFocusRef.current = shouldGrabFocus;
+    if (!shouldGrabFocus) {
+      return;
+    }
+
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+
+    terminal.focus();
+    refitAndResizeRef.current?.();
+  }, [shouldGrabFocus]);
 
   useEffect(() => {
     void ensurePaneSpawned(workspaceId, paneId);
@@ -99,6 +122,9 @@ export function TerminalPane({ workspaceId, paneId, isActive = true, onFocusPane
       terminal.loadAddon(fitAddon);
       terminal.open(containerRef.current);
       fitAddon.fit();
+      if (shouldGrabFocusRef.current) {
+        terminal.focus();
+      }
 
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;

@@ -55,8 +55,8 @@ vi.mock("react-grid-layout", () => {
 });
 
 vi.mock("./TerminalPane", () => ({
-  TerminalPane: ({ paneId }: { paneId: string; onFocusPane?: (paneId: string) => void }) => (
-    <div data-testid={`terminal-${paneId}`} />
+  TerminalPane: ({ paneId, shouldGrabFocus }: { paneId: string; shouldGrabFocus?: boolean }) => (
+    <div data-testid={`terminal-${paneId}`} data-should-focus={String(Boolean(shouldGrabFocus))} />
   ),
 }));
 
@@ -80,6 +80,7 @@ describe("PaneGrid", () => {
         layoutMode="tiling"
         zoomedPaneId="pane-2"
         focusedPaneId="pane-2"
+        focusRequestPaneId="pane-2"
         onLayoutsChange={onLayoutsChange}
         onToggleZoom={onToggleZoom}
         onPaneFocus={vi.fn()}
@@ -107,6 +108,7 @@ describe("PaneGrid", () => {
         layoutMode="freeform"
         zoomedPaneId={null}
         focusedPaneId="pane-1"
+        focusRequestPaneId="pane-1"
         onLayoutsChange={onLayoutsChange}
         onToggleZoom={onToggleZoom}
         onPaneFocus={vi.fn()}
@@ -136,6 +138,7 @@ describe("PaneGrid", () => {
         layoutMode="tiling"
         zoomedPaneId={null}
         focusedPaneId="pane-1"
+        focusRequestPaneId="pane-1"
         onLayoutsChange={vi.fn()}
         onToggleZoom={vi.fn()}
         onPaneFocus={vi.fn()}
@@ -158,6 +161,7 @@ describe("PaneGrid", () => {
         layoutMode="tiling"
         zoomedPaneId={null}
         focusedPaneId="pane-1"
+        focusRequestPaneId={null}
         onLayoutsChange={vi.fn()}
         onToggleZoom={vi.fn()}
         onPaneFocus={vi.fn()}
@@ -167,5 +171,27 @@ describe("PaneGrid", () => {
 
     fireEvent.click(screen.getByTestId("pane-worktree-btn-pane-1"));
     expect(onRequestPaneWorktreeChange).toHaveBeenCalledWith("pane-1");
+  });
+
+  it("passes focus request to matching terminal pane", () => {
+    render(
+      <PaneGrid
+        workspaceId="workspace-1"
+        isActive
+        paneIds={["pane-1", "pane-2"]}
+        paneMetaById={paneMetaById}
+        layouts={layouts}
+        layoutMode="tiling"
+        zoomedPaneId={null}
+        focusedPaneId="pane-1"
+        focusRequestPaneId="pane-2"
+        onLayoutsChange={vi.fn()}
+        onToggleZoom={vi.fn()}
+        onPaneFocus={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("terminal-pane-1")).toHaveAttribute("data-should-focus", "false");
+    expect(screen.getByTestId("terminal-pane-2")).toHaveAttribute("data-should-focus", "true");
   });
 });

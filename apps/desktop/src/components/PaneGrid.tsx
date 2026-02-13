@@ -18,6 +18,7 @@ interface PaneGridProps {
   layoutMode: LayoutMode;
   zoomedPaneId: string | null;
   focusedPaneId: string | null;
+  focusRequestPaneId?: string | null;
   onLayoutsChange: (next: Layout[]) => void;
   onToggleZoom: (paneId: string) => void;
   onPaneFocus: (paneId: string) => void;
@@ -44,6 +45,7 @@ export function PaneGrid({
   layoutMode,
   zoomedPaneId,
   focusedPaneId,
+  focusRequestPaneId = null,
   onLayoutsChange,
   onToggleZoom,
   onPaneFocus,
@@ -119,6 +121,7 @@ export function PaneGrid({
             workspaceId={workspaceId}
             paneId={zoomedPaneId}
             isActive={isActive}
+            shouldGrabFocus={isActive && focusRequestPaneId === zoomedPaneId}
             onFocusPane={onPaneFocus}
           />
         </div>
@@ -174,7 +177,13 @@ export function PaneGrid({
                 </div>
               );
             })()}
-            <TerminalPane workspaceId={workspaceId} paneId={paneId} isActive={isActive} onFocusPane={onPaneFocus} />
+            <TerminalPane
+              workspaceId={workspaceId}
+              paneId={paneId}
+              isActive={isActive}
+              shouldGrabFocus={isActive && focusRequestPaneId === paneId}
+              onFocusPane={onPaneFocus}
+            />
           </div>
         ))}
       </FluidGridLayout>

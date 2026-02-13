@@ -165,6 +165,9 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
     focusedPaneByWorkspace: Object.fromEntries(
       workspaces.map((item) => [item.id, item.paneOrder[0] ?? null]),
     ),
+    focusRequestByWorkspace: Object.fromEntries(
+      workspaces.map((item) => [item.id, item.paneOrder[0] ?? null]),
+    ),
     terminalReadyPanesByWorkspace: {},
     workspaceBootSessions: {},
     snapshots: [],
@@ -582,6 +585,23 @@ describe("workspace store", () => {
     useWorkspaceStore.getState().moveFocusedPane("workspace-main", "up");
     state = useWorkspaceStore.getState();
     expect(state.focusedPaneByWorkspace["workspace-main"]).toBe("pane-2");
+  });
+
+  it("tracks focus request target when focused pane changes", () => {
+    resetStore({
+      workspaces: [workspace("workspace-main", "Workspace 1", 3, ["running", "running", "running"])],
+      activeWorkspaceId: "workspace-main",
+    });
+
+    useWorkspaceStore.getState().setFocusedPane("workspace-main", "pane-2");
+    let state = useWorkspaceStore.getState();
+    expect(state.focusedPaneByWorkspace["workspace-main"]).toBe("pane-2");
+    expect(state.focusRequestByWorkspace["workspace-main"]).toBe("pane-2");
+
+    useWorkspaceStore.getState().moveFocusedPane("workspace-main", "right");
+    state = useWorkspaceStore.getState();
+    expect(state.focusedPaneByWorkspace["workspace-main"]).toBe("pane-3");
+    expect(state.focusRequestByWorkspace["workspace-main"]).toBe("pane-3");
   });
 
   it("reassigns focus when focused pane is removed by pane-count decrease", async () => {

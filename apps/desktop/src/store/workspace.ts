@@ -109,6 +109,7 @@ interface WorkspaceStore {
   workspaces: WorkspaceRuntime[];
   activeWorkspaceId: string | null;
   focusedPaneByWorkspace: Record<string, string | null>;
+  focusRequestByWorkspace: Record<string, string | null>;
   terminalReadyPanesByWorkspace: Record<string, Record<string, true>>;
   workspaceBootSessions: Record<string, WorkspaceBootSession>;
   snapshots: Snapshot[];
@@ -151,6 +152,7 @@ interface WorkspaceStore {
   setActiveWorkspaceLayoutMode: (mode: LayoutMode) => void;
   setActiveWorkspaceLayouts: (layouts: Layout[]) => void;
   toggleActiveWorkspaceZoom: (paneId: string) => void;
+  requestPaneTerminalFocus: (workspaceId: string, paneId: string) => void;
   setFocusedPane: (workspaceId: string, paneId: string) => void;
   moveFocusedPane: (workspaceId: string, direction: PaneMoveDirection) => void;
   resizeFocusedPaneByDelta: (workspaceId: string, dx: number, dy: number) => void;
@@ -1035,6 +1037,12 @@ function buildFocusedPaneMap(workspaces: WorkspaceRuntime[]): Record<string, str
   );
 }
 
+function buildFocusRequestMap(workspaces: WorkspaceRuntime[]): Record<string, string | null> {
+  return Object.fromEntries(
+    workspaces.map((workspace) => [workspace.id, resolveFocusedPaneId(workspace)]),
+  );
+}
+
 function serializeSessionState(state: WorkspaceStore): SessionState {
   return {
     workspaces: state.workspaces,
@@ -1620,6 +1628,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   workspaces: [],
   activeWorkspaceId: null,
   focusedPaneByWorkspace: {},
+  focusRequestByWorkspace: {},
   terminalReadyPanesByWorkspace: {},
   workspaceBootSessions: {},
   snapshots: [],
@@ -1690,6 +1699,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         workspaces: session.workspaces,
         activeWorkspaceId: session.activeWorkspaceId,
         focusedPaneByWorkspace: buildFocusedPaneMap(session.workspaces),
+        focusRequestByWorkspace: buildFocusRequestMap(session.workspaces),
         terminalReadyPanesByWorkspace: {},
         snapshots: persisted.snapshots,
         blueprints: persisted.blueprints,
@@ -1752,6 +1762,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workspaces: [],
       activeWorkspaceId: null,
       focusedPaneByWorkspace: {},
+      focusRequestByWorkspace: {},
       terminalReadyPanesByWorkspace: {},
       workspaceBootSessions: {},
       snapshots: [],
@@ -1843,6 +1854,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         ...state.focusedPaneByWorkspace,
         [nextWorkspace.id]: resolveFocusedPaneId(nextWorkspace),
       },
+      focusRequestByWorkspace: {
+        ...state.focusRequestByWorkspace,
+        [nextWorkspace.id]: resolveFocusedPaneId(nextWorkspace),
+      },
     }));
     enqueueAutomationSync(get);
 
@@ -1893,10 +1908,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const focusedPaneByWorkspace = Object.fromEntries(
         Object.entries(current.focusedPaneByWorkspace).filter(([workspaceKey]) => workspaceKey !== workspaceId),
       );
+      const focusRequestByWorkspace = Object.fromEntries(
+        Object.entries(current.focusRequestByWorkspace).filter(([workspaceKey]) => workspaceKey !== workspaceId),
+      );
       if (nextActiveWorkspaceSnapshot && nextActiveId) {
         focusedPaneByWorkspace[nextActiveId] = resolveFocusedPaneId(
           nextActiveWorkspaceSnapshot,
           focusedPaneByWorkspace[nextActiveId],
+        );
+        focusRequestByWorkspace[nextActiveId] = resolveFocusedPaneId(
+          nextActiveWorkspaceSnapshot,
+          focusRequestByWorkspace[nextActiveId],
         );
       }
 
@@ -1904,6 +1926,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         workspaces: remaining,
         activeWorkspaceId: nextActiveId,
         focusedPaneByWorkspace,
+        focusRequestByWorkspace,
         terminalReadyPanesByWorkspace: Object.fromEntries(
           Object.entries(current.terminalReadyPanesByWorkspace).filter(([workspaceKey]) => workspaceKey !== workspaceId),
         ),
@@ -1937,6 +1960,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             ...current.focusedPaneByWorkspace,
             [workspaceId]: resolveFocusedPaneId(target, current.focusedPaneByWorkspace[workspaceId]),
           },
+          focusRequestByWorkspace: {
+            ...current.focusRequestByWorkspace,
+            [workspaceId]: resolveFocusedPaneId(target, current.focusRequestByWorkspace[workspaceId]),
+          },
         }));
       }
       clearSuspendTimer(workspaceId);
@@ -1957,6 +1984,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       focusedPaneByWorkspace: {
         ...current.focusedPaneByWorkspace,
         [workspaceId]: resolveFocusedPaneId(target, current.focusedPaneByWorkspace[workspaceId]),
+      },
+      focusRequestByWorkspace: {
+        ...current.focusRequestByWorkspace,
+        [workspaceId]: resolveFocusedPaneId(target, current.focusRequestByWorkspace[workspaceId]),
       },
     }));
 
@@ -2044,6 +2075,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           ...current.focusedPaneByWorkspace,
           [activeWorkspace.id]: focusedPaneId,
         },
+        focusRequestByWorkspace: {
+          ...current.focusRequestByWorkspace,
+          [activeWorkspace.id]: focusedPaneId,
+        },
         terminalReadyPanesByWorkspace: {
           ...current.terminalReadyPanesByWorkspace,
           [activeWorkspace.id]: Object.fromEntries(
@@ -2101,6 +2136,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set((current) => ({
       focusedPaneByWorkspace: {
         ...current.focusedPaneByWorkspace,
+        [workspaceId]: paneId,
+      },
+      focusRequestByWorkspace: {
+        ...current.focusRequestByWorkspace,
         [workspaceId]: paneId,
       },
       workspaces: withWorkspaceUpdated(current.workspaces, workspaceId, (target) => ({
@@ -2627,6 +2666,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         ...state.focusedPaneByWorkspace,
         [activeWorkspace.id]: paneId,
       },
+      focusRequestByWorkspace: {
+        ...state.focusRequestByWorkspace,
+        [activeWorkspace.id]: paneId,
+      },
       workspaces: withWorkspaceUpdated(state.workspaces, activeWorkspace.id, (workspace) => ({
         ...workspace,
         zoomedPaneId: workspace.zoomedPaneId === paneId ? null : paneId,
@@ -2634,6 +2677,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       })),
     }));
     enqueuePersist(get);
+  },
+
+  requestPaneTerminalFocus: (workspaceId: string, paneId: string) => {
+    const workspace = get().workspaces.find((item) => item.id === workspaceId);
+    if (!workspace || !workspace.paneOrder.includes(paneId)) {
+      return;
+    }
+
+    set((state) => ({
+      focusRequestByWorkspace: {
+        ...state.focusRequestByWorkspace,
+        [workspaceId]: paneId,
+      },
+    }));
   },
 
   setFocusedPane: (workspaceId: string, paneId: string) => {
@@ -2645,6 +2702,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set((state) => ({
       focusedPaneByWorkspace: {
         ...state.focusedPaneByWorkspace,
+        [workspaceId]: paneId,
+      },
+      focusRequestByWorkspace: {
+        ...state.focusRequestByWorkspace,
         [workspaceId]: paneId,
       },
     }));
@@ -2670,6 +2731,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set((current) => ({
       focusedPaneByWorkspace: {
         ...current.focusedPaneByWorkspace,
+        [workspaceId]: nextPaneId,
+      },
+      focusRequestByWorkspace: {
+        ...current.focusRequestByWorkspace,
         [workspaceId]: nextPaneId,
       },
     }));
@@ -2785,6 +2850,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workspaces: restored.workspaces,
       activeWorkspaceId: restored.activeWorkspaceId,
       focusedPaneByWorkspace: buildFocusedPaneMap(restored.workspaces),
+      focusRequestByWorkspace: buildFocusRequestMap(restored.workspaces),
       terminalReadyPanesByWorkspace: {},
       activeSection: restored.activeSection,
       echoInput: restored.echoInput,

@@ -85,6 +85,7 @@ interface ActiveWorkspaceView {
   layoutMode: LayoutMode;
   zoomedPaneId: string | null;
   focusedPaneId: string | null;
+  focusRequestPaneId: string | null;
 }
 
 interface TerminalWorkspaceView extends ActiveWorkspaceView {}
@@ -144,6 +145,7 @@ interface TmuxShortcutContext {
   paneCreatorOpen: boolean;
   openPaneCreator: () => void;
   setActiveWorkspace: (workspaceId: string) => Promise<void> | void;
+  closeWorkspace: (workspaceId: string) => Promise<void> | void;
   setActiveWorkspacePaneCount: (count: number) => void;
   setFocusedPane: (workspaceId: string, paneId: string) => void;
   moveFocusedPane: (workspaceId: string, direction: "left" | "right" | "up" | "down") => void;
@@ -283,6 +285,10 @@ export function handleTmuxPrefixedKey(event: KeyboardEvent, context: TmuxShortcu
   }
 
   if (keyLower === "x" || key === "&") {
+    if (workspace.paneCount <= 1) {
+      void context.closeWorkspace(workspace.id);
+      return true;
+    }
     context.setActiveWorkspacePaneCount(workspace.paneCount - 1);
     return true;
   }
@@ -857,10 +863,11 @@ function App() {
     [workspaceNavKeys],
   );
 
-  const { workspaceRuntimes, focusedPaneByWorkspace } = useWorkspaceStore(
+  const { workspaceRuntimes, focusedPaneByWorkspace, focusRequestByWorkspace } = useWorkspaceStore(
     useShallow((state) => ({
       workspaceRuntimes: state.workspaces,
       focusedPaneByWorkspace: state.focusedPaneByWorkspace,
+      focusRequestByWorkspace: state.focusRequestByWorkspace,
     })),
   );
   const terminalWorkspaces = useMemo<TerminalWorkspaceView[]>(
@@ -890,8 +897,14 @@ function App() {
           ?? workspace.zoomedPaneId
           ?? workspace.paneOrder[0]
           ?? null,
+        focusRequestPaneId:
+          focusRequestByWorkspace[workspace.id]
+          ?? focusedPaneByWorkspace[workspace.id]
+          ?? workspace.zoomedPaneId
+          ?? workspace.paneOrder[0]
+          ?? null,
       })),
-    [focusedPaneByWorkspace, workspaceRuntimes],
+    [focusRequestByWorkspace, focusedPaneByWorkspace, workspaceRuntimes],
   );
   const activeWorkspace = useMemo<ActiveWorkspaceView | null>(
     () => terminalWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
@@ -1009,6 +1022,7 @@ function App() {
           paneCreatorOpen,
           openPaneCreator: () => openPaneCreator(),
           setActiveWorkspace,
+          closeWorkspace,
           setActiveWorkspacePaneCount: (count) => {
             void setActiveWorkspacePaneCount(count);
           },
@@ -1364,6 +1378,7 @@ function App() {
                       layoutMode={workspace.layoutMode}
                       zoomedPaneId={workspace.zoomedPaneId}
                       focusedPaneId={workspace.focusedPaneId}
+                      focusRequestPaneId={workspace.focusRequestPaneId}
                       onLayoutsChange={(next) => {
                         if (workspace.id === activeWorkspaceId) {
                           setActiveWorkspaceLayouts(next);

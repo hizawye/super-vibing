@@ -28,6 +28,7 @@ let terminalMock: {
   writeln: ReturnType<typeof vi.fn>;
   getSelection: ReturnType<typeof vi.fn>;
   attachCustomKeyEventHandler: ReturnType<typeof vi.fn>;
+  focus: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 };
 
@@ -67,6 +68,7 @@ describe("TerminalPane", () => {
       attachCustomKeyEventHandler: vi.fn((handler: (event: KeyboardEvent) => boolean) => {
         keyHandler = handler;
       }),
+      focus: vi.fn(),
       dispose: vi.fn(),
     };
 
@@ -165,6 +167,24 @@ describe("TerminalPane", () => {
 
     await waitFor(() => {
       expect(vi.mocked(tauriApi.resizePane).mock.calls.length).toBeGreaterThan(baselineCalls);
+    });
+  });
+
+  it("focuses xterm when shouldGrabFocus becomes true", async () => {
+    const { rerender } = render(
+      <TerminalPane workspaceId="workspace-1" paneId="pane-1" isActive shouldGrabFocus={false} />,
+    );
+
+    await waitFor(() => {
+      expect(terminalMock.open).toHaveBeenCalled();
+    });
+
+    rerender(
+      <TerminalPane workspaceId="workspace-1" paneId="pane-1" isActive shouldGrabFocus />,
+    );
+
+    await waitFor(() => {
+      expect(terminalMock.focus).toHaveBeenCalled();
     });
   });
 });

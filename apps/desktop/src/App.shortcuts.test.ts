@@ -50,12 +50,14 @@ function baseTmuxContext() {
       layoutMode: "freeform" as const,
       zoomedPaneId: null,
       focusedPaneId: "pane-2",
+      focusRequestPaneId: "pane-2",
     },
     paletteOpen: false,
     newWorkspaceOpen: false,
     paneCreatorOpen: false,
     openPaneCreator: vi.fn(),
     setActiveWorkspace: vi.fn(),
+    closeWorkspace: vi.fn(),
     setActiveWorkspacePaneCount: vi.fn(),
     setFocusedPane: vi.fn(),
     moveFocusedPane: vi.fn(),
@@ -232,6 +234,30 @@ describe("createTmuxPrefixController", () => {
     controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     controller.handleKeydown(createEvent({ key: "&" }), context);
     expect(context.setActiveWorkspacePaneCount).toHaveBeenNthCalledWith(2, 2);
+  });
+
+  it("closes workspace on prefix+x when only one pane remains", () => {
+    const context = baseTmuxContext();
+    context.activeWorkspace.paneCount = 1;
+    const controller = createTmuxPrefixController();
+
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "x" }), context);
+
+    expect(context.closeWorkspace).toHaveBeenCalledWith("workspace-main");
+    expect(context.setActiveWorkspacePaneCount).not.toHaveBeenCalled();
+  });
+
+  it("closes workspace on prefix+& when only one pane remains", () => {
+    const context = baseTmuxContext();
+    context.activeWorkspace.paneCount = 1;
+    const controller = createTmuxPrefixController();
+
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "&" }), context);
+
+    expect(context.closeWorkspace).toHaveBeenCalledWith("workspace-main");
+    expect(context.setActiveWorkspacePaneCount).not.toHaveBeenCalled();
   });
 
   it("opens worktree pane creator with prefix+w", () => {

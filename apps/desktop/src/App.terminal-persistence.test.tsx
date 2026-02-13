@@ -46,6 +46,9 @@ const { paneMountSpy, paneUnmountSpy, mockStoreState, useWorkspaceStoreMock } = 
     focusedPaneByWorkspace: {
       "workspace-1": "pane-1",
     },
+    focusRequestByWorkspace: {
+      "workspace-1": "pane-1",
+    },
     workspaceBootSessions: {},
     worktreeManager: {
       repoRoot: null,
@@ -75,6 +78,7 @@ const { paneMountSpy, paneUnmountSpy, mockStoreState, useWorkspaceStoreMock } = 
     setActiveWorkspaceLayoutMode: vi.fn(),
     setActiveWorkspaceLayouts: vi.fn(),
     toggleActiveWorkspaceZoom: vi.fn(),
+    requestPaneTerminalFocus: vi.fn(),
     setFocusedPane: vi.fn(),
     moveFocusedPane: vi.fn(),
     resizeFocusedPaneByDelta: vi.fn(),
