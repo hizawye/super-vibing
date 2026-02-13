@@ -4,7 +4,7 @@
 - Backend runtime:
   - `portable-pty` for native PTY instances
   - `tokio` runtime primitives
-  - `tauri-plugin-store` and `tauri-plugin-opener`
+  - `tauri-plugin-store`, `tauri-plugin-opener`, `tauri-plugin-dialog`, `tauri-plugin-updater`
 - Frontend UI:
   - React + Vite
   - Tailwind CSS

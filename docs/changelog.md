@@ -1,5 +1,23 @@
 # Changelog
 
+## [2026-02-13] - Pane-Scoped Worktrees + tmux `Prefix + W` Creator
+### Added
+- Added pane-level worktree binding (`PaneModel.worktreePath`) with store actions for:
+  - creating a new pane bound to a selected worktree,
+  - reassigning an existing pane to another worktree.
+- Added floating `NewPaneModal` flow for:
+  - selecting from discovered worktrees,
+  - creating a new branch worktree inline, then creating/rebinding pane.
+- Added pane header worktree metadata + contextual `Worktree` action in `PaneGrid`.
+
+### Changed
+- Pane spawn cwd now resolves from pane-level worktree path (fallback to workspace path for legacy/session defaults).
+- Added tmux mapping `Ctrl+B` then `W` to open pane worktree creator.
+- Updated global `Escape` overlay handling to include pane creator close path.
+
+### Fixed
+- Added frontend package dependency `@tauri-apps/plugin-dialog` to match existing dialog helper imports and unblock typecheck/test resolution.
+
 ## [2026-02-13] - tmux App Prefix Rebound to Ctrl+B
 ### Changed
 - Rebound SuperVibing pane keyboard prefix from `Ctrl+Shift+B` back to `Ctrl+B`.

@@ -1,8 +1,27 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (new-workspace-path-picker)
+- Last Updated: 2026-02-13 (pane-worktree-creator)
 
 - Current progress:
+  - Added per-pane worktree bindings in workspace runtime state:
+    - `apps/desktop/src/types.ts` now includes `PaneModel.worktreePath`,
+    - `apps/desktop/src/store/workspace.ts` now spawns panes with pane-level cwd/worktree instead of always using workspace-level path,
+    - session sanitize/migration paths now backfill pane worktree paths for older persisted data.
+  - Added pane-level worktree lifecycle actions in store:
+    - `createPaneWithWorktree(workspaceId, worktreePath)` creates and spawns a new pane bound to a selected worktree,
+    - `setPaneWorktree(workspaceId, paneId, worktreePath, { restartRunning })` updates pane binding and optionally restarts running panes safely,
+    - `createWorktreeForWorkspace(workspaceId, { mode, branch, baseRef })` enables modal-driven worktree creation without forcing workspace import.
+  - Added floating pane worktree creator UX:
+    - new `apps/desktop/src/components/NewPaneModal.tsx` with `existing worktree` and `create branch worktree` flows,
+    - `apps/desktop/src/App.tsx` wires modal from terminal toolbar and pane header actions.
+  - Added tmux mapping for worktree pane flow:
+    - `Ctrl+B` then `W` now opens pane creator modal,
+    - app `Escape` overlay handling now closes pane creator between new-workspace modal and sidebar paths.
+  - Added pane header worktree affordances:
+    - `apps/desktop/src/components/PaneGrid.tsx` now renders pane title + worktree label and contextual `Worktree` action,
+    - per-pane worktree reassignment flow supports confirm-and-restart for running panes.
+  - Added frontend dependency parity needed by current tauri bridge helpers:
+    - `@tauri-apps/plugin-dialog` added to `apps/desktop/package.json` (matches existing `src/lib/tauri.ts` import usage).
   - Added tmux-style workspace cycling in frontend shortcuts:
     - `apps/desktop/src/App.tsx` now maps `Ctrl+B` prefix + `)`/`(` to next/previous workspace activation with wrap-around order.
     - tmux shortcut context now includes workspace order + active workspace setter for prefix-driven workspace switching.
@@ -114,6 +133,9 @@
     - health response bind field now reflects runtime-selected bridge bind address.
 
 - Verification:
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/components/PaneGrid.test.tsx src/components/NewPaneModal.test.tsx src/store/workspace.test.ts src/components/CommandPalette.test.tsx src/App.terminal-persistence.test.tsx` ✅
+    - vitest passed (18/18 files, 110/110 tests in resolved run scope).
   - `pnpm --filter @supervibing/desktop test -- run src/components/NewWorkspaceModal.test.tsx` ✅
     - desktop tests passed (99/99 in current run scope).
   - `pnpm --filter @supervibing/desktop typecheck` ✅
@@ -190,6 +212,10 @@
   - By design, app tmux shortcut handling now captures `Ctrl+B` in eligible terminal scope; shell tmux users may need a non-default prefix or app shortcut changes.
 
 - Next immediate starting point:
+  - Manual UX pass for pane worktree creation/reassignment:
+    - verify `Ctrl+B` then `W` opens floating pane creator from terminal scope,
+    - verify new pane creation against both existing and newly created worktrees,
+    - verify running-pane worktree reassignment confirmation and restart behavior.
   - Manual UX pass for the new workspace path picker:
     - verify `Browse` opens native directory dialog and selected path is preserved on create,
     - verify cancel path-picker keeps current typed path unchanged,

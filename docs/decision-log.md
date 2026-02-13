@@ -7,6 +7,18 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-13] - Per-Pane Worktree Binding + `Ctrl+B W` Pane Creator
+**Context:** Worktree support was workspace-scoped only; users could not run different worktrees inside separate panes of the same workspace.
+**Decision:** Introduce pane-level worktree ownership and a shortcut-first creation flow:
+- persist `PaneModel.worktreePath`,
+- spawn each pane from its own worktree path,
+- add `Ctrl+B` then `W` to open a floating pane creator modal,
+- support both existing-worktree selection and inline `new branch -> new worktree` creation,
+- allow post-create pane reassignment with confirm-and-restart for running panes.
+**Rationale:** Keeps terminal orchestration workspace-centric while enabling branch/worktree parallelism without tab sprawl.
+**Consequences:** Store/session schema and pane header UI became richer; pane lifecycle now includes optional close+respawn when worktree changes on active running panes.
+**Alternatives Considered:** Keep worktree binding at workspace level only, and rely on separate workspace tabs for every branch/worktree context.
+
 ## [2026-02-13] - Immutable Recovery via `v0.1.13` and Guarded Release Tagging
 **Context:** `Release` workflow run for tag `v0.1.12` failed because repository manifests were still at `0.1.11`, proving tags can still be pushed ahead of parity prep.
 **Decision:** Keep tag history immutable and recover with a new version (`v0.1.13`), while adding a local guard command:

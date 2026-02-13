@@ -20,6 +20,7 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 
 ## State model
 - Zustand store (`src/store/workspace.ts`) stores pane count/order/layouts, pane metadata, workspace tabs, and UI modes.
+- Pane runtime metadata is pane-scoped for cwd/worktree (`PaneModel.worktreePath`), allowing different panes in one workspace to run against different worktrees.
 - Global agent startup defaults (`agentStartupDefaults`) are persisted in session state and used for new workspace/import allocation defaults.
 - Store actions coordinate spawn/close/broadcast/worktree and session persistence.
 - React 19 selector stability rule:
