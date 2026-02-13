@@ -1,5 +1,22 @@
 # Changelog
 
+## [2026-02-13] - One-Pane tmux Close Now Closes Workspace
+### Changed
+- Updated tmux `Prefix + X` and `Prefix + &` behavior:
+  - if active workspace has more than one pane, behavior stays the same (decrement pane count),
+  - if active workspace has exactly one pane, the active workspace close path is triggered.
+
+### Added
+- Added shortcut test coverage for one-pane close behavior on both `x` and `&`.
+
+## [2026-02-13] - tmux Pane Focus Now Follows Cursor
+### Fixed
+- Fixed pane navigation focus drift where tmux-style pane movement changed highlighted pane but left terminal cursor/input focus behind.
+- Added a store-level focus request signal and terminal focus handoff so `Ctrl+B` pane movement keeps active cursor aligned with focused pane.
+
+### Added
+- Added regression coverage for pane focus-follow behavior across workspace store, pane grid routing, and terminal focus side effects.
+
 ## [2026-02-13] - Pane-Scoped Worktrees + tmux `Prefix + W` Creator
 ### Added
 - Added pane-level worktree binding (`PaneModel.worktreePath`) with store actions for:

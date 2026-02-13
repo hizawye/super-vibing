@@ -1,8 +1,22 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (pane-worktree-creator)
+- Last Updated: 2026-02-13 (tmux-one-pane-close-workspace)
 
 - Current progress:
+  - Updated tmux close-key behavior for one-pane workspaces:
+    - `apps/desktop/src/App.tsx` now routes `Ctrl+B` then `x`/`&` to `closeWorkspace(workspaceId)` when active workspace has exactly one pane.
+    - multi-pane behavior remains unchanged (`paneCount - 1` via `setActiveWorkspacePaneCount`).
+    - last-workspace safety remains store-owned (`closeWorkspace` no-ops when only one workspace exists).
+  - Added shortcut regressions for one-pane close flow:
+    - `apps/desktop/src/App.shortcuts.test.ts` now verifies `prefix+x` and `prefix+&` close workspace at one pane and do not call pane-count decrement.
+  - Fixed tmux pane focus/cursor sync in terminal UI:
+    - added runtime `focusRequestByWorkspace` signal in `apps/desktop/src/store/workspace.ts`,
+    - threaded focus request through `apps/desktop/src/App.tsx` and `apps/desktop/src/components/PaneGrid.tsx`,
+    - `apps/desktop/src/components/TerminalPane.tsx` now calls `terminal.focus()` when pane focus is moved by tmux shortcuts.
+  - Added regression coverage for focus-follow behavior:
+    - `apps/desktop/src/components/PaneGrid.test.tsx` verifies only requested pane gets focus request,
+    - `apps/desktop/src/components/TerminalPane.test.tsx` verifies `terminal.focus()` runs on focus request,
+    - `apps/desktop/src/store/workspace.test.ts` verifies focus request state updates with focused pane actions.
   - Added per-pane worktree bindings in workspace runtime state:
     - `apps/desktop/src/types.ts` now includes `PaneModel.worktreePath`,
     - `apps/desktop/src/store/workspace.ts` now spawns panes with pane-level cwd/worktree instead of always using workspace-level path,
@@ -133,6 +147,12 @@
     - health response bind field now reflects runtime-selected bridge bind address.
 
 - Verification:
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts` ✅
+    - desktop tests passed (18/18 files, 115/115 tests in run scope).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/store/workspace.test.ts src/components/PaneGrid.test.tsx src/components/TerminalPane.test.tsx src/App.shortcuts.test.ts src/App.terminal-persistence.test.tsx` ✅
+    - desktop tests passed (18/18 files, 113/113 tests in run scope).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
   - `pnpm --filter @supervibing/desktop typecheck` ✅
   - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/components/PaneGrid.test.tsx src/components/NewPaneModal.test.tsx src/store/workspace.test.ts src/components/CommandPalette.test.tsx src/App.terminal-persistence.test.tsx` ✅
     - vitest passed (18/18 files, 110/110 tests in resolved run scope).

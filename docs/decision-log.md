@@ -7,6 +7,20 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-13] - Explicit Focus Request Channel for tmux Pane Navigation
+**Context:** tmux-style pane movement (`Ctrl+B` then navigation keys) updated pane selection state, but terminal input focus could remain in the previously focused pane.
+**Decision:** Add an explicit per-workspace focus request signal (`focusRequestByWorkspace`) in store state and consume it in `TerminalPane` to call `terminal.focus()` when focus shifts.
+**Rationale:** Decouples UI selection state from terminal DOM/input focus and guarantees cursor follows pane focus during keyboard navigation.
+**Consequences:** Focus updates now flow through App -> PaneGrid -> TerminalPane props, and tests cover store, grid routing, and terminal focus side-effects.
+**Alternatives Considered:** Deriving focus side-effects solely from selection comparison inside pane components without an explicit request channel.
+
+## [2026-02-13] - tmux Close-Key One-Pane Workspace Semantics
+**Context:** `Ctrl+B` then `x`/`&` only decremented pane count; at one pane it became a no-op due pane-count clamp, which felt inconsistent for close intent.
+**Decision:** Keep multi-pane close behavior as pane decrement, but when active workspace has one pane route `x`/`&` to `closeWorkspace(workspaceId)`.
+**Rationale:** Preserves tmux prefix muscle memory while giving one-pane close a meaningful action.
+**Consequences:** Shortcut handling now depends on workspace pane cardinality; final-workspace protection still relies on store guard (`closeWorkspace` no-op when only one workspace exists).
+**Alternatives Considered:** Making `Ctrl+B` prefix key alone close one-pane workspaces, and allowing zero-workspace closure.
+
 ## [2026-02-13] - Per-Pane Worktree Binding + `Ctrl+B W` Pane Creator
 **Context:** Worktree support was workspace-scoped only; users could not run different worktrees inside separate panes of the same workspace.
 **Decision:** Introduce pane-level worktree ownership and a shortcut-first creation flow:

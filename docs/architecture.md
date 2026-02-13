@@ -35,8 +35,10 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
   - global app shortcuts remain available (`Ctrl/Cmd+N`, `Ctrl/Cmd+P`, `Escape`),
   - tmux-style pane shortcuts are handled by a frontend prefix controller (`Ctrl+B`, 1000ms armed timeout),
   - inside xterm pane scope, app prefix handling remains active so pane commands are consistent with terminal-focus and non-terminal-focus flows,
+  - pane focus movement uses an explicit store signal (`focusRequestByWorkspace`) so terminal input focus (`terminal.focus()`) follows tmux focus changes,
   - shortcut eligibility explicitly treats xterm pane scope as terminal-first,
-  - prefix mappings route to pane count/focus/zoom/resize actions, with resize gated to `freeform` layout mode.
+  - prefix mappings route to pane count/focus/zoom/resize actions, with resize gated to `freeform` layout mode,
+  - `Prefix + X/&` decrements pane count for multi-pane workspaces and closes the workspace when it has one pane remaining (store still guards against closing the final workspace).
 
 ## Git manager
 - `resolve_repo_context` resolves canonical repo/worktree context for a cwd and gracefully reports non-git paths.
