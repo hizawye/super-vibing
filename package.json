@@ -11,6 +11,7 @@
     "tauri:debug": "RUST_LOG=tauri=debug,tauri_runtime=debug,tauri_plugin=debug RUST_BACKTRACE=1 pnpm --filter @supervibing/desktop tauri dev",
     "tauri:build": "pnpm --filter @supervibing/desktop tauri build",
     "release:prepare": "bash ./scripts/prepare-release-version.sh",
+    "release:tag": "bash ./scripts/create-release-tag.sh",
     "release:verify": "bash ./scripts/verify-release-version.sh"
   }
 }

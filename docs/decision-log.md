@@ -7,6 +7,16 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-13] - Immutable Recovery via `v0.1.13` and Guarded Release Tagging
+**Context:** `Release` workflow run for tag `v0.1.12` failed because repository manifests were still at `0.1.11`, proving tags can still be pushed ahead of parity prep.
+**Decision:** Keep tag history immutable and recover with a new version (`v0.1.13`), while adding a local guard command:
+- add `scripts/create-release-tag.sh` + pnpm `release:tag`,
+- make tag creation fail unless working tree is clean and release parity is already committed,
+- keep CI parity gate unchanged as final enforcement.
+**Rationale:** Avoids rewriting failed tags and reduces repeat release failures caused by premature tag pushes.
+**Consequences:** Release operators must commit version prep before creating tags; stale-tag pushes are blocked earlier in local workflow.
+**Alternatives Considered:** Repointing/deleting `v0.1.12`, or relaxing CI parity checks.
+
 ## [2026-02-12] - Multi-Manifest Release Parity Gate + pnpm Release Preparation
 **Context:** `Release` for tag `v0.1.11` failed in CI because tag/app versions drifted (`v0.1.11` vs manifest `0.1.10`), and parity checks only read `tauri.conf.json`.
 **Decision:** Harden release parity and prep flow:

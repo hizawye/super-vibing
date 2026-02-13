@@ -1,5 +1,16 @@
 # Changelog
 
+## [2026-02-13] - Release Tag Guard and v0.1.13 Recovery Path
+### Added
+- Added `scripts/create-release-tag.sh` and root pnpm command `release:tag` to enforce clean-state release tagging.
+
+### Changed
+- Release flow now codifies a guarded sequence:
+  - `pnpm run release:prepare -- X.Y.Z`,
+  - commit version parity changes,
+  - `pnpm run release:tag -- X.Y.Z`,
+  - push tag to trigger release workflow.
+
 ## [2026-02-13] - Automation Bridge Dynamic Bind and CLI Port Auto-Discovery
 ### Added
 - Added backend env override `SUPERVIBING_AUTOMATION_BIND` for preferred automation bridge bind (`host:port`).

@@ -94,4 +94,5 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 - Release parity gate validates all version sources (`package.json`, `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`) and fails fast on drift.
 - Release preparation is codified through pnpm scripts:
   - `pnpm run release:prepare -- X.Y.Z` to atomically bump all version sources,
+  - `pnpm run release:tag -- X.Y.Z` to block tag creation unless repo state is parity-clean and ready,
   - `pnpm run release:verify -- vX.Y.Z` to validate parity before tagging/push.
