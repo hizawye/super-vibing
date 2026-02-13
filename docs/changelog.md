@@ -4,6 +4,8 @@
 ### Added
 - Added a global Discord Rich Presence toggle in Settings.
 - Presence shows minimal status (“SuperVibing / Working”) with a baked-in App ID and optional env override.
+### Fixed
+- Normalized presence state on snapshot restore to avoid typecheck issues.
 
 ## [2026-02-13] - One-Pane tmux Close Now Closes Workspace
 ### Changed

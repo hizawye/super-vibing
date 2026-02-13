@@ -1,12 +1,14 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (discord-rich-presence)
+- Last Updated: 2026-02-13 (discord-presence-fix)
 
 - Current progress:
   - Added Discord Rich Presence toggle (minimal “SuperVibing / Working” status):
     - frontend Settings adds global toggle persisted in session state (`discordPresenceEnabled`),
     - backend exposes `set_discord_presence_enabled` command and stores a Discord RPC client when enabled,
     - presence uses baked-in app ID `1471970767083405549` with optional `SUPERVIBING_DISCORD_APP_ID` override.
+  - Fixed discord presence snapshot restore typing:
+    - ensure snapshot restore re-sanitizes `discordPresenceEnabled` before applying presence.
   - Updated tmux close-key behavior for one-pane workspaces:
     - `apps/desktop/src/App.tsx` now routes `Ctrl+B` then `x`/`&` to `closeWorkspace(workspaceId)` when active workspace has exactly one pane.
     - multi-pane behavior remains unchanged (`paneCount - 1` via `setActiveWorkspacePaneCount`).
