@@ -1,6 +1,6 @@
 # Project Status
 
-- Last Updated: 2026-02-12 (release-parity-hardening-and-v0.1.11-recovery)
+- Last Updated: 2026-02-13 (terminal-settings-history-persistence)
 
 - Current progress:
   - Hardened release/version pipeline guardrails:
@@ -42,6 +42,10 @@
     - `apps/desktop/src/App.tsx` now keeps all workspace `PaneGrid` instances mounted in Terminal section,
     - inactive workspace grids are hidden (not unmounted), preserving xterm buffer state,
     - `apps/desktop/src/styles.css` adds stacked grid panel visibility classes.
+  - Fixed terminal history clearing when leaving Terminal section (e.g., Settings) and coming back:
+    - `apps/desktop/src/App.tsx` now keeps terminal surface mounted whenever workspaces exist and toggles visibility via `hidden/aria-hidden`,
+    - `PaneGrid` `isActive` now depends on both active section and active workspace (`isTerminalSection && workspace.id === activeWorkspaceId`) so refit/resize behavior remains correct on return,
+    - added regression coverage in `apps/desktop/src/App.terminal-persistence.test.tsx` to prevent unmount regressions across `Terminal -> Settings -> Terminal`.
   - Fixed terminal copy + initial glyph spacing issues in frontend:
     - `apps/desktop/src/components/TerminalPane.tsx` now handles `Ctrl+Shift+C` via xterm custom key handler and copies current selection to clipboard,
     - empty-selection copy chord is consumed as no-op (no terminal input),
@@ -124,6 +128,10 @@
   - `cargo test -q` (in `apps/desktop/src-tauri`) ✅
     - Rust tests passed (16/16).
   - `cargo check -q` (in `apps/desktop/src-tauri`) ✅
+  - `pnpm install --frozen-lockfile` ✅
+  - `pnpm --filter @supervibing/desktop test -- run src/App.terminal-persistence.test.tsx src/components/TerminalPane.test.tsx` ✅
+    - desktop tests passed (93/93 overall run scope, including new persistence regression).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
 
 - Blockers/Bugs:
   - `v0.1.11` release tag was previously published with stale `0.1.10` metadata and failed release parity; recovery uses force-repointed tag strategy.
@@ -135,6 +143,8 @@
   - Live skill smoke tests for `workspaces`/job execution are blocked until SuperVibing desktop is running and serving the automation port.
 
 - Next immediate starting point:
+  - Manual UX validation for the reported flow in desktop app:
+    - run `Terminal -> Settings -> Terminal` and confirm scrollback/visible history remains intact.
   - Push release parity/tooling changes and force-update annotated tag `v0.1.11`, then confirm `Release` workflow success on corrected tag.
   - After release success, formalize release checklist around:
     - `pnpm run release:prepare -- X.Y.Z`,
