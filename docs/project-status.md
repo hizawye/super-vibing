@@ -1,6 +1,6 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (automation-bridge-port-fallback-and-terminal-settings-persistence)
+- Last Updated: 2026-02-13 (release-v0.1.13-recovery-and-guarded-tagging)
 
 - Current progress:
   - Hardened release/version pipeline guardrails:
@@ -9,9 +9,13 @@
   - Added automated release-prep helper:
     - new `scripts/prepare-release-version.sh`,
     - root pnpm commands `release:prepare` and `release:verify` for local/CI parity consistency.
+  - Added guarded release-tag helper:
+    - new `scripts/create-release-tag.sh`,
+    - root pnpm command `release:tag` blocks tag creation unless the repo is clean and parity-ready.
   - Updated release workflow parity step in `.github/workflows/release.yml` to invoke `pnpm run release:verify -- <tag>`.
   - Applied release recovery metadata alignment:
-    - `package.json`, `apps/desktop/package.json`, and `apps/desktop/src-tauri/tauri.conf.json` are now set to version `0.1.11`.
+    - `package.json`, `apps/desktop/package.json`, and `apps/desktop/src-tauri/tauri.conf.json` are now set to version `0.1.13`.
+    - release tag `v0.1.13` was published and GitHub `Release` workflow run `21970252972` completed successfully.
   - Worktree manager system remains in place across backend/store/UI with enriched worktree metadata and safe lifecycle actions.
   - Added local automation bridge in `apps/desktop/src-tauri/src/lib.rs`:
     - HTTP listener uses preferred bind from `SUPERVIBING_AUTOMATION_BIND` (default `127.0.0.1:47631`) with fallback scan `127.0.0.1:47631..47641`,
@@ -94,6 +98,14 @@
     - health response bind field now reflects runtime-selected bridge bind address.
 
 - Verification:
+  - `pnpm run release:verify -- v0.1.11` ✅
+  - `pnpm run release:tag -- 0.1.13` ✅ expected fail on dirty tree (guard behavior verified).
+  - `pnpm run release:prepare -- 0.1.13` ✅
+  - `pnpm run release:tag -- 0.1.13` ✅ created local annotated tag `v0.1.13` on release commit.
+  - `git push origin refs/heads/main` ✅
+  - `git push origin refs/tags/v0.1.13` ✅
+  - `gh run view 21970252972 --json status,conclusion,url` ✅
+    - status `completed`, conclusion `success`, URL `https://github.com/hizawye/super-vibing/actions/runs/21970252972`.
   - `pnpm run release:verify -- v0.1.10` ✅ (before version bump, parity passed at `0.1.10`)
   - `pnpm run release:verify -- v0.1.11` ✅ expected fail before bump (mismatch surfaced with remediation hint)
   - `pnpm run release:prepare -- 0.1.11` ✅
@@ -144,7 +156,7 @@
     - wrapper output now includes `baseUrl` alongside health payload.
 
 - Blockers/Bugs:
-  - `v0.1.11` release tag was previously published with stale `0.1.10` metadata and failed release parity; recovery uses force-repointed tag strategy.
+  - Historical note: failed tag `v0.1.12` remains in history (manifest mismatch); immutable recovery was shipped as successful `v0.1.13`.
   - No functional blockers identified.
   - User-reported React stack flood (`forceStoreRerender/updateStoreInstance`) is addressed in selector wiring; browser-console confirmation in the reporter environment is still pending.
   - Packaged-app Linux compositor compatibility still depends on host WebKit/GPU stack; diagnostics documented in `docs/architecture.md`.
@@ -153,11 +165,12 @@
   - Live skill smoke tests for `workspaces`/job execution remain blocked until SuperVibing desktop is running and serving the automation port.
 
 - Next immediate starting point:
-  - Push release parity/tooling changes and force-update annotated tag `v0.1.11`, then confirm `Release` workflow success on corrected tag.
-  - After release success, formalize release checklist around:
+  - Use guarded release checklist for future versions:
     - `pnpm run release:prepare -- X.Y.Z`,
-    - commit/version review,
-    - tag/push and workflow monitoring.
+    - commit version parity changes,
+    - `pnpm run release:tag -- X.Y.Z`,
+    - push `refs/heads/main` and `refs/tags/vX.Y.Z`,
+    - monitor `Release` workflow completion.
   - Manual UX pass:
     - verify settings-edited startup commands are applied for new workspaces and imports,
     - verify shell tmux `Ctrl+B` passthrough plus app pane prefix `Ctrl+Shift+B` while cursor is inside active xterm pane in a real desktop run.
