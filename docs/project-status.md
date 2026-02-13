@@ -1,12 +1,25 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (discord-presence-fix)
+- Last Updated: 2026-02-13 (tmux-prefix-c-focus-follow)
 
 - Current progress:
-  - Added Discord Rich Presence toggle (minimal “SuperVibing / Working” status):
-    - frontend Settings adds global toggle persisted in session state (`discordPresenceEnabled`),
-    - backend exposes `set_discord_presence_enabled` command and stores a Discord RPC client when enabled,
-    - presence uses baked-in app ID `1471970767083405549` with optional `SUPERVIBING_DISCORD_APP_ID` override.
+  - Added focused pane-create action for tmux `Prefix + C`:
+    - new store action `addPaneToActiveWorkspaceAndFocus()` in `apps/desktop/src/store/workspace.ts`,
+    - `apps/desktop/src/App.tsx` now routes only `Ctrl+B` then `c` to the focused-create action,
+    - `%` and `"` mappings remain on `setActiveWorkspacePaneCount(...)` (existing split behavior unchanged).
+  - Added regressions for cursor-follow behavior on pane create:
+    - `apps/desktop/src/App.shortcuts.test.ts` now verifies `prefix+c` calls focused-create action and does not fall back to generic pane-count increment,
+    - `apps/desktop/src/store/workspace.test.ts` now verifies pane add + focus/focus-request move to the new pane.
+  - Hardened Discord Rich Presence reliability and responsiveness:
+    - backend switched from `discord-rpc-client` to `discord-rich-presence` (IPC path scan support across `discord-ipc-0..9`),
+    - backend `set_discord_presence_enabled` is now non-blocking (queue-only command path),
+    - added dedicated background presence worker with latest-toggle coalescing and retry/healthcheck loop while enabled.
+  - Preserved frontend fail-open presence behavior:
+    - Settings toggle remains optimistic and persisted in session state (`discordPresenceEnabled`),
+    - backend transport failures remain non-fatal to prevent UI lockups.
+  - Extended discord coverage:
+    - Rust unit coverage for app-id parsing and command coalescing helpers,
+    - store tests now verify failed backend apply does not revert toggle and rapid toggles preserve final state.
   - Fixed discord presence snapshot restore typing:
     - ensure snapshot restore re-sanitizes `discordPresenceEnabled` before applying presence.
   - Updated tmux close-key behavior for one-pane workspaces:
@@ -153,6 +166,15 @@
     - health response bind field now reflects runtime-selected bridge bind address.
 
 - Verification:
+  - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts src/store/workspace.test.ts src/App.terminal-persistence.test.tsx` ✅
+    - desktop tests passed (18/18 files, 121/121 tests in resolved run scope).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+    - Rust tests passed (23/23).
+  - `pnpm --filter @supervibing/desktop test -- run src/store/workspace.test.ts` ✅
+    - desktop tests passed (18/18 files, 119/119 tests in resolved run scope).
+  - `pnpm --filter @supervibing/desktop typecheck` ✅
   - `pnpm --filter @supervibing/desktop test -- run src/App.shortcuts.test.ts` ✅
     - desktop tests passed (18/18 files, 115/115 tests in run scope).
   - `pnpm --filter @supervibing/desktop typecheck` ✅
@@ -229,6 +251,7 @@
 
 - Blockers/Bugs:
   - Historical note: failed tag `v0.1.12` remains in history (manifest mismatch); immutable recovery was shipped as successful `v0.1.13`.
+  - Discord toggle freeze is addressed in backend architecture; manual packaged-app verification with Discord open/closed is still pending.
   - No functional blockers identified.
   - User-reported React stack flood (`forceStoreRerender/updateStoreInstance`) is addressed in selector wiring; browser-console confirmation in the reporter environment is still pending.
   - Packaged-app Linux compositor compatibility still depends on host WebKit/GPU stack; diagnostics documented in `docs/architecture.md`.
@@ -238,6 +261,10 @@
   - By design, app tmux shortcut handling now captures `Ctrl+B` in eligible terminal scope; shell tmux users may need a non-default prefix or app shortcut changes.
 
 - Next immediate starting point:
+  - Manual Discord Rich Presence validation pass:
+    - verify `Settings -> Show activity in Discord` no longer freezes when Discord is open,
+    - verify toggle remains responsive when Discord is closed and reconnects after Discord starts,
+    - verify presence appears when Discord IPC is on non-zero slot (`discord-ipc-1..9`) environments.
   - Manual UX pass for pane worktree creation/reassignment:
     - verify `Ctrl+B` then `W` opens floating pane creator from terminal scope,
     - verify new pane creation against both existing and newly created worktrees,

@@ -68,7 +68,9 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 
 ## Discord presence
 - Frontend exposes a global Settings toggle to enable Rich Presence.
-- Backend uses Discord RPC with a baked-in App ID and optional `SUPERVIBING_DISCORD_APP_ID` override.
+- Backend uses a dedicated Discord presence worker (`discord-rich-presence`) with non-blocking command queue handoff.
+- Worker resolves IPC paths across `discord-ipc-0..9`, retries while enabled, and keeps command handling responsive.
+- Presence uses a baked-in App ID with optional `SUPERVIBING_DISCORD_APP_ID` numeric override.
 - Presence is minimal (“SuperVibing / Working”) and does not include workspace details.
 
 ## Persistence

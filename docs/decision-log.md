@@ -683,3 +683,26 @@ Added `apps/desktop/src/components/NewWorkspaceModal.test.tsx` to cover browse s
 **Rationale:** Provides a simple opt-in activity signal while keeping presence minimal and privacy-friendly.
 **Consequences:** Presence works out-of-the-box for shipped builds; env var can still override for forks/branding; presence state is persisted in session settings.
 **Alternatives Considered:** Per-workspace visibility controls and richer workspace-aware status strings.
+
+## [2026-02-13] - Discord Presence Worker + IPC Slot Discovery Hardening
+**Context:** Users reported two production issues in the new Discord toggle flow:
+- enabling `Show activity in Discord` could freeze the app,
+- presence could fail even with Discord running.
+Root causes were synchronous backend RPC calls in command handling and single-slot IPC assumptions (`discord-ipc-0`) in the prior crate.
+**Decision:** Rework backend presence integration for non-blocking behavior and broader IPC compatibility:
+- replaced backend crate usage with `discord-rich-presence` (supports IPC scan across `discord-ipc-0..9` and broader runtime-path discovery),
+- changed `set_discord_presence_enabled` to queue-only command handling (no direct socket/RPC work in command path),
+- added a dedicated background presence worker with latest-toggle coalescing, reconnect retry, and periodic health refresh while enabled.
+**Rationale:** Guarantees settings responsiveness while improving real-world Discord detection across Linux runtime variants and non-zero IPC slots.
+**Consequences:** Presence becomes eventually consistent (best-effort) rather than synchronous; frontend keeps fail-open semantics and no UI lockup risk when Discord IPC is unavailable.
+**Alternatives Considered:** Keeping `discord-rpc-client` and only moving calls off-thread, which would still leave slot/path detection gaps.
+
+## [2026-02-13] - Make `Prefix + C` Move Focus to the New Pane
+**Context:** Users expect tmux-style pane creation with `Ctrl+B` then `c` to place cursor/focus in the newly created pane immediately.
+**Decision:** Introduce a dedicated store action for focused pane creation and route only `prefix+c` to that action:
+- added `addPaneToActiveWorkspaceAndFocus()` in `apps/desktop/src/store/workspace.ts`,
+- updated `apps/desktop/src/App.tsx` so `keyLower === "c"` calls focused-create,
+- left `%` and `"` on `setActiveWorkspacePaneCount(...)` to preserve existing split semantics.
+**Rationale:** Meets expected tmux create-and-focus behavior without changing broader pane-count increase flows.
+**Consequences:** `prefix+c` now advances focus/cursor to new pane; other creation/increment paths remain behaviorally stable.
+**Alternatives Considered:** Applying focus-on-create to all pane-count increases, which would broaden behavior beyond the reported shortcut flow.

@@ -1,5 +1,22 @@
 # Changelog
 
+## [2026-02-13] - tmux `Prefix + C` Focuses New Pane
+### Changed
+- Added a dedicated focused-create action for `Ctrl+B` then `c` so pane creation moves cursor/focus to the new pane.
+- Kept `%` and `"` mappings on existing pane-count behavior to avoid changing split semantics.
+
+### Added
+- Added shortcut and store regression coverage for `prefix+c` focus-follow behavior.
+
+## [2026-02-13] - Discord Presence Stability Hardening
+### Changed
+- Replaced backend Discord IPC crate with `discord-rich-presence` to support broader runtime path probing and `discord-ipc-0..9` discovery.
+- Moved `set_discord_presence_enabled` backend behavior to a queue-driven worker model so settings toggles return immediately.
+
+### Fixed
+- Fixed app freeze risk when enabling Discord presence by removing synchronous RPC/socket work from Tauri command handling.
+- Improved reliability when Discord is open but not using IPC slot `0`.
+
 ## [2026-02-13] - Discord Rich Presence Toggle
 ### Added
 - Added a global Discord Rich Presence toggle in Settings.
