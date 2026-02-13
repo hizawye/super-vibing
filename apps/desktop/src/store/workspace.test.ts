@@ -217,6 +217,22 @@ describe("workspace store", () => {
     expect(active.paneOrder).toHaveLength(16);
   });
 
+  it("adds a pane and moves focus to it for focused-create flow", async () => {
+    await useWorkspaceStore.getState().addPaneToActiveWorkspaceAndFocus();
+
+    const state = useWorkspaceStore.getState();
+    const active = state.workspaces[0];
+    expect(active.paneCount).toBe(3);
+    expect(active.paneOrder).toEqual(["pane-1", "pane-2", "pane-3"]);
+    expect(state.focusedPaneByWorkspace["workspace-main"]).toBe("pane-3");
+    expect(state.focusRequestByWorkspace["workspace-main"]).toBe("pane-3");
+    expect(tauriApi.spawnPane).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paneId: runtimePaneId("workspace-main", "pane-3"),
+      }),
+    );
+  });
+
   it("spawns pane using pane-level worktree path when available", async () => {
     const active = workspace("workspace-main", "Workspace 1", 1, ["idle"], "/repo");
     active.panes["pane-1"] = {
@@ -418,6 +434,33 @@ describe("workspace store", () => {
     useWorkspaceStore.getState().setDiscordPresenceEnabled(true);
     await useWorkspaceStore.getState().persistSession();
 
+    expect(persistence.saveSessionState).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        discordPresenceEnabled: true,
+      }),
+    );
+  });
+
+  it("keeps discord presence toggle enabled when backend call fails", async () => {
+    vi.mocked(tauriApi.setDiscordPresenceEnabled).mockRejectedValueOnce(new Error("discord worker unavailable"));
+
+    useWorkspaceStore.getState().setDiscordPresenceEnabled(true);
+    await Promise.resolve();
+
+    expect(useWorkspaceStore.getState().discordPresenceEnabled).toBe(true);
+    expect(tauriApi.setDiscordPresenceEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it("keeps latest discord presence state during rapid toggles", async () => {
+    useWorkspaceStore.getState().setDiscordPresenceEnabled(true);
+    useWorkspaceStore.getState().setDiscordPresenceEnabled(false);
+    useWorkspaceStore.getState().setDiscordPresenceEnabled(true);
+    await Promise.resolve();
+
+    await useWorkspaceStore.getState().persistSession();
+
+    expect(useWorkspaceStore.getState().discordPresenceEnabled).toBe(true);
+    expect(tauriApi.setDiscordPresenceEnabled).toHaveBeenLastCalledWith(true);
     expect(persistence.saveSessionState).toHaveBeenLastCalledWith(
       expect.objectContaining({
         discordPresenceEnabled: true,

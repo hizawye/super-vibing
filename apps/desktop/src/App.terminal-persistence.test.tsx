@@ -73,6 +73,7 @@ const { paneMountSpy, paneUnmountSpy, mockStoreState, useWorkspaceStoreMock } = 
     closeWorkspace: vi.fn(async () => {}),
     setActiveWorkspace: vi.fn(async () => {}),
     setActiveWorkspacePaneCount: vi.fn(async () => {}),
+    addPaneToActiveWorkspaceAndFocus: vi.fn(async () => {}),
     createPaneWithWorktree: vi.fn(async () => "pane-2"),
     setPaneWorktree: vi.fn(async () => {}),
     setActiveWorkspaceLayoutMode: vi.fn(),

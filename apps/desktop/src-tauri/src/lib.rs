@@ -1,4 +1,4 @@
-use discord_rpc_client::Client as DiscordRpcClient;
+use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -11,10 +11,10 @@ use std::{
     sync::{
         atomic::AtomicUsize,
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex as StdMutex, RwLock as StdRwLock,
+        mpsc as std_mpsc, Arc, Mutex as StdMutex, RwLock as StdRwLock,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{ipc::Channel, AppHandle, Emitter, State};
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
@@ -35,6 +35,9 @@ const DISCORD_APP_ID_ENV: &str = "SUPERVIBING_DISCORD_APP_ID";
 const DISCORD_DEFAULT_APP_ID: u64 = 1471970767083405549;
 const DISCORD_PRESENCE_DETAILS: &str = "SuperVibing";
 const DISCORD_PRESENCE_STATE: &str = "Working";
+const DISCORD_RETRY_INTERVAL: Duration = Duration::from_secs(5);
+const DISCORD_HEALTHCHECK_INTERVAL: Duration = Duration::from_secs(30);
+const DISCORD_WORKER_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Debug)]
 struct HttpError {
@@ -136,6 +139,19 @@ struct SyncAutomationWorkspacesRequest {
 #[serde(rename_all = "camelCase")]
 struct DiscordPresenceRequest {
     enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DiscordPresenceCommand {
+    SetEnabled(bool),
+}
+
+impl DiscordPresenceCommand {
+    fn enabled(self) -> bool {
+        match self {
+            Self::SetEnabled(enabled) => enabled,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -267,14 +283,12 @@ impl AutomationState {
 }
 
 struct DiscordPresenceState {
-    client: StdMutex<Option<DiscordRpcClient>>,
+    command_tx: std_mpsc::Sender<DiscordPresenceCommand>,
 }
 
 impl DiscordPresenceState {
-    fn new() -> Self {
-        Self {
-            client: StdMutex::new(None),
-        }
+    fn new(command_tx: std_mpsc::Sender<DiscordPresenceCommand>) -> Self {
+        Self { command_tx }
     }
 }
 
@@ -285,15 +299,20 @@ struct AppState {
 }
 
 impl AppState {
-    fn new() -> (Self, mpsc::UnboundedReceiver<QueuedAutomationJob>) {
+    fn new() -> (
+        Self,
+        mpsc::UnboundedReceiver<QueuedAutomationJob>,
+        std_mpsc::Receiver<DiscordPresenceCommand>,
+    ) {
         let (queue_tx, queue_rx) = mpsc::unbounded_channel();
+        let (discord_tx, discord_rx) = std_mpsc::channel();
         let state = Self {
             panes: Arc::new(RwLock::new(HashMap::new())),
             automation: Arc::new(AutomationState::new(queue_tx)),
-            discord_presence: Arc::new(DiscordPresenceState::new()),
+            discord_presence: Arc::new(DiscordPresenceState::new(discord_tx)),
         };
 
-        (state, queue_rx)
+        (state, queue_rx, discord_rx)
     }
 }
 
@@ -1444,6 +1463,116 @@ fn start_automation_worker(
     });
 }
 
+fn parse_discord_app_id(raw: Option<&str>) -> String {
+    raw.map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(DISCORD_DEFAULT_APP_ID)
+        .to_string()
+}
+
+fn resolve_discord_app_id() -> String {
+    parse_discord_app_id(env::var(DISCORD_APP_ID_ENV).ok().as_deref())
+}
+
+fn set_discord_activity(client: &mut DiscordIpcClient) -> bool {
+    client
+        .set_activity(
+            activity::Activity::new()
+                .details(DISCORD_PRESENCE_DETAILS)
+                .state(DISCORD_PRESENCE_STATE),
+        )
+        .is_ok()
+}
+
+fn clear_discord_activity(client: &mut Option<DiscordIpcClient>) {
+    if let Some(active) = client.as_mut() {
+        let _ = active.clear_activity();
+        let _ = active.close();
+    }
+
+    *client = None;
+}
+
+fn apply_latest_discord_presence_command(
+    first: DiscordPresenceCommand,
+    receiver: &std_mpsc::Receiver<DiscordPresenceCommand>,
+) -> bool {
+    let mut enabled = first.enabled();
+    while let Ok(command) = receiver.try_recv() {
+        enabled = command.enabled();
+    }
+    enabled
+}
+
+fn start_discord_presence_worker(receiver: std_mpsc::Receiver<DiscordPresenceCommand>) {
+    thread::spawn(move || {
+        let app_id = resolve_discord_app_id();
+        let mut desired_enabled = false;
+        let mut client: Option<DiscordIpcClient> = None;
+        let mut next_retry_at = Instant::now();
+        let mut next_healthcheck_at = Instant::now();
+
+        loop {
+            match receiver.recv_timeout(DISCORD_WORKER_POLL_INTERVAL) {
+                Ok(first_command) => {
+                    desired_enabled =
+                        apply_latest_discord_presence_command(first_command, &receiver);
+                    if !desired_enabled {
+                        clear_discord_activity(&mut client);
+                        continue;
+                    }
+
+                    // Retry immediately when settings turn presence on.
+                    next_retry_at = Instant::now();
+                }
+                Err(std_mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std_mpsc::RecvTimeoutError::Disconnected) => {
+                    clear_discord_activity(&mut client);
+                    break;
+                }
+            }
+
+            if !desired_enabled {
+                continue;
+            }
+
+            let now = Instant::now();
+            if client.is_none() {
+                if now < next_retry_at {
+                    continue;
+                }
+
+                let mut next_client = DiscordIpcClient::new(app_id.as_str());
+                match next_client.connect() {
+                    Ok(()) => {
+                        if set_discord_activity(&mut next_client) {
+                            next_healthcheck_at = Instant::now() + DISCORD_HEALTHCHECK_INTERVAL;
+                            client = Some(next_client);
+                        } else {
+                            next_retry_at = Instant::now() + DISCORD_RETRY_INTERVAL;
+                        }
+                    }
+                    Err(_) => {
+                        next_retry_at = Instant::now() + DISCORD_RETRY_INTERVAL;
+                    }
+                }
+                continue;
+            }
+
+            if now >= next_healthcheck_at {
+                let healthy = client.as_mut().map(set_discord_activity).unwrap_or(false);
+                if healthy {
+                    next_healthcheck_at = Instant::now() + DISCORD_HEALTHCHECK_INTERVAL;
+                } else {
+                    clear_discord_activity(&mut client);
+                    next_retry_at = Instant::now() + DISCORD_RETRY_INTERVAL;
+                }
+            }
+        }
+    });
+}
+
 #[tauri::command]
 fn get_default_cwd() -> Result<String, String> {
     let cwd = env::current_dir().map_err(|err| err.to_string())?;
@@ -1772,36 +1901,11 @@ fn set_discord_presence_enabled(
     state: State<'_, AppState>,
     request: DiscordPresenceRequest,
 ) -> Result<(), String> {
-    let mut guard = state
+    state
         .discord_presence
-        .client
-        .lock()
-        .map_err(|_| AppError::system("discord presence lock poisoned").to_string())?;
-
-    if !request.enabled {
-        if let Some(mut client) = guard.take() {
-            let _ = client.clear_activity();
-        }
-        return Ok(());
-    }
-
-    let app_id = env::var(DISCORD_APP_ID_ENV)
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .unwrap_or(DISCORD_DEFAULT_APP_ID);
-
-    if let Some(client) = guard.as_mut() {
-        let _ = client
-            .set_activity(|activity| activity.details(DISCORD_PRESENCE_DETAILS).state(DISCORD_PRESENCE_STATE));
-        return Ok(());
-    }
-
-    let mut client = DiscordRpcClient::new(app_id);
-    let _ = client.start();
-    let _ = client
-        .set_activity(|activity| activity.details(DISCORD_PRESENCE_DETAILS).state(DISCORD_PRESENCE_STATE));
-    *guard = Some(client);
-    Ok(())
+        .command_tx
+        .send(DiscordPresenceCommand::SetEnabled(request.enabled))
+        .map_err(|_| AppError::system("discord presence worker unavailable").to_string())
 }
 
 #[tauri::command]
@@ -2383,6 +2487,36 @@ prunable stale path
     }
 
     #[test]
+    fn parse_discord_app_id_uses_numeric_override() {
+        assert_eq!(parse_discord_app_id(Some("1234567890")), "1234567890");
+        assert_eq!(parse_discord_app_id(Some(" 1234567890 ")), "1234567890");
+    }
+
+    #[test]
+    fn parse_discord_app_id_defaults_on_missing_or_invalid_values() {
+        let expected = DISCORD_DEFAULT_APP_ID.to_string();
+        assert_eq!(parse_discord_app_id(None), expected);
+        assert_eq!(parse_discord_app_id(Some("")), expected);
+        assert_eq!(parse_discord_app_id(Some("   ")), expected);
+        assert_eq!(parse_discord_app_id(Some("not-a-number")), expected);
+    }
+
+    #[test]
+    fn apply_latest_discord_presence_command_keeps_last_toggle() {
+        let (tx, rx) = std_mpsc::channel();
+        tx.send(DiscordPresenceCommand::SetEnabled(true))
+            .expect("send first command");
+        tx.send(DiscordPresenceCommand::SetEnabled(false))
+            .expect("send second command");
+        tx.send(DiscordPresenceCommand::SetEnabled(true))
+            .expect("send third command");
+
+        let first = rx.recv().expect("receive first command");
+        let enabled = apply_latest_discord_presence_command(first, &rx);
+        assert!(enabled);
+    }
+
+    #[test]
     fn fallback_automation_bind_candidates_are_deterministic() {
         let candidates = fallback_automation_bind_candidates("127.0.0.1", AUTOMATION_DEFAULT_PORT);
         assert_eq!(
@@ -2421,7 +2555,7 @@ prunable stale path
 
     #[test]
     fn current_automation_bind_reads_runtime_selected_bind() {
-        let (state, _receiver) = AppState::new();
+        let (state, _receiver, _discord_receiver) = AppState::new();
         {
             let mut bind = state
                 .automation
@@ -2439,7 +2573,7 @@ prunable stale path
 
     #[test]
     fn validate_external_command_request_rejects_invalid_payloads() {
-        let (state, _receiver) = AppState::new();
+        let (state, _receiver, _discord_receiver) = AppState::new();
         let automation = Arc::clone(&state.automation);
 
         let missing_workspace = validate_external_command_request(
@@ -2493,7 +2627,7 @@ prunable stale path
 
     #[test]
     fn prune_completed_jobs_with_limit_keeps_running_jobs_and_newest_completed() {
-        let (state, _receiver) = AppState::new();
+        let (state, _receiver, _discord_receiver) = AppState::new();
         let automation = Arc::clone(&state.automation);
 
         {
@@ -2716,10 +2850,11 @@ fn resolve_branch(cwd: &str) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let (app_state, queue_receiver) = AppState::new();
+    let (app_state, queue_receiver, discord_presence_receiver) = AppState::new();
     let pane_registry = Arc::clone(&app_state.panes);
     let automation_state = Arc::clone(&app_state.automation);
     let queue_receiver = Arc::new(StdMutex::new(Some(queue_receiver)));
+    let discord_presence_receiver = Arc::new(StdMutex::new(Some(discord_presence_receiver)));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -2731,6 +2866,7 @@ pub fn run() {
             let pane_registry = Arc::clone(&pane_registry);
             let automation_state = Arc::clone(&automation_state);
             let queue_receiver = Arc::clone(&queue_receiver);
+            let discord_presence_receiver = Arc::clone(&discord_presence_receiver);
             move |app| {
                 if let Ok(mut guard) = queue_receiver.lock() {
                     if let Some(receiver) = guard.take() {
@@ -2740,6 +2876,11 @@ pub fn run() {
                             Arc::clone(&automation_state),
                             receiver,
                         );
+                    }
+                }
+                if let Ok(mut guard) = discord_presence_receiver.lock() {
+                    if let Some(receiver) = guard.take() {
+                        start_discord_presence_worker(receiver);
                     }
                 }
                 start_automation_http_server(Arc::clone(&automation_state));

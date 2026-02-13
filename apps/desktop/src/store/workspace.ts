@@ -135,6 +135,7 @@ interface WorkspaceStore {
   closeWorkspace: (workspaceId: string) => Promise<void>;
   setActiveWorkspace: (workspaceId: string) => Promise<void>;
   setActiveWorkspacePaneCount: (count: number) => Promise<void>;
+  addPaneToActiveWorkspaceAndFocus: () => Promise<void>;
   createPaneWithWorktree: (workspaceId: string, worktreePath: string) => Promise<string>;
   setPaneWorktree: (
     workspaceId: string,
@@ -2141,6 +2142,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     void get().startWorkspaceBoot(activeWorkspace.id, { eligiblePaneIds });
 
     await flushPersist(get);
+  },
+
+  addPaneToActiveWorkspaceAndFocus: async () => {
+    const state = get();
+    const activeWorkspace = activeWorkspaceOf(state);
+    if (!activeWorkspace || activeWorkspace.paneCount >= MAX_PANES) {
+      return;
+    }
+
+    const newPaneId = paneIdAt(activeWorkspace.paneCount);
+    await get().setActiveWorkspacePaneCount(activeWorkspace.paneCount + 1);
+    get().setFocusedPane(activeWorkspace.id, newPaneId);
   },
 
   createPaneWithWorktree: async (workspaceId: string, worktreePath: string) => {

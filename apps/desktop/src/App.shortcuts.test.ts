@@ -59,6 +59,7 @@ function baseTmuxContext() {
     setActiveWorkspace: vi.fn(),
     closeWorkspace: vi.fn(),
     setActiveWorkspacePaneCount: vi.fn(),
+    addPaneToActiveWorkspaceAndFocus: vi.fn(),
     setFocusedPane: vi.fn(),
     moveFocusedPane: vi.fn(),
     resizeFocusedPaneByDelta: vi.fn(),
@@ -168,6 +169,19 @@ describe("createTmuxPrefixController", () => {
     expect(controller.handleKeydown(prefix, context)).toBe(true);
     expect(controller.handleKeydown(splitQuote, context)).toBe(true);
     expect(context.setActiveWorkspacePaneCount).toHaveBeenNthCalledWith(2, 4);
+  });
+
+  it("creates and focuses new pane with prefix+c", () => {
+    const context = baseTmuxContext();
+    const controller = createTmuxPrefixController();
+
+    const prefix = createEvent({ key: "b", ctrlKey: true });
+    const createPane = createEvent({ key: "c" });
+
+    expect(controller.handleKeydown(prefix, context)).toBe(true);
+    expect(controller.handleKeydown(createPane, context)).toBe(true);
+    expect(context.addPaneToActiveWorkspaceAndFocus).toHaveBeenCalledTimes(1);
+    expect(context.setActiveWorkspacePaneCount).not.toHaveBeenCalled();
   });
 
   it("cycles panes with wrap for prefix+n/p/o", () => {

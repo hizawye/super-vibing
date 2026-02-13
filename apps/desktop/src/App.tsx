@@ -147,6 +147,7 @@ interface TmuxShortcutContext {
   setActiveWorkspace: (workspaceId: string) => Promise<void> | void;
   closeWorkspace: (workspaceId: string) => Promise<void> | void;
   setActiveWorkspacePaneCount: (count: number) => void;
+  addPaneToActiveWorkspaceAndFocus: () => void;
   setFocusedPane: (workspaceId: string, paneId: string) => void;
   moveFocusedPane: (workspaceId: string, direction: "left" | "right" | "up" | "down") => void;
   resizeFocusedPaneByDelta: (workspaceId: string, dx: number, dy: number) => void;
@@ -275,7 +276,7 @@ export function handleTmuxPrefixedKey(event: KeyboardEvent, context: TmuxShortcu
   }
 
   if (keyLower === "c") {
-    context.setActiveWorkspacePaneCount(workspace.paneCount + 1);
+    context.addPaneToActiveWorkspaceAndFocus();
     return true;
   }
 
@@ -974,6 +975,7 @@ function App() {
   const closeWorkspace = useWorkspaceStore((state) => state.closeWorkspace);
   const setActiveWorkspace = useWorkspaceStore((state) => state.setActiveWorkspace);
   const setActiveWorkspacePaneCount = useWorkspaceStore((state) => state.setActiveWorkspacePaneCount);
+  const addPaneToActiveWorkspaceAndFocus = useWorkspaceStore((state) => state.addPaneToActiveWorkspaceAndFocus);
   const createPaneWithWorktree = useWorkspaceStore((state) => state.createPaneWithWorktree);
   const setPaneWorktree = useWorkspaceStore((state) => state.setPaneWorktree);
   const setActiveWorkspaceLayoutMode = useWorkspaceStore((state) => state.setActiveWorkspaceLayoutMode);
@@ -1048,6 +1050,9 @@ function App() {
           setActiveWorkspacePaneCount: (count) => {
             void setActiveWorkspacePaneCount(count);
           },
+          addPaneToActiveWorkspaceAndFocus: () => {
+            void addPaneToActiveWorkspaceAndFocus();
+          },
           setFocusedPane,
           moveFocusedPane,
           resizeFocusedPaneByDelta,
@@ -1090,6 +1095,7 @@ function App() {
     openPaneCreator,
     refreshWorktrees,
     resizeFocusedPaneByDelta,
+    addPaneToActiveWorkspaceAndFocus,
     setActiveWorkspace,
     setActiveSection,
     setActiveWorkspacePaneCount,
