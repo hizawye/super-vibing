@@ -2102,3 +2102,172 @@ input:focus-visible,
     overflow-x: visible;
   }
 }
+
+.git-shell {
+  gap: 14px;
+}
+
+.git-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.git-toolbar-meta,
+.git-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.git-layout {
+  display: grid;
+  grid-template-columns: minmax(170px, 220px) minmax(280px, 1fr) minmax(300px, 1.1fr);
+  gap: 10px;
+  min-height: 440px;
+}
+
+.git-pane {
+  border: 0;
+  background: color-mix(in oklab, var(--pane-elev-1) 92%, transparent);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--line-soft) 55%, transparent);
+}
+
+.git-pane.is-focused {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent);
+}
+
+.git-pane-tabs {
+  padding: 6px;
+  gap: 6px;
+}
+
+.git-tab-btn {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  padding: 8px 10px;
+  box-shadow: inset 0 0 0 1px transparent;
+}
+
+.git-tab-btn small {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.git-tab-btn.active {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 52%, transparent);
+  background: color-mix(in oklab, var(--accent) 15%, var(--pane-elev-2));
+}
+
+.git-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 0;
+  box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--line-soft) 60%, transparent);
+}
+
+.git-list-head small {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.git-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.git-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  text-align: left;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  box-shadow: inset 0 0 0 1px transparent;
+}
+
+.git-row.active {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 52%, transparent);
+  background: color-mix(in oklab, var(--accent) 15%, var(--pane-elev-2));
+}
+
+.git-row-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.git-row-subtitle {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.git-row-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.git-pane-detail {
+  overflow: hidden;
+}
+
+.git-detail-text {
+  margin: 0;
+  padding: 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+  flex: 1;
+}
+
+.git-detail-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px 12px;
+  flex-wrap: wrap;
+}
+
+.git-shortcuts {
+  border: 0;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--line-soft) 60%, transparent);
+  padding-top: 8px;
+}
+
+.git-shortcuts small {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.git-confirm-modal {
+  max-width: 520px;
+}
+
+@media (max-width: 920px) {
+  .git-layout {
+    grid-template-columns: 1fr;
+  }
+}

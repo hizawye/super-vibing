@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceStore } from "../store/workspace";
+import { useGitViewStore } from "../store/gitView";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -42,6 +43,8 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
   const openWorktreeManager = useWorkspaceStore((state) => state.openWorktreeManager);
   const refreshWorktrees = useWorkspaceStore((state) => state.refreshWorktrees);
   const importWorktreeAsWorkspace = useWorkspaceStore((state) => state.importWorktreeAsWorkspace);
+  const setGitPanel = useGitViewStore((state) => state.setActivePanel);
+  const setGitFocusZone = useGitViewStore((state) => state.setFocusZone);
 
   const entries = useMemo<PaletteEntry[]>(() => {
     const workspaceEntries = workspaces.map((workspace) => ({
@@ -129,6 +132,42 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
         },
       },
       {
+        id: "action-open-git",
+        section: "Git",
+        label: "Open git control center",
+        description: "Status, branches, PRs, issues, and actions",
+        keywords: "git status branches prs issues actions",
+        run: async () => {
+          setActiveSection("git");
+          setGitPanel("status");
+          setGitFocusZone("list");
+        },
+      },
+      {
+        id: "action-open-git-prs",
+        section: "Git",
+        label: "Open git PR list",
+        description: "Jump directly to pull requests",
+        keywords: "git prs pull requests",
+        run: async () => {
+          setActiveSection("git");
+          setGitPanel("prs");
+          setGitFocusZone("list");
+        },
+      },
+      {
+        id: "action-open-git-actions",
+        section: "Git",
+        label: "Open git actions runs",
+        description: "Jump directly to workflow runs",
+        keywords: "git actions workflows runs",
+        run: async () => {
+          setActiveSection("git");
+          setGitPanel("actions");
+          setGitFocusZone("list");
+        },
+      },
+      {
         id: "action-refresh-worktrees",
         section: "Worktrees",
         label: "Refresh worktrees",
@@ -185,6 +224,8 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
     runGlobalCommand,
     saveSnapshot,
     setActiveSection,
+    setGitFocusZone,
+    setGitPanel,
     setActiveWorkspace,
     setActiveWorkspacePaneCount,
     setEchoInput,

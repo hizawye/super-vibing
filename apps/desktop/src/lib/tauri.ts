@@ -4,6 +4,31 @@ import type {
   AutomationReportRequest,
   AutomationWorkspaceSnapshot,
   CreateWorktreeRequest,
+  GitBranchInfo,
+  GitCheckoutBranchRequest,
+  GitCommandResponse,
+  GitCommitRequest,
+  GitCreateBranchRequest,
+  GitDeleteBranchRequest,
+  GitDiffRequest,
+  GitDiffResponse,
+  GitDiscardPathsRequest,
+  GitHubIssueCommentRequest,
+  GitHubIssueEditAssigneesRequest,
+  GitHubIssueEditLabelsRequest,
+  GitHubIssueRequest,
+  GitHubIssueSummary,
+  GitHubListRequest,
+  GitHubPrCommentRequest,
+  GitHubPrMergeRequest,
+  GitHubPrRequest,
+  GitHubPrSummary,
+  GitHubRunRequest,
+  GitHubRunSummary,
+  GitHubWorkflowSummary,
+  GitPathsRequest,
+  GitRepoRequest,
+  GitStatusSnapshot,
   GlobalCommandRequest,
   PaneCommandResult,
   PaneEvent,
@@ -142,4 +167,120 @@ export async function syncAutomationWorkspaces(workspaces: AutomationWorkspaceSn
 
 export async function reportAutomationResult(request: AutomationReportRequest): Promise<void> {
   await invoke("automation_report", { request });
+}
+
+export async function gitStatus(request: GitRepoRequest): Promise<GitStatusSnapshot> {
+  return invoke<GitStatusSnapshot>("git_status", { request });
+}
+
+export async function gitDiff(request: GitDiffRequest): Promise<GitDiffResponse> {
+  return invoke<GitDiffResponse>("git_diff", { request });
+}
+
+export async function gitStagePaths(request: GitPathsRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("git_stage_paths", { request });
+}
+
+export async function gitUnstagePaths(request: GitPathsRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("git_unstage_paths", { request });
+}
+
+export async function gitDiscardPaths(request: GitDiscardPathsRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("git_discard_paths", { request });
+}
+
+export async function gitCommit(request: GitCommitRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("git_commit", { request });
+}
+
+export async function gitFetch(request: GitRepoRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("git_fetch", { request });
+}
+
+export async function gitPull(request: GitRepoRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("git_pull", { request });
+}
+
+export async function gitPush(request: GitRepoRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("git_push", { request });
+}
+
+export async function gitListBranches(request: GitRepoRequest): Promise<GitBranchInfo[]> {
+  return invoke<GitBranchInfo[]>("git_list_branches", { request });
+}
+
+export async function gitCheckoutBranch(request: GitCheckoutBranchRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("git_checkout_branch", { request });
+}
+
+export async function gitCreateBranch(request: GitCreateBranchRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("git_create_branch", { request });
+}
+
+export async function gitDeleteBranch(request: GitDeleteBranchRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("git_delete_branch", { request });
+}
+
+export async function ghListPrs(request: GitHubListRequest): Promise<GitHubPrSummary[]> {
+  return invoke<GitHubPrSummary[]>("gh_list_prs", { request });
+}
+
+export async function ghPrDetail(request: GitHubPrRequest): Promise<unknown> {
+  return invoke<unknown>("gh_pr_detail", { request });
+}
+
+export async function ghPrCheckout(request: GitHubPrRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("gh_pr_checkout", { request });
+}
+
+export async function ghPrComment(request: GitHubPrCommentRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("gh_pr_comment", { request });
+}
+
+export async function ghPrMergeSquash(request: GitHubPrMergeRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("gh_pr_merge_squash", { request });
+}
+
+export async function ghListIssues(request: GitHubListRequest): Promise<GitHubIssueSummary[]> {
+  return invoke<GitHubIssueSummary[]>("gh_list_issues", { request });
+}
+
+export async function ghIssueDetail(request: GitHubIssueRequest): Promise<unknown> {
+  return invoke<unknown>("gh_issue_detail", { request });
+}
+
+export async function ghIssueComment(request: GitHubIssueCommentRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("gh_issue_comment", { request });
+}
+
+export async function ghIssueEditLabels(
+  request: GitHubIssueEditLabelsRequest,
+): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("gh_issue_edit_labels", { request });
+}
+
+export async function ghIssueEditAssignees(
+  request: GitHubIssueEditAssigneesRequest,
+): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("gh_issue_edit_assignees", { request });
+}
+
+export async function ghListWorkflows(request: GitHubListRequest): Promise<GitHubWorkflowSummary[]> {
+  return invoke<GitHubWorkflowSummary[]>("gh_list_workflows", { request });
+}
+
+export async function ghListRuns(request: GitHubListRequest): Promise<GitHubRunSummary[]> {
+  return invoke<GitHubRunSummary[]>("gh_list_runs", { request });
+}
+
+export async function ghRunDetail(request: GitHubRunRequest): Promise<unknown> {
+  return invoke<unknown>("gh_run_detail", { request });
+}
+
+export async function ghRunRerunFailed(request: GitHubRunRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("gh_run_rerun_failed", { request });
+}
+
+export async function ghRunCancel(request: GitHubRunRequest): Promise<GitCommandResponse> {
+  return invoke<GitCommandResponse>("gh_run_cancel", { request });
 }

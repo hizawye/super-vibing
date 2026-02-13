@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useShallow } from "zustand/react/shallow";
 import { AppSidebar, type WorkspaceNavView } from "./components/AppSidebar";
 import { EmptyStatePage } from "./components/EmptyStatePage";
+import { GitSection } from "./components/GitSection";
 import { PaneGrid } from "./components/PaneGrid";
 import { StartupCrashScreen } from "./components/StartupCrashScreen";
 import { TopChrome } from "./components/TopChrome";
@@ -69,6 +70,20 @@ const SHORTCUT_GROUPS = [
       ["Resize (freeform)", "Prefix + Alt + Arrow"],
       ["Zoom pane", "Prefix + Z"],
       ["Close pane", "Prefix + X or &"],
+    ],
+  },
+  {
+    title: "Git Section",
+    shortcuts: [
+      ["Move selection", "J / K"],
+      ["Open default action", "Enter"],
+      ["Refresh active panel", "R"],
+      ["Stage/unstage file", "S"],
+      ["Show file diff", "D"],
+      ["Commit staged changes", "C"],
+      ["Branch / PR / Issue menus", "B / P / I"],
+      ["Jump to actions", "A"],
+      ["Destructive action", "X"],
     ],
   },
 ] as const;
@@ -932,6 +947,10 @@ function App() {
     () => terminalWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
     [activeWorkspaceId, terminalWorkspaces],
   );
+  const activeWorkspaceRuntime = useMemo(
+    () => workspaceRuntimes.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
+    [activeWorkspaceId, workspaceRuntimes],
+  );
 
   const activeWorkspaceBoot = useWorkspaceStore(
     useShallow((state) => {
@@ -1465,6 +1484,21 @@ function App() {
               title="Prompts"
               subtitle="Store reusable prompt templates and route them to selected panes."
               actionLabel="New Prompt"
+            />
+          ) : null}
+
+          {activeSection === "git" ? (
+            <GitSection
+              active={activeSection === "git"}
+              repoRoot={activeWorkspaceRuntime?.repoRoot ?? null}
+              branch={activeWorkspace?.branch ?? null}
+              worktreePath={activeWorkspace?.worktreePath ?? null}
+              worktreeEntries={worktreeManager.entries}
+              onRefreshWorktrees={refreshWorktrees}
+              onImportWorktree={importWorktreeAsWorkspace}
+              onOpenWorktreeManager={() => {
+                void openWorktreeManager();
+              }}
             />
           ) : null}
 

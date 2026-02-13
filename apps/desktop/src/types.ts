@@ -24,7 +24,7 @@ export interface AgentAllocation {
   count: number;
 }
 
-export type AppSection = "terminal" | "worktrees" | "kanban" | "agents" | "prompts" | "settings";
+export type AppSection = "terminal" | "git" | "worktrees" | "kanban" | "agents" | "prompts" | "settings";
 export type LayoutMode = "tiling" | "freeform";
 export type ThemeId = "apple-dark" | "apple-light" | "graphite" | "midnight" | "solarized" | "nord";
 export type DensityMode = "comfortable" | "compact";
@@ -176,6 +176,98 @@ export interface WorktreeEntry {
   isDirty: boolean;
 }
 
+export interface GitStatusFile {
+  path: string;
+  code: string;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: boolean;
+}
+
+export interface GitStatusSnapshot {
+  repoRoot: string;
+  branch: string;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+  files: GitStatusFile[];
+}
+
+export interface GitDiffResponse {
+  path: string;
+  staged: boolean;
+  patch: string;
+}
+
+export interface GitBranchInfo {
+  name: string;
+  isCurrent: boolean;
+  upstream: string | null;
+  commit: string;
+  subject: string;
+}
+
+export interface GitCommandResponse {
+  output: string;
+}
+
+export interface GitHubUser {
+  login: string;
+}
+
+export interface GitHubLabel {
+  name: string;
+  color?: string | null;
+}
+
+export interface GitHubPrSummary {
+  number: number;
+  title: string;
+  state: string;
+  headRefName: string;
+  baseRefName: string;
+  isDraft: boolean;
+  updatedAt: string;
+  url: string;
+  author?: GitHubUser | null;
+}
+
+export interface GitHubIssueSummary {
+  number: number;
+  title: string;
+  state: string;
+  updatedAt: string;
+  url: string;
+  author?: GitHubUser | null;
+  labels: GitHubLabel[];
+  assignees: GitHubUser[];
+}
+
+export interface GitHubWorkflowSummary {
+  id: number;
+  name: string;
+  state: string;
+  path: string;
+}
+
+export interface GitHubRunSummary {
+  databaseId: number;
+  workflowName: string;
+  displayTitle: string;
+  status: string;
+  conclusion?: string | null;
+  event: string;
+  headBranch?: string | null;
+  headSha?: string | null;
+  number?: number | null;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+}
+
 export interface CreateWorktreeRequest {
   repoRoot: string;
   mode: WorktreeCreateMode;
@@ -223,6 +315,80 @@ export interface PaneCommandResult {
 export interface RuntimeStats {
   activePanes: number;
   suspendedPanes: number;
+}
+
+export interface GitRepoRequest {
+  repoRoot: string;
+}
+
+export interface GitDiffRequest extends GitRepoRequest {
+  path: string;
+  staged: boolean;
+}
+
+export interface GitPathsRequest extends GitRepoRequest {
+  paths: string[];
+}
+
+export interface GitDiscardPathsRequest extends GitPathsRequest {
+  force: boolean;
+}
+
+export interface GitCommitRequest extends GitRepoRequest {
+  message: string;
+}
+
+export interface GitCheckoutBranchRequest extends GitRepoRequest {
+  branch: string;
+}
+
+export interface GitCreateBranchRequest extends GitRepoRequest {
+  branch: string;
+  baseRef?: string;
+  checkout?: boolean;
+}
+
+export interface GitDeleteBranchRequest extends GitRepoRequest {
+  branch: string;
+  force?: boolean;
+}
+
+export interface GitHubListRequest extends GitRepoRequest {
+  limit?: number;
+}
+
+export interface GitHubPrRequest extends GitRepoRequest {
+  number: number;
+}
+
+export interface GitHubPrCommentRequest extends GitHubPrRequest {
+  body: string;
+}
+
+export interface GitHubPrMergeRequest extends GitHubPrRequest {
+  deleteBranch?: boolean;
+}
+
+export interface GitHubIssueRequest extends GitRepoRequest {
+  number: number;
+}
+
+export interface GitHubIssueCommentRequest extends GitHubIssueRequest {
+  body: string;
+}
+
+export interface GitHubIssueEditLabelsRequest extends GitHubIssueRequest {
+  addLabels: string[];
+  removeLabels: string[];
+}
+
+export interface GitHubIssueEditAssigneesRequest extends GitHubIssueRequest {
+  addAssignees: string[];
+  removeAssignees: string[];
+}
+
+export interface GitHubRunRequest extends GitRepoRequest {
+  runId: number;
 }
 
 export interface AutomationWorkspaceSnapshot {

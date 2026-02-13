@@ -6,8 +6,8 @@ use std::{
     env, fmt, fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
-    path::{Path, PathBuf},
-    process::Command,
+    path::{Component, Path, PathBuf},
+    process::{Command, Output},
     sync::{
         atomic::AtomicUsize,
         atomic::{AtomicBool, Ordering},
@@ -31,6 +31,9 @@ const AUTOMATION_QUEUE_MAX: usize = 200;
 const AUTOMATION_FRONTEND_TIMEOUT_MS: u64 = 20_000;
 const AUTOMATION_COMPLETED_JOB_RETENTION_MAX: usize = 500;
 const AUTOMATION_MAX_COMMAND_BYTES: usize = 16 * 1024;
+const COMMAND_OUTPUT_MAX_BYTES: usize = 256 * 1024;
+const GITHUB_LIST_LIMIT_DEFAULT: u16 = 30;
+const GITHUB_LIST_LIMIT_MAX: u16 = 100;
 const DISCORD_APP_ID_ENV: &str = "SUPERVIBING_DISCORD_APP_ID";
 const DISCORD_DEFAULT_APP_ID: u64 = 1471970767083405549;
 const DISCORD_PRESENCE_DETAILS: &str = "SuperVibing";
@@ -498,6 +501,463 @@ struct PaneCommandResult {
 struct RuntimeStats {
     active_panes: usize,
     suspended_panes: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitRepoRequest {
+    repo_root: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitDiffRequest {
+    repo_root: String,
+    path: String,
+    staged: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitPathsRequest {
+    repo_root: String,
+    paths: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitDiscardPathsRequest {
+    repo_root: String,
+    paths: Vec<String>,
+    force: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitCommitRequest {
+    repo_root: String,
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitCheckoutBranchRequest {
+    repo_root: String,
+    branch: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitCreateBranchRequest {
+    repo_root: String,
+    branch: String,
+    base_ref: Option<String>,
+    checkout: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitDeleteBranchRequest {
+    repo_root: String,
+    branch: String,
+    force: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitCommandResponse {
+    output: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitDiffResponse {
+    path: String,
+    staged: bool,
+    patch: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct GitStatusFile {
+    path: String,
+    code: String,
+    staged: bool,
+    unstaged: bool,
+    untracked: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitStatusResponse {
+    repo_root: String,
+    branch: String,
+    upstream: Option<String>,
+    ahead: u32,
+    behind: u32,
+    staged_count: u32,
+    unstaged_count: u32,
+    untracked_count: u32,
+    files: Vec<GitStatusFile>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct GitBranchEntry {
+    name: String,
+    is_current: bool,
+    upstream: Option<String>,
+    commit: String,
+    subject: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHubListRequest {
+    repo_root: String,
+    limit: Option<u16>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHubPrRequest {
+    repo_root: String,
+    number: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHubPrCommentRequest {
+    repo_root: String,
+    number: u64,
+    body: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHubPrMergeRequest {
+    repo_root: String,
+    number: u64,
+    delete_branch: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHubIssueRequest {
+    repo_root: String,
+    number: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHubIssueCommentRequest {
+    repo_root: String,
+    number: u64,
+    body: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHubIssueEditLabelsRequest {
+    repo_root: String,
+    number: u64,
+    add_labels: Vec<String>,
+    remove_labels: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHubIssueEditAssigneesRequest {
+    repo_root: String,
+    number: u64,
+    add_assignees: Vec<String>,
+    remove_assignees: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHubRunRequest {
+    repo_root: String,
+    run_id: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct GitHubUser {
+    login: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct GitHubLabel {
+    name: String,
+    color: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct GitHubPrSummary {
+    number: u64,
+    title: String,
+    state: String,
+    head_ref_name: String,
+    base_ref_name: String,
+    is_draft: bool,
+    updated_at: String,
+    url: String,
+    author: Option<GitHubUser>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct GitHubIssueSummary {
+    number: u64,
+    title: String,
+    state: String,
+    updated_at: String,
+    url: String,
+    author: Option<GitHubUser>,
+    labels: Vec<GitHubLabel>,
+    assignees: Vec<GitHubUser>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct GitHubWorkflowSummary {
+    id: u64,
+    name: String,
+    state: String,
+    path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct GitHubRunSummary {
+    database_id: u64,
+    workflow_name: String,
+    display_title: String,
+    status: String,
+    conclusion: Option<String>,
+    event: String,
+    head_branch: Option<String>,
+    head_sha: Option<String>,
+    number: Option<u64>,
+    created_at: String,
+    updated_at: String,
+    url: String,
+}
+
+fn clamp_github_list_limit(value: Option<u16>) -> u16 {
+    let requested = value.unwrap_or(GITHUB_LIST_LIMIT_DEFAULT);
+    requested.clamp(1, GITHUB_LIST_LIMIT_MAX)
+}
+
+fn normalize_command_text(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes).trim().to_string();
+    if text.len() <= COMMAND_OUTPUT_MAX_BYTES {
+        return text;
+    }
+
+    let mut truncated = text
+        .chars()
+        .take(COMMAND_OUTPUT_MAX_BYTES)
+        .collect::<String>();
+    truncated.push_str("\n...[truncated]");
+    truncated
+}
+
+fn command_error_output(output: &Output) -> String {
+    let stderr = normalize_command_text(&output.stderr);
+    if !stderr.is_empty() {
+        return stderr;
+    }
+
+    let stdout = normalize_command_text(&output.stdout);
+    if !stdout.is_empty() {
+        return stdout;
+    }
+
+    "command failed".to_string()
+}
+
+fn validate_repo_root(repo_root: &str) -> Result<String, String> {
+    let trimmed = repo_root.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::validation("repoRoot is required").to_string());
+    }
+
+    let path = PathBuf::from(trimmed);
+    if !path.exists() {
+        return Err(AppError::validation("repo root does not exist").to_string());
+    }
+    if !path.is_dir() {
+        return Err(AppError::validation("repo root must be a directory").to_string());
+    }
+
+    Ok(normalize_existing_path(&path))
+}
+
+fn validate_repo_paths(paths: &[String]) -> Result<Vec<String>, String> {
+    if paths.is_empty() {
+        return Err(AppError::validation("at least one path is required").to_string());
+    }
+
+    let mut normalized = Vec::with_capacity(paths.len());
+    for raw in paths {
+        let value = raw.trim();
+        if value.is_empty() {
+            return Err(AppError::validation("path cannot be empty").to_string());
+        }
+
+        let path = Path::new(value);
+        if path.is_absolute() {
+            return Err(AppError::validation("absolute paths are not allowed").to_string());
+        }
+
+        if path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        }) {
+            return Err(AppError::validation("path traversal is not allowed").to_string());
+        }
+
+        normalized.push(value.to_string());
+    }
+
+    Ok(normalized)
+}
+
+fn run_git_command(repo_root: &str, args: &[&str], context: &str) -> Result<Output, String> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(repo_root);
+    args.iter().for_each(|arg| {
+        command.arg(arg);
+    });
+
+    command
+        .output()
+        .map_err(|err| AppError::git(format!("{context}: {err}")).to_string())
+}
+
+fn run_gh_command(repo_root: &str, args: &[&str], context: &str) -> Result<Output, String> {
+    let mut command = Command::new("gh");
+    command.current_dir(repo_root);
+    args.iter().for_each(|arg| {
+        command.arg(arg);
+    });
+
+    command.output().map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            AppError::system("GitHub CLI (`gh`) is not installed".to_string()).to_string()
+        } else {
+            AppError::system(format!("{context}: {err}")).to_string()
+        }
+    })
+}
+
+fn parse_branch_header(line: &str) -> (String, Option<String>, u32, u32) {
+    let header = line.strip_prefix("## ").unwrap_or(line).trim();
+    let mut branch = header.to_string();
+    let mut upstream = None;
+    let mut ahead = 0_u32;
+    let mut behind = 0_u32;
+
+    if let Some((left, right)) = header.split_once("...") {
+        branch = left.trim().to_string();
+        let (upstream_part, tracking_part) = match right.split_once(" [") {
+            Some((upstream_raw, tracking_raw)) => (
+                upstream_raw.trim(),
+                Some(tracking_raw.trim_end_matches(']').trim()),
+            ),
+            None => (right.trim(), None),
+        };
+
+        if !upstream_part.is_empty() {
+            upstream = Some(upstream_part.to_string());
+        }
+
+        if let Some(tracking_part) = tracking_part {
+            tracking_part.split(',').for_each(|piece| {
+                let token = piece.trim();
+                if let Some(value) = token.strip_prefix("ahead ") {
+                    ahead = value.trim().parse::<u32>().unwrap_or(0);
+                } else if let Some(value) = token.strip_prefix("behind ") {
+                    behind = value.trim().parse::<u32>().unwrap_or(0);
+                }
+            });
+        }
+    } else if let Some((left, _tracking_part)) = header.split_once(" [") {
+        branch = left.trim().to_string();
+    }
+
+    (branch, upstream, ahead, behind)
+}
+
+fn parse_status_file_line(line: &str) -> Option<GitStatusFile> {
+    if line.len() < 3 {
+        return None;
+    }
+
+    if let Some(path) = line.strip_prefix("?? ") {
+        return Some(GitStatusFile {
+            path: path.trim().to_string(),
+            code: "??".to_string(),
+            staged: false,
+            unstaged: false,
+            untracked: true,
+        });
+    }
+
+    let code = line.get(0..2)?.to_string();
+    let x = code.chars().next().unwrap_or(' ');
+    let y = code.chars().nth(1).unwrap_or(' ');
+    let path_segment = line.get(3..)?.trim();
+    let path = path_segment
+        .split_once(" -> ")
+        .map(|(_, target)| target.trim())
+        .unwrap_or(path_segment)
+        .to_string();
+
+    Some(GitStatusFile {
+        path,
+        code,
+        staged: x != ' ' && x != '?',
+        unstaged: y != ' ',
+        untracked: false,
+    })
+}
+
+fn response_from_output(output: &Output, fallback: &str) -> GitCommandResponse {
+    let stderr = normalize_command_text(&output.stderr);
+    if !stderr.is_empty() {
+        return GitCommandResponse { output: stderr };
+    }
+
+    let stdout = normalize_command_text(&output.stdout);
+    if !stdout.is_empty() {
+        return GitCommandResponse { output: stdout };
+    }
+
+    GitCommandResponse {
+        output: fallback.to_string(),
+    }
+}
+
+fn run_gh_json(repo_root: &str, args: &[&str], context: &str) -> Result<serde_json::Value, String> {
+    let output = run_gh_command(repo_root, args, context)?;
+    if !output.status.success() {
+        return Err(AppError::git(format!("{context}: {}", command_error_output(&output))).to_string());
+    }
+
+    let stdout = normalize_command_text(&output.stdout);
+    if stdout.is_empty() {
+        return Ok(serde_json::json!([]));
+    }
+
+    serde_json::from_str::<serde_json::Value>(&stdout)
+        .map_err(|err| AppError::system(format!("{context}: failed to parse json output: {err}")).to_string())
 }
 
 fn now_millis() -> u128 {
@@ -2225,6 +2685,700 @@ fn prune_worktrees(request: PruneWorktreesRequest) -> Result<PruneWorktreesRespo
     })
 }
 
+#[tauri::command]
+fn git_status(request: GitRepoRequest) -> Result<GitStatusResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let output = run_git_command(
+        &repo_root,
+        &["status", "--porcelain", "--branch"],
+        "failed to run git status",
+    )?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+
+    let stdout = normalize_command_text(&output.stdout);
+    let mut branch = "detached".to_string();
+    let mut upstream = None;
+    let mut ahead = 0_u32;
+    let mut behind = 0_u32;
+    let mut files = Vec::new();
+
+    for line in stdout.lines() {
+        if line.starts_with("## ") {
+            let (next_branch, next_upstream, next_ahead, next_behind) = parse_branch_header(line);
+            branch = next_branch;
+            upstream = next_upstream;
+            ahead = next_ahead;
+            behind = next_behind;
+            continue;
+        }
+
+        if let Some(file) = parse_status_file_line(line) {
+            files.push(file);
+        }
+    }
+
+    let staged_count = files.iter().filter(|item| item.staged).count() as u32;
+    let unstaged_count = files.iter().filter(|item| item.unstaged).count() as u32;
+    let untracked_count = files.iter().filter(|item| item.untracked).count() as u32;
+
+    Ok(GitStatusResponse {
+        repo_root,
+        branch,
+        upstream,
+        ahead,
+        behind,
+        staged_count,
+        unstaged_count,
+        untracked_count,
+        files,
+    })
+}
+
+#[tauri::command]
+fn git_diff(request: GitDiffRequest) -> Result<GitDiffResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let path = validate_repo_paths(&vec![request.path.clone()])?
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::validation("path is required").to_string())?;
+
+    let mut command = Command::new("git");
+    command.arg("-C").arg(&repo_root).arg("diff");
+    if request.staged {
+        command.arg("--cached");
+    }
+    command.arg("--").arg(&path);
+
+    let output = command
+        .output()
+        .map_err(|err| AppError::git(format!("failed to run git diff: {err}")).to_string())?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+
+    Ok(GitDiffResponse {
+        path,
+        staged: request.staged,
+        patch: normalize_command_text(&output.stdout),
+    })
+}
+
+#[tauri::command]
+fn git_stage_paths(request: GitPathsRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let paths = validate_repo_paths(&request.paths)?;
+
+    let mut command = Command::new("git");
+    command.arg("-C").arg(&repo_root).arg("add").arg("--");
+    paths.iter().for_each(|path| {
+        command.arg(path);
+    });
+
+    let output = command
+        .output()
+        .map_err(|err| AppError::git(format!("failed to run git add: {err}")).to_string())?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+
+    Ok(response_from_output(
+        &output,
+        &format!("staged {} path(s)", paths.len()),
+    ))
+}
+
+#[tauri::command]
+fn git_unstage_paths(request: GitPathsRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let paths = validate_repo_paths(&request.paths)?;
+
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("restore")
+        .arg("--staged")
+        .arg("--");
+    paths.iter().for_each(|path| {
+        command.arg(path);
+    });
+
+    let output = command
+        .output()
+        .map_err(|err| AppError::git(format!("failed to run git restore --staged: {err}")).to_string())?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+
+    Ok(response_from_output(
+        &output,
+        &format!("unstaged {} path(s)", paths.len()),
+    ))
+}
+
+#[tauri::command]
+fn git_discard_paths(request: GitDiscardPathsRequest) -> Result<GitCommandResponse, String> {
+    if !request.force {
+        return Err(AppError::validation("force=true is required to discard changes").to_string());
+    }
+
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let paths = validate_repo_paths(&request.paths)?;
+
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("restore")
+        .arg("--worktree")
+        .arg("--source=HEAD")
+        .arg("--");
+    paths.iter().for_each(|path| {
+        command.arg(path);
+    });
+
+    let output = command
+        .output()
+        .map_err(|err| AppError::git(format!("failed to run git restore: {err}")).to_string())?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+
+    Ok(response_from_output(
+        &output,
+        &format!("discarded changes for {} path(s)", paths.len()),
+    ))
+}
+
+#[tauri::command]
+fn git_commit(request: GitCommitRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let message = request.message.trim();
+    if message.is_empty() {
+        return Err(AppError::validation("commit message is required").to_string());
+    }
+
+    let output = run_git_command(
+        &repo_root,
+        &["commit", "-m", message],
+        "failed to run git commit",
+    )?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+
+    Ok(response_from_output(&output, "commit created"))
+}
+
+#[tauri::command]
+fn git_fetch(request: GitRepoRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let output = run_git_command(&repo_root, &["fetch", "--all", "--prune"], "failed to run git fetch")?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(&output, "fetch completed"))
+}
+
+#[tauri::command]
+fn git_pull(request: GitRepoRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let output = run_git_command(&repo_root, &["pull", "--ff-only"], "failed to run git pull")?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(&output, "pull completed"))
+}
+
+#[tauri::command]
+fn git_push(request: GitRepoRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let output = run_git_command(&repo_root, &["push"], "failed to run git push")?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(&output, "push completed"))
+}
+
+#[tauri::command]
+fn git_list_branches(request: GitRepoRequest) -> Result<Vec<GitBranchEntry>, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let current = run_git_command(
+        &repo_root,
+        &["symbolic-ref", "--quiet", "--short", "HEAD"],
+        "failed to inspect current branch",
+    )
+    .ok()
+    .filter(|output| output.status.success())
+    .map(|output| normalize_command_text(&output.stdout))
+    .unwrap_or_default();
+
+    let output = run_git_command(
+        &repo_root,
+        &[
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short)\t%(upstream:short)\t%(objectname:short)\t%(subject)",
+            "refs/heads",
+        ],
+        "failed to list branches",
+    )?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+
+    let mut branches = Vec::new();
+    for line in normalize_command_text(&output.stdout).lines() {
+        let mut parts = line.split('\t');
+        let name = parts.next().unwrap_or("").trim();
+        if name.is_empty() {
+            continue;
+        }
+        let upstream = parts
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let commit = parts.next().unwrap_or("").trim().to_string();
+        let subject = parts.next().unwrap_or("").trim().to_string();
+
+        branches.push(GitBranchEntry {
+            name: name.to_string(),
+            is_current: !current.is_empty() && current == name,
+            upstream,
+            commit,
+            subject,
+        });
+    }
+
+    Ok(branches)
+}
+
+#[tauri::command]
+fn git_checkout_branch(request: GitCheckoutBranchRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let branch = request.branch.trim();
+    if branch.is_empty() {
+        return Err(AppError::validation("branch is required").to_string());
+    }
+
+    let output = run_git_command(
+        &repo_root,
+        &["checkout", branch],
+        "failed to run git checkout",
+    )?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(
+        &output,
+        &format!("checked out {branch}"),
+    ))
+}
+
+#[tauri::command]
+fn git_create_branch(request: GitCreateBranchRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let branch = request.branch.trim();
+    if branch.is_empty() {
+        return Err(AppError::validation("branch is required").to_string());
+    }
+
+    let branch_check = run_git_command(
+        &repo_root,
+        &["check-ref-format", "--branch", branch],
+        "failed to validate branch name",
+    )?;
+    if !branch_check.status.success() {
+        return Err(AppError::validation(format!("invalid branch name: {branch}")).to_string());
+    }
+
+    let checkout = request.checkout.unwrap_or(true);
+    let base_ref = request.base_ref.as_deref().map(str::trim).filter(|value| !value.is_empty());
+
+    let output = if checkout {
+        match base_ref {
+            Some(base_ref) => run_git_command(
+                &repo_root,
+                &["checkout", "-b", branch, base_ref],
+                "failed to create and checkout branch",
+            )?,
+            None => run_git_command(
+                &repo_root,
+                &["checkout", "-b", branch],
+                "failed to create and checkout branch",
+            )?,
+        }
+    } else {
+        match base_ref {
+            Some(base_ref) => run_git_command(
+                &repo_root,
+                &["branch", branch, base_ref],
+                "failed to create branch",
+            )?,
+            None => run_git_command(&repo_root, &["branch", branch], "failed to create branch")?,
+        }
+    };
+
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+
+    Ok(response_from_output(
+        &output,
+        &format!("created branch {branch}"),
+    ))
+}
+
+#[tauri::command]
+fn git_delete_branch(request: GitDeleteBranchRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let branch = request.branch.trim();
+    if branch.is_empty() {
+        return Err(AppError::validation("branch is required").to_string());
+    }
+
+    let flag = if request.force.unwrap_or(false) {
+        "-D"
+    } else {
+        "-d"
+    };
+    let output = run_git_command(
+        &repo_root,
+        &["branch", flag, branch],
+        "failed to delete branch",
+    )?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+
+    Ok(response_from_output(
+        &output,
+        &format!("deleted branch {branch}"),
+    ))
+}
+
+#[tauri::command]
+fn gh_list_prs(request: GitHubListRequest) -> Result<Vec<GitHubPrSummary>, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let limit = clamp_github_list_limit(request.limit);
+    let limit_arg = limit.to_string();
+    let value = run_gh_json(
+        &repo_root,
+        &[
+            "pr",
+            "list",
+            "--limit",
+            limit_arg.as_str(),
+            "--json",
+            "number,title,state,headRefName,baseRefName,isDraft,updatedAt,url,author",
+        ],
+        "failed to list pull requests",
+    )?;
+    serde_json::from_value(value)
+        .map_err(|err| AppError::system(format!("failed to parse pull request list: {err}")).to_string())
+}
+
+#[tauri::command]
+fn gh_pr_detail(request: GitHubPrRequest) -> Result<serde_json::Value, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let number = request.number.to_string();
+    run_gh_json(
+        &repo_root,
+        &[
+            "pr",
+            "view",
+            number.as_str(),
+            "--json",
+            "number,title,body,state,headRefName,baseRefName,isDraft,updatedAt,url,author,labels,assignees,reviewDecision,mergeStateStatus",
+        ],
+        "failed to load pull request details",
+    )
+}
+
+#[tauri::command]
+fn gh_pr_checkout(request: GitHubPrRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let number = request.number.to_string();
+    let output = run_gh_command(
+        &repo_root,
+        &["pr", "checkout", number.as_str()],
+        "failed to checkout pull request",
+    )?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(
+        &output,
+        &format!("checked out PR #{}", request.number),
+    ))
+}
+
+#[tauri::command]
+fn gh_pr_comment(request: GitHubPrCommentRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let body = request.body.trim();
+    if body.is_empty() {
+        return Err(AppError::validation("comment body is required").to_string());
+    }
+
+    let number = request.number.to_string();
+    let output = run_gh_command(
+        &repo_root,
+        &["pr", "comment", number.as_str(), "--body", body],
+        "failed to comment on pull request",
+    )?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(&output, "comment posted"))
+}
+
+#[tauri::command]
+fn gh_pr_merge_squash(request: GitHubPrMergeRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let number = request.number.to_string();
+    let mut command = Command::new("gh");
+    command
+        .current_dir(&repo_root)
+        .arg("pr")
+        .arg("merge")
+        .arg(number)
+        .arg("--squash");
+    if request.delete_branch.unwrap_or(false) {
+        command.arg("--delete-branch");
+    }
+
+    let output = command.output().map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            AppError::system("GitHub CLI (`gh`) is not installed".to_string()).to_string()
+        } else {
+            AppError::system(format!("failed to merge pull request: {err}")).to_string()
+        }
+    })?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(&output, "pull request merged"))
+}
+
+#[tauri::command]
+fn gh_list_issues(request: GitHubListRequest) -> Result<Vec<GitHubIssueSummary>, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let limit = clamp_github_list_limit(request.limit);
+    let limit_arg = limit.to_string();
+    let value = run_gh_json(
+        &repo_root,
+        &[
+            "issue",
+            "list",
+            "--limit",
+            limit_arg.as_str(),
+            "--json",
+            "number,title,state,updatedAt,url,author,labels,assignees",
+        ],
+        "failed to list issues",
+    )?;
+    serde_json::from_value(value)
+        .map_err(|err| AppError::system(format!("failed to parse issue list: {err}")).to_string())
+}
+
+#[tauri::command]
+fn gh_issue_detail(request: GitHubIssueRequest) -> Result<serde_json::Value, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let number = request.number.to_string();
+    run_gh_json(
+        &repo_root,
+        &[
+            "issue",
+            "view",
+            number.as_str(),
+            "--json",
+            "number,title,body,state,updatedAt,url,author,labels,assignees,comments",
+        ],
+        "failed to load issue details",
+    )
+}
+
+#[tauri::command]
+fn gh_issue_comment(request: GitHubIssueCommentRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let body = request.body.trim();
+    if body.is_empty() {
+        return Err(AppError::validation("comment body is required").to_string());
+    }
+
+    let number = request.number.to_string();
+    let output = run_gh_command(
+        &repo_root,
+        &["issue", "comment", number.as_str(), "--body", body],
+        "failed to comment on issue",
+    )?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(&output, "comment posted"))
+}
+
+#[tauri::command]
+fn gh_issue_edit_labels(request: GitHubIssueEditLabelsRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    if request.add_labels.is_empty() && request.remove_labels.is_empty() {
+        return Err(AppError::validation("at least one label update is required").to_string());
+    }
+
+    let mut command = Command::new("gh");
+    command
+        .current_dir(&repo_root)
+        .arg("issue")
+        .arg("edit")
+        .arg(request.number.to_string());
+    request.add_labels.iter().for_each(|label| {
+        command.arg("--add-label").arg(label);
+    });
+    request.remove_labels.iter().for_each(|label| {
+        command.arg("--remove-label").arg(label);
+    });
+
+    let output = command.output().map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            AppError::system("GitHub CLI (`gh`) is not installed".to_string()).to_string()
+        } else {
+            AppError::system(format!("failed to edit issue labels: {err}")).to_string()
+        }
+    })?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(&output, "issue labels updated"))
+}
+
+#[tauri::command]
+fn gh_issue_edit_assignees(
+    request: GitHubIssueEditAssigneesRequest,
+) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    if request.add_assignees.is_empty() && request.remove_assignees.is_empty() {
+        return Err(AppError::validation("at least one assignee update is required").to_string());
+    }
+
+    let mut command = Command::new("gh");
+    command
+        .current_dir(&repo_root)
+        .arg("issue")
+        .arg("edit")
+        .arg(request.number.to_string());
+    request.add_assignees.iter().for_each(|assignee| {
+        command.arg("--add-assignee").arg(assignee);
+    });
+    request.remove_assignees.iter().for_each(|assignee| {
+        command.arg("--remove-assignee").arg(assignee);
+    });
+
+    let output = command.output().map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            AppError::system("GitHub CLI (`gh`) is not installed".to_string()).to_string()
+        } else {
+            AppError::system(format!("failed to edit issue assignees: {err}")).to_string()
+        }
+    })?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(&output, "issue assignees updated"))
+}
+
+#[tauri::command]
+fn gh_list_workflows(request: GitHubListRequest) -> Result<Vec<GitHubWorkflowSummary>, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let limit = clamp_github_list_limit(request.limit);
+    let limit_arg = limit.to_string();
+    let value = run_gh_json(
+        &repo_root,
+        &[
+            "workflow",
+            "list",
+            "--limit",
+            limit_arg.as_str(),
+            "--json",
+            "id,name,state,path",
+        ],
+        "failed to list workflows",
+    )?;
+    serde_json::from_value(value)
+        .map_err(|err| AppError::system(format!("failed to parse workflow list: {err}")).to_string())
+}
+
+#[tauri::command]
+fn gh_list_runs(request: GitHubListRequest) -> Result<Vec<GitHubRunSummary>, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let limit = clamp_github_list_limit(request.limit);
+    let limit_arg = limit.to_string();
+    let value = run_gh_json(
+        &repo_root,
+        &[
+            "run",
+            "list",
+            "--limit",
+            limit_arg.as_str(),
+            "--json",
+            "databaseId,workflowName,displayTitle,status,conclusion,event,headBranch,headSha,number,createdAt,updatedAt,url",
+        ],
+        "failed to list workflow runs",
+    )?;
+    serde_json::from_value(value)
+        .map_err(|err| AppError::system(format!("failed to parse run list: {err}")).to_string())
+}
+
+#[tauri::command]
+fn gh_run_detail(request: GitHubRunRequest) -> Result<serde_json::Value, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let run_id = request.run_id.to_string();
+    run_gh_json(
+        &repo_root,
+        &[
+            "run",
+            "view",
+            run_id.as_str(),
+            "--json",
+            "databaseId,workflowName,displayTitle,status,conclusion,event,headBranch,headSha,number,createdAt,updatedAt,url,jobs",
+        ],
+        "failed to load run details",
+    )
+}
+
+#[tauri::command]
+fn gh_run_rerun_failed(request: GitHubRunRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let run_id = request.run_id.to_string();
+    let output = run_gh_command(
+        &repo_root,
+        &["run", "rerun", run_id.as_str(), "--failed"],
+        "failed to rerun workflow run",
+    )?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(&output, "run rerun requested"))
+}
+
+#[tauri::command]
+fn gh_run_cancel(request: GitHubRunRequest) -> Result<GitCommandResponse, String> {
+    let repo_root = validate_repo_root(&request.repo_root)?;
+    let run_id = request.run_id.to_string();
+    let output = run_gh_command(
+        &repo_root,
+        &["run", "cancel", run_id.as_str()],
+        "failed to cancel workflow run",
+    )?;
+    if !output.status.success() {
+        return Err(AppError::git(command_error_output(&output)).to_string());
+    }
+    Ok(response_from_output(&output, "run cancel requested"))
+}
+
 fn list_worktrees_internal(repo_root: &str) -> Result<Vec<WorktreeEntry>, String> {
     let output = Command::new("git")
         .arg("-C")
@@ -2710,6 +3864,47 @@ prunable stale path
         assert!(jobs.contains_key("done-2"));
         assert!(jobs.contains_key("done-3"));
     }
+
+    #[test]
+    fn parse_branch_header_reads_upstream_and_tracking_counts() {
+        let (branch, upstream, ahead, behind) =
+            parse_branch_header("## feat/git-ui...origin/feat/git-ui [ahead 2, behind 1]");
+        assert_eq!(branch, "feat/git-ui");
+        assert_eq!(upstream.as_deref(), Some("origin/feat/git-ui"));
+        assert_eq!(ahead, 2);
+        assert_eq!(behind, 1);
+    }
+
+    #[test]
+    fn parse_status_file_line_parses_untracked_and_modified_entries() {
+        let untracked = parse_status_file_line("?? src/new-file.ts").expect("parse untracked");
+        assert!(untracked.untracked);
+        assert!(!untracked.staged);
+        assert!(!untracked.unstaged);
+
+        let mixed = parse_status_file_line("MM src/app.ts").expect("parse modified");
+        assert!(mixed.staged);
+        assert!(mixed.unstaged);
+        assert_eq!(mixed.code, "MM");
+    }
+
+    #[test]
+    fn validate_repo_paths_rejects_absolute_and_parent_segments() {
+        assert!(validate_repo_paths(&vec!["src/app.ts".to_string()]).is_ok());
+        assert!(validate_repo_paths(&vec!["/etc/passwd".to_string()]).is_err());
+        assert!(validate_repo_paths(&vec!["../oops".to_string()]).is_err());
+    }
+
+    #[test]
+    fn clamp_github_list_limit_bounds_values() {
+        assert_eq!(clamp_github_list_limit(None), GITHUB_LIST_LIMIT_DEFAULT);
+        assert_eq!(clamp_github_list_limit(Some(0)), 1);
+        assert_eq!(clamp_github_list_limit(Some(5)), 5);
+        assert_eq!(
+            clamp_github_list_limit(Some(GITHUB_LIST_LIMIT_MAX + 10)),
+            GITHUB_LIST_LIMIT_MAX
+        );
+    }
 }
 
 fn parse_worktree_porcelain(stdout: &str) -> Vec<ParsedWorktreeEntry> {
@@ -2903,6 +4098,34 @@ pub fn run() {
             sync_automation_workspaces,
             automation_report,
             resolve_repo_context,
+            git_status,
+            git_diff,
+            git_stage_paths,
+            git_unstage_paths,
+            git_discard_paths,
+            git_commit,
+            git_fetch,
+            git_pull,
+            git_push,
+            git_list_branches,
+            git_checkout_branch,
+            git_create_branch,
+            git_delete_branch,
+            gh_list_prs,
+            gh_pr_detail,
+            gh_pr_checkout,
+            gh_pr_comment,
+            gh_pr_merge_squash,
+            gh_list_issues,
+            gh_issue_detail,
+            gh_issue_comment,
+            gh_issue_edit_labels,
+            gh_issue_edit_assignees,
+            gh_list_workflows,
+            gh_list_runs,
+            gh_run_detail,
+            gh_run_rerun_failed,
+            gh_run_cancel,
             create_worktree,
             list_worktrees,
             remove_worktree,
