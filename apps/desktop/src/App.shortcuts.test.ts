@@ -138,7 +138,7 @@ describe("createTmuxPrefixController", () => {
     const context = baseTmuxContext();
     const controller = createTmuxPrefixController();
 
-    const prefix = createEvent({ key: "b", ctrlKey: true, shiftKey: true });
+    const prefix = createEvent({ key: "b", ctrlKey: true });
     const splitPercent = createEvent({ key: "%" });
     const splitQuote = createEvent({ key: "\"" });
 
@@ -154,7 +154,7 @@ describe("createTmuxPrefixController", () => {
   it("cycles panes with wrap for prefix+n/p/o", () => {
     const context = baseTmuxContext();
     const controller = createTmuxPrefixController();
-    const prefix = createEvent({ key: "b", ctrlKey: true, shiftKey: true });
+    const prefix = createEvent({ key: "b", ctrlKey: true });
 
     context.activeWorkspace.focusedPaneId = "pane-3";
     controller.handleKeydown(prefix, context);
@@ -177,10 +177,10 @@ describe("createTmuxPrefixController", () => {
     context.activeWorkspace.paneOrder = Array.from({ length: 10 }, (_, index) => `pane-${index + 1}`);
     const controller = createTmuxPrefixController();
 
-    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true, shiftKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     controller.handleKeydown(createEvent({ key: "2" }), context);
 
-    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true, shiftKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     controller.handleKeydown(createEvent({ key: "0" }), context);
 
     expect(context.setFocusedPane).toHaveBeenNthCalledWith(1, "workspace-main", "pane-2");
@@ -191,11 +191,11 @@ describe("createTmuxPrefixController", () => {
     const context = baseTmuxContext();
     const controller = createTmuxPrefixController();
 
-    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true, shiftKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     controller.handleKeydown(createEvent({ key: "ArrowLeft" }), context);
     expect(context.moveFocusedPane).toHaveBeenCalledWith("workspace-main", "left");
 
-    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true, shiftKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     controller.handleKeydown(createEvent({ key: "ArrowRight", altKey: true }), context);
     expect(context.resizeFocusedPaneByDelta).toHaveBeenCalledWith("workspace-main", 1, 0);
   });
@@ -204,15 +204,15 @@ describe("createTmuxPrefixController", () => {
     const context = baseTmuxContext();
     const controller = createTmuxPrefixController();
 
-    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true, shiftKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     controller.handleKeydown(createEvent({ key: "z" }), context);
     expect(context.toggleActiveWorkspaceZoom).toHaveBeenCalledWith("pane-2");
 
-    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true, shiftKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     controller.handleKeydown(createEvent({ key: "x" }), context);
     expect(context.setActiveWorkspacePaneCount).toHaveBeenNthCalledWith(1, 2);
 
-    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true, shiftKey: true }), context);
+    controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     controller.handleKeydown(createEvent({ key: "&" }), context);
     expect(context.setActiveWorkspacePaneCount).toHaveBeenNthCalledWith(2, 2);
   });
@@ -222,7 +222,7 @@ describe("createTmuxPrefixController", () => {
     const context = baseTmuxContext();
     const controller = createTmuxPrefixController();
 
-    const armed = controller.handleKeydown(createEvent({ key: "b", ctrlKey: true, shiftKey: true }), context);
+    const armed = controller.handleKeydown(createEvent({ key: "b", ctrlKey: true }), context);
     expect(armed).toBe(true);
 
     vi.advanceTimersByTime(TMUX_PREFIX_TIMEOUT_MS + 1);
@@ -238,19 +238,19 @@ describe("createTmuxPrefixController", () => {
   it("does not arm tmux prefix outside terminal context", () => {
     const context = { ...baseTmuxContext(), activeSection: "settings" as const };
     const controller = createTmuxPrefixController();
-    const prefix = createEvent({ key: "b", ctrlKey: true, shiftKey: true });
+    const prefix = createEvent({ key: "b", ctrlKey: true });
 
     expect(controller.handleKeydown(prefix, context)).toBe(false);
     expect(prefix.preventDefault).not.toHaveBeenCalled();
   });
 
-  it("does not consume Ctrl+B so shell tmux can receive it", () => {
+  it("arms Ctrl+B in terminal pane input scope", () => {
     const context = baseTmuxContext();
     const controller = createTmuxPrefixController();
     const shellPrefix = createEvent({ key: "b", ctrlKey: true, target: createTerminalEditableTarget() });
 
-    expect(controller.handleKeydown(shellPrefix, context)).toBe(false);
-    expect(shellPrefix.preventDefault).not.toHaveBeenCalled();
+    expect(controller.handleKeydown(shellPrefix, context)).toBe(true);
+    expect(shellPrefix.preventDefault).toHaveBeenCalledTimes(1);
   });
 
   it("allows tmux prefix when terminal pane input target is focused", () => {
@@ -259,7 +259,6 @@ describe("createTmuxPrefixController", () => {
     const prefix = createEvent({
       key: "b",
       ctrlKey: true,
-      shiftKey: true,
       target: createTerminalEditableTarget(),
     });
     const next = createEvent({

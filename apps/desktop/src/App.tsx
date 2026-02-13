@@ -54,7 +54,7 @@ const SHORTCUT_GROUPS = [
   {
     title: "tmux Core",
     shortcuts: [
-      ["Prefix", "Ctrl + Shift + B"],
+      ["Prefix", "Ctrl + B"],
       ["Split pane", "Prefix + % or \""],
       ["Next/prev pane", "Prefix + N / P / O"],
       ["Focus by index", "Prefix + 0..9"],
@@ -144,7 +144,6 @@ function isTmuxPrefixKey(event: KeyboardEvent): boolean {
   return event.ctrlKey
     && !event.metaKey
     && !event.altKey
-    && event.shiftKey
     && event.key.toLowerCase() === "b";
 }
 
