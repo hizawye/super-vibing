@@ -1,8 +1,11 @@
 # Project Status
 
-- Last Updated: 2026-02-14 (shadcn-ui-compact-refresh-pass-3)
+- Last Updated: 2026-02-14 (release-v0.1.21-tag)
 
 - Current progress:
+  - Released version bump to 0.1.21:
+    - updated release manifests to 0.1.21,
+    - created and pushed tag `v0.1.21` to `origin`.
   - Completed shadcn compact refresh pass across shared UI package and desktop surfaces:
     - converted `@supervibing/ui` primitives to token-native shadcn styles (no dependency on legacy app CSS class skins),
     - replaced token bridge with a two-theme contract (`apple-dark`, `apple-light`) and compact-first spacing defaults,
