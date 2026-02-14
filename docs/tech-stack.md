@@ -9,6 +9,9 @@
 - Frontend UI:
   - React + Vite
   - Tailwind CSS
+  - shared `@supervibing/ui` package (`packages/ui`) with shadcn-style primitives
+  - token contract standardized to dark/light themes with compact density default
+  - Radix UI primitives (`@radix-ui/react-*`) for dialog/tabs/checkbox/switch/scroll-area/separator foundations
   - Xterm.js + `@xterm/addon-fit`
   - `react-grid-layout` (+ `react-resizable`) for pane manager
 - State:

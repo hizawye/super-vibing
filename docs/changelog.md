@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026-02-14] - shadcn Compact Refresh (Dark/Light + Token-Native Styling)
+### Changed
+- Converted shared `@supervibing/ui` primitives to token-native shadcn styling and removed primitive reliance on desktop legacy class skins.
+- Reduced theme scope to two supported presets (`apple-dark`, `apple-light`) and set default density to `compact`.
+- Rebuilt `apps/desktop/src/styles.css` as a compact structural stylesheet for layout/pane orchestration instead of a full legacy skin layer.
+
+### Removed
+- Removed legacy “Soft UI Minimalism 2.0” override contract from desktop CSS.
+- Removed old style-contract assertions tied to soft-ui marker blocks and replaced them with shadcn compact contract checks.
+
+### Verification
+- `pnpm --filter @supervibing/desktop typecheck`
+- `pnpm --filter @supervibing/desktop test -- run`
+- `pnpm --filter @supervibing/desktop build`
+- `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml`
+
 ## [2026-02-13] - Git Control Center (lazygit/gitui-style)
 ### Added
 - Added a new sidebar `Git` section with keyboard-first 3-pane workflow (`Status`, `Branches`, `Worktrees`, `PRs`, `Issues`, `Actions`).
@@ -178,6 +194,49 @@
 ### Fixed
 - Fixed terminal copy behavior by handling `Ctrl+Shift+C` inside pane terminals and copying selected output to clipboard.
 - Fixed first-render terminal glyph spacing drift in new/hidden workspace panes by forcing post-mount and fonts-ready refits.
+
+## [2026-02-14] - shadcn/ui Shared Package Migration (Pass 1)
+### Added
+- Added shared `@supervibing/ui` package in `packages/ui` with shadcn-style primitives and exported token stylesheet (`@supervibing/ui/styles.css`).
+- Added Radix-backed dialog/tabs/checkbox/switch/scroll primitives plus common UI utility exports (`cn`, badge/card/button/input surface).
+- Added desktop wiring for shared package consumption (`workspace:*` dependency, Tailwind content scan, main stylesheet import).
+
+### Changed
+- Migrated key desktop surfaces to shared primitives:
+  - navigation/chrome (`AppSidebar`, `TopChrome`),
+  - command and modal surfaces (`CommandPalette`, `NewWorkspaceModal`, `NewPaneModal`, git confirm modal),
+  - worktree and git control center interaction UI (`WorktreeManagerSection`, `GitSection` toolbar/list/detail controls),
+  - pane header controls and utility surfaces (`PaneGrid`, `EmptyStatePage`, `StartupCrashScreen`).
+
+### Verification
+- `pnpm --filter @supervibing/desktop typecheck`
+- `pnpm --filter @supervibing/desktop test -- run src/components/AppSidebar.test.tsx src/components/CommandPalette.test.tsx src/components/NewWorkspaceModal.test.tsx src/components/NewPaneModal.test.tsx src/components/PaneGrid.test.tsx`
+- `pnpm --filter @supervibing/desktop build`
+- `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml`
+
+## [2026-02-14] - shadcn/ui Control Surface Completion (Pass 2)
+### Changed
+- Completed remaining desktop control migration in `apps/desktop/src/App.tsx`:
+  - settings controls now use shared `@supervibing/ui` components,
+  - terminal toolbar controls now use shared button/badge primitives,
+  - pane-reassignment restart confirmation now uses `AlertDialog`.
+- Replaced prompt-driven Git workflows in `apps/desktop/src/components/GitSection.tsx` with dialog-based actions for:
+  - commit message entry,
+  - branch checkout/create/delete,
+  - PR checkout/squash/comment,
+  - issue comment/labels/assignees edits.
+
+### Removed
+- Removed browser-native interaction flows from desktop TSX:
+  - no `window.prompt`,
+  - no `window.confirm`.
+- Removed dead CSS selectors tied to retired overlay/group-title/native-input styling paths.
+
+### Verification
+- `pnpm --filter @supervibing/desktop typecheck`
+- `pnpm --filter @supervibing/desktop test -- run src/App.settings-updater.test.tsx src/App.shortcuts.test.ts src/components/CommandPalette.test.tsx src/components/NewWorkspaceModal.test.tsx src/components/NewPaneModal.test.tsx src/components/PaneGrid.test.tsx`
+- `pnpm --filter @supervibing/desktop build`
+- `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml`
 
 ## [2026-02-11] - Testing and Hardening Pass
 ### Added

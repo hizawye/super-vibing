@@ -7,6 +7,17 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-14] - Compact shadcn UI Baseline (Dark/Light Only)
+**Context:** UI migration to shared shadcn primitives was functionally complete, but styling still depended on a large legacy stylesheet and a soft-ui override block that conflicted with compact, modern shadcn defaults.
+**Decision:** Standardize on a compact token-driven shadcn baseline:
+- limit preset themes to `apple-dark` and `apple-light`,
+- make `compact` the default density for new/legacy-fallback sessions,
+- move primitive styling responsibility into `@supervibing/ui`,
+- replace desktop `styles.css` with structural/layout styling only and remove the soft-ui override block.
+**Rationale:** Reduces design-system drift, cuts CSS complexity, improves perceived UI speed, and keeps dark/light behavior explicit and testable.
+**Consequences:** Older persisted theme ids now sanitize to `apple-dark`; style contract tests were rewritten to target shadcn compact guarantees instead of legacy soft-ui markers.
+**Alternatives Considered:** Keeping all six presets with remapped tokens, and preserving the soft-ui override block while layering additional shadcn patches.
+
 ## [2026-02-13] - Git Control Center via Native `git` + `gh` Command Surface
 **Context:** Users requested lazygit/gitui-style visibility and control over local git state plus GitHub PR/issues/workflow operations without leaving the app.
 **Decision:** Introduce a dedicated `Git` app section with keyboard-first interaction, backed by new Tauri commands that shell out to `git` and `gh`:
@@ -717,3 +728,24 @@ Root causes were synchronous backend RPC calls in command handling and single-sl
 **Rationale:** Meets expected tmux create-and-focus behavior without changing broader pane-count increase flows.
 **Consequences:** `prefix+c` now advances focus/cursor to new pane; other creation/increment paths remain behaviorally stable.
 **Alternatives Considered:** Applying focus-on-create to all pane-count increases, which would broaden behavior beyond the reported shortcut flow.
+
+## [2026-02-14] - Shared `@supervibing/ui` Foundation and Desktop Surface Migration
+**Context:** The desktop app UI was using a large custom CSS + native element surface, while the branch goal is to move toward shadcn/ui patterns and shared primitives.
+**Decision:** Introduce a shared workspace package `packages/ui` (`@supervibing/ui`) with shadcn-style primitives and migrate core desktop surfaces to consume it in-place:
+- package exports primitives and utility (`Button`, `Input`, `Dialog`, `Command`, `Badge`, `Checkbox`, `ScrollArea`, etc.) plus token bridge stylesheet export `@supervibing/ui/styles.css`,
+- desktop wired via workspace dependency + Tailwind content scan + main entry stylesheet import,
+- major surfaces migrated first: sidebar/top chrome, command palette, workspace/pane modals, worktree manager, git section toolbar/list/detail controls, pane header actions, confirm modal, and key empty/crash surfaces.
+**Rationale:** Establishes a reusable component system without changing backend/store contracts, while reducing one-off UI element implementations and enabling iterative replacement of legacy CSS.
+**Consequences:** UI behavior remains stable with current tests/build checks passing; some Radix dialog accessibility warnings remain where descriptions are not yet explicitly set. Legacy `styles.css` remains substantial and should be reduced in follow-up passes.
+**Alternatives Considered:** Keeping app-local primitives only (`apps/desktop/src/components/ui`) and postponing shared package extraction.
+
+## [2026-02-14] - Remove Native Prompt/Confirm Flows and Complete shadcn Control Surface
+**Context:** After pass 1, desktop still had non-shadcn interaction paths in `App.tsx` and `GitSection.tsx` (`window.prompt`/`window.confirm`, plus remaining native control elements).
+**Decision:** Complete migration by moving all remaining interaction surfaces to shared `@supervibing/ui` components:
+- migrated `SettingsSection` and terminal top controls in `apps/desktop/src/App.tsx` to `Button`, `Input`, `Checkbox`, `Badge`, `AlertDialog`,
+- replaced pane worktree restart confirmation (`window.confirm`) with `AlertDialog`,
+- replaced `GitSection` prompt-driven action flows with explicit dialog-based forms for commit/branch/PR/issue actions,
+- removed final raw form-control elements from desktop TSX surfaces.
+**Rationale:** Makes UI behavior deterministic and testable, eliminates browser-native prompt/confirm UX mismatches, and aligns fully with shared shadcn-style component architecture.
+**Consequences:** Git actions now require explicit dialog interactions instead of prompt shortcuts; keyboard triggers still open equivalent action flows. Legacy CSS dead selectors were pruned where migration made them unreachable.
+**Alternatives Considered:** Keeping `window.prompt`/`window.confirm` for power-user speed and postponing full control-surface migration.

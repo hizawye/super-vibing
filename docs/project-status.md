@@ -1,8 +1,63 @@
 # Project Status
 
-- Last Updated: 2026-02-13 (git-control-center-v1)
+- Last Updated: 2026-02-14 (shadcn-ui-compact-refresh-pass-3)
 
 - Current progress:
+  - Completed shadcn compact refresh pass across shared UI package and desktop surfaces:
+    - converted `@supervibing/ui` primitives to token-native shadcn styles (no dependency on legacy app CSS class skins),
+    - replaced token bridge with a two-theme contract (`apple-dark`, `apple-light`) and compact-first spacing defaults,
+    - reduced theme model in frontend types/theme definitions from six presets to two supported presets,
+    - changed session/UI default density from `comfortable` to `compact` in store defaults/reset paths.
+  - Rebuilt desktop visual layer for compact, clean shadcn styling:
+    - rewrote `apps/desktop/src/styles.css` into a token-driven structural stylesheet,
+    - removed legacy “Soft UI Minimalism 2.0” override block and duplicated skinning rules,
+    - updated style contract tests to validate the new shadcn compact contract.
+  - Verification:
+    - `pnpm --filter @supervibing/desktop typecheck` ✅
+    - `pnpm --filter @supervibing/desktop test -- run` ✅ (18/18 files, 121/121 tests)
+    - `pnpm --filter @supervibing/desktop build` ✅
+    - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - Blockers/Bugs:
+    - No functional blockers found in current compact refresh pass.
+  - Next immediate starting point:
+    - continue removing no-op legacy className shims (`subtle-btn`, `primary-btn`, etc.) from desktop TSX now that primitive styling is fully token-native,
+    - add a visual regression snapshot baseline for dark/light compact themes.
+
+  - Historical progress:
+  - Completed shadcn/ui migration foundation with shared workspace package:
+    - added `@supervibing/ui` package surface under `packages/ui/src` with shadcn-style primitives (`Button`, `Input`, `Dialog`, `Command`, `Badge`, `Checkbox`, `ScrollArea`, etc.),
+    - added token bridge stylesheet export `@supervibing/ui/styles.css`,
+    - added Tailwind preset scaffold at `packages/ui/tailwind.preset.ts`,
+    - wired desktop app to consume package via `workspace:*` dependency.
+  - Migrated major desktop UI surfaces to shared primitives:
+    - `apps/desktop/src/components/AppSidebar.tsx`,
+    - `apps/desktop/src/components/TopChrome.tsx`,
+    - `apps/desktop/src/components/CommandPalette.tsx`,
+    - `apps/desktop/src/components/NewWorkspaceModal.tsx`,
+    - `apps/desktop/src/components/NewPaneModal.tsx`,
+    - `apps/desktop/src/components/WorktreeManagerSection.tsx`,
+    - `apps/desktop/src/components/GitSection.tsx` (toolbar/list/detail interactions),
+    - `apps/desktop/src/components/PaneGrid.tsx`,
+    - `apps/desktop/src/components/git/GitActionConfirmModal.tsx`,
+    - `apps/desktop/src/components/EmptyStatePage.tsx`,
+    - `apps/desktop/src/components/StartupCrashScreen.tsx`.
+  - Updated desktop build wiring for shared UI package:
+    - `apps/desktop/src/main.tsx` now imports `@supervibing/ui/styles.css`,
+    - `apps/desktop/tailwind.config.ts` now scans `../../packages/ui/src/**/*.{ts,tsx}`.
+  - Verification:
+    - `pnpm --filter @supervibing/desktop typecheck` ✅
+    - `pnpm --filter @supervibing/desktop test -- run src/components/AppSidebar.test.tsx src/components/CommandPalette.test.tsx src/components/NewWorkspaceModal.test.tsx src/components/NewPaneModal.test.tsx src/components/PaneGrid.test.tsx` ✅
+      - run scope passed (18/18 files, 121/121 tests).
+    - `pnpm --filter @supervibing/desktop build` ✅
+    - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - Blockers/Bugs:
+    - No functional blockers found in current migration pass.
+    - No outstanding migration regressions in current validated test/build scope.
+  - Next immediate starting point:
+    - completed in pass 2 (`App.tsx` controls + dialog descriptions + prompt/confirm removal),
+    - remaining follow-up is ongoing CSS deduplication and shared-style consolidation.
+
+  - Historical progress:
   - Implemented a new keyboard-first `Git` section in desktop app navigation:
     - `apps/desktop/src/components/GitSection.tsx` adds 3-pane control center (`Status`, `Branches`, `Worktrees`, `PRs`, `Issues`, `Actions`) scoped to active workspace repository.
     - `apps/desktop/src/store/gitView.ts` adds view-state slice for active git panel, focus zone, and per-panel cursors.

@@ -40,6 +40,26 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
   - prefix mappings route to pane count/focus/zoom/resize actions, with resize gated to `freeform` layout mode,
   - `Prefix + X/&` decrements pane count for multi-pane workspaces and closes the workspace when it has one pane remaining (store still guards against closing the final workspace).
 
+## Shared UI package
+- Shared primitives now live in `packages/ui` and are consumed by desktop as `@supervibing/ui`.
+- Package exports:
+  - shadcn-style primitives (`Button`, `Input`, `Dialog`, `Command`, `Badge`, `Checkbox`, `ScrollArea`, etc.),
+  - `cn` utility (`clsx` + `tailwind-merge`),
+  - CSS token bridge via `@supervibing/ui/styles.css`.
+- Token contract:
+  - theme scope is intentionally narrow (`apple-dark`, `apple-light`),
+  - compact density is the default (`data-density=\"compact\"`) with optional comfortable override.
+- Desktop wiring:
+  - `apps/desktop/src/main.tsx` imports `@supervibing/ui/styles.css`,
+  - `apps/desktop/tailwind.config.ts` includes `../../packages/ui/src/**/*.{ts,tsx}`.
+- Desktop CSS strategy:
+  - `apps/desktop/src/styles.css` now focuses on app layout/structure and pane/grid integration,
+  - primitive control skinning is owned by `@supervibing/ui`,
+  - legacy soft-ui override layer is removed.
+- Interaction contract:
+  - desktop TSX surfaces use shared UI primitives for controls/forms/dialogs,
+  - browser-native `window.prompt`/`window.confirm` flows are removed in favor of explicit dialog-driven actions.
+
 ## Git manager
 - `resolve_repo_context` resolves canonical repo/worktree context for a cwd and gracefully reports non-git paths.
 - `create_worktree` supports `newBranch` and `existingBranch` modes and returns enriched worktree metadata.
