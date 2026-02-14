@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Badge, Button } from "@supervibing/ui";
 import type { AppSection } from "../types";
 
 export interface WorkspaceNavView {
@@ -58,8 +59,9 @@ export function AppSidebar({
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="ghost"
         className={`sidebar-backdrop ${open ? "open" : ""}`}
         aria-label="Close navigation"
         onClick={onClose}
@@ -77,9 +79,9 @@ export function AppSidebar({
             </div>
           </div>
 
-          <button type="button" className="sidebar-close-btn" aria-label="Close navigation" onClick={onClose}>
+          <Button type="button" variant="subtle" className="sidebar-close-btn" aria-label="Close navigation" onClick={onClose}>
             ×
-          </button>
+          </Button>
         </header>
 
         <nav className="sidebar-section-nav" aria-label="App sections">
@@ -87,10 +89,11 @@ export function AppSidebar({
           {PRIMARY_SECTIONS.map((item, index) => {
             const active = item.id === activeSection;
             return (
-              <button
+              <Button
                 key={item.id}
                 ref={index === 0 ? firstActionRef : null}
                 type="button"
+                variant="subtle"
                 className={`sidebar-section-item ${active ? "active" : ""} ${item.locked ? "locked" : ""}`}
                 aria-current={active ? "page" : undefined}
                 aria-disabled={item.locked ? "true" : undefined}
@@ -105,8 +108,8 @@ export function AppSidebar({
                   </span>
                   <span>{item.label}</span>
                 </span>
-                {item.hint ? <small>{item.hint}</small> : null}
-              </button>
+                {item.hint ? <Badge variant="secondary" className="text-[10px]">{item.hint}</Badge> : null}
+              </Button>
             );
           })}
         </nav>
@@ -114,9 +117,9 @@ export function AppSidebar({
         <section className="sidebar-workspace-panel" aria-label="Workspaces">
           <div className="sidebar-panel-head">
             <h2>Workspaces</h2>
-            <button type="button" className="workspace-add" aria-label="New workspace" onClick={onCreateWorkspace}>
+            <Button type="button" variant="subtle" className="workspace-add" aria-label="New workspace" onClick={onCreateWorkspace}>
               +
-            </button>
+            </Button>
           </div>
 
           <div className="sidebar-workspace-list">
@@ -126,24 +129,26 @@ export function AppSidebar({
 
               return (
                 <div key={workspace.id} className={`sidebar-workspace-row ${active ? "active" : ""}`}>
-                  <button
+                  <Button
                     type="button"
+                    variant="subtle"
                     className="sidebar-workspace-btn"
                     onClick={() => onSelectWorkspace(workspace.id)}
                   >
                     <span className="sidebar-workspace-name">{workspace.name}</span>
                     <span className="sidebar-workspace-count">{workspace.paneCount}</span>
-                  </button>
+                  </Button>
 
                   {closable ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="subtle"
                       className="sidebar-workspace-close"
                       aria-label={`Close ${workspace.name}`}
                       onClick={() => onCloseWorkspace(workspace.id)}
                     >
                       ×
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               );
@@ -152,8 +157,9 @@ export function AppSidebar({
         </section>
 
         <footer className="sidebar-footer">
-          <button
+          <Button
             type="button"
+            variant="subtle"
             className={`sidebar-section-item sidebar-settings ${activeSection === "settings" ? "active" : ""}`}
             aria-current={activeSection === "settings" ? "page" : undefined}
             onClick={() => onSelectSection("settings")}
@@ -164,7 +170,7 @@ export function AppSidebar({
               </span>
               <span>Settings</span>
             </span>
-          </button>
+          </Button>
         </footer>
       </aside>
     </>

@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  ScrollArea,
+  Textarea,
+} from "@supervibing/ui";
+import {
   ghIssueComment,
   ghIssueDetail,
   ghIssueEditAssignees,
@@ -113,6 +126,13 @@ function formatTimestamp(value: string | null): string {
   return new Date(timestamp).toLocaleString();
 }
 
+function parseCsvList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -159,6 +179,19 @@ export function GitSection({
   const [loadingByPanel, setLoadingByPanel] = useState(panelRecord(false));
   const [errorByPanel, setErrorByPanel] = useState(panelRecord<string | null>(null));
   const [lastSyncByPanel, setLastSyncByPanel] = useState(panelRecord<string | null>(null));
+  const [commitDialogOpen, setCommitDialogOpen] = useState(false);
+  const [commitMessageDraft, setCommitMessageDraft] = useState("");
+  const [branchDialogOpen, setBranchDialogOpen] = useState(false);
+  const [newBranchNameDraft, setNewBranchNameDraft] = useState("");
+  const [newBranchBaseRefDraft, setNewBranchBaseRefDraft] = useState("HEAD");
+  const [prDialogOpen, setPrDialogOpen] = useState(false);
+  const [prCommentDraft, setPrCommentDraft] = useState("");
+  const [issueDialogOpen, setIssueDialogOpen] = useState(false);
+  const [issueCommentDraft, setIssueCommentDraft] = useState("");
+  const [issueAddLabelsDraft, setIssueAddLabelsDraft] = useState("");
+  const [issueRemoveLabelsDraft, setIssueRemoveLabelsDraft] = useState("");
+  const [issueAddAssigneesDraft, setIssueAddAssigneesDraft] = useState("");
+  const [issueRemoveAssigneesDraft, setIssueRemoveAssigneesDraft] = useState("");
 
   const setPanelLoading = useCallback((panel: GitPanelId, loading: boolean) => {
     setLoadingByPanel((current) => ({ ...current, [panel]: loading }));
@@ -639,211 +672,201 @@ export function GitSection({
     });
   }, [repoRoot, selectedStatusFile, setFocusZone, withBusyAction]);
 
-  const createCommit = useCallback(async () => {
+  const openCommitDialog = useCallback(() => {
+    setCommitMessageDraft("");
+    setCommitDialogOpen(true);
+  }, []);
+
+  const submitCommit = useCallback(async () => {
     if (!repoRoot) {
       return;
     }
-    const message = window.prompt("Commit message");
-    if (!message || message.trim().length === 0) {
+    const message = commitMessageDraft.trim();
+    if (message.length === 0) {
       return;
     }
 
     await withBusyAction("status", async () => {
-      const response = await gitCommit({ repoRoot, message: message.trim() });
+      const response = await gitCommit({ repoRoot, message });
       await refreshStatusAndBranches();
       await refreshPrs();
       return response.output;
     });
-  }, [refreshPrs, refreshStatusAndBranches, repoRoot, withBusyAction]);
+    setCommitDialogOpen(false);
+    setCommitMessageDraft("");
+  }, [commitMessageDraft, refreshPrs, refreshStatusAndBranches, repoRoot, withBusyAction]);
 
-  const quickBranchAction = useCallback(async () => {
+  const quickBranchAction = useCallback(() => {
     if (!repoRoot) {
       return;
     }
 
-    const action = window.prompt("Branch action: [c]heckout, [n]ew, [d]elete", "c");
-    if (!action) {
+    setBranchDialogOpen(true);
+  }, [repoRoot]);
+
+  const checkoutSelectedBranch = useCallback(async () => {
+    if (!repoRoot || !selectedBranch || selectedBranch.isCurrent) {
       return;
     }
 
-    const choice = action.trim().toLowerCase();
-    if (choice === "c" && selectedBranch && !selectedBranch.isCurrent) {
-      await withBusyAction("branches", async () => {
-        const response = await gitCheckoutBranch({ repoRoot, branch: selectedBranch.name });
-        await refreshStatusAndBranches();
-        return response.output;
-      });
-      return;
-    }
-
-    if (choice === "n") {
-      const branchName = window.prompt("New branch name");
-      if (!branchName || branchName.trim().length === 0) {
-        return;
-      }
-      const baseRef = window.prompt("Base ref (optional)", "HEAD") ?? "HEAD";
-      await withBusyAction("branches", async () => {
-        const response = await gitCreateBranch({
-          repoRoot,
-          branch: branchName.trim(),
-          baseRef: baseRef.trim() || undefined,
-          checkout: true,
-        });
-        await refreshStatusAndBranches();
-        return response.output;
-      });
-      return;
-    }
-
-    if (choice === "d" && selectedBranch && !selectedBranch.isCurrent) {
-      setConfirmState({
-        title: "Delete Branch",
-        message: `Delete branch ${selectedBranch.name}? This cannot be undone.`,
-        confirmLabel: "Delete",
-        onConfirm: async () => {
-          const response = await gitDeleteBranch({
-            repoRoot,
-            branch: selectedBranch.name,
-            force: false,
-          });
-          setFeedback(response.output);
-          await refreshStatusAndBranches();
-        },
-      });
-    }
+    await withBusyAction("branches", async () => {
+      const response = await gitCheckoutBranch({ repoRoot, branch: selectedBranch.name });
+      await refreshStatusAndBranches();
+      return response.output;
+    });
+    setBranchDialogOpen(false);
   }, [refreshStatusAndBranches, repoRoot, selectedBranch, withBusyAction]);
 
-  const quickPrAction = useCallback(async () => {
+  const createBranchFromDialog = useCallback(async () => {
+    if (!repoRoot) {
+      return;
+    }
+    const branchName = newBranchNameDraft.trim();
+    if (branchName.length === 0) {
+      return;
+    }
+
+    await withBusyAction("branches", async () => {
+      const response = await gitCreateBranch({
+        repoRoot,
+        branch: branchName,
+        baseRef: newBranchBaseRefDraft.trim() || undefined,
+        checkout: true,
+      });
+      await refreshStatusAndBranches();
+      return response.output;
+    });
+    setBranchDialogOpen(false);
+    setNewBranchNameDraft("");
+    setNewBranchBaseRefDraft("HEAD");
+  }, [newBranchBaseRefDraft, newBranchNameDraft, refreshStatusAndBranches, repoRoot, withBusyAction]);
+
+  const quickPrAction = useCallback(() => {
     if (!repoRoot || !selectedPr) {
       return;
     }
 
-    const action = window.prompt("PR action: [o]pen, [c]heckout, [m]erge squash, [t]comment", "o");
-    if (!action) {
+    setPrDialogOpen(true);
+  }, [repoRoot, selectedPr]);
+
+  const checkoutSelectedPr = useCallback(async () => {
+    if (!repoRoot || !selectedPr) {
       return;
     }
 
-    const choice = action.trim().toLowerCase();
-    if (choice === "o") {
-      await openPrDetail(selectedPr.number);
+    await withBusyAction("prs", async () => {
+      const response = await ghPrCheckout({ repoRoot, number: selectedPr.number });
+      await refreshStatusAndBranches();
+      return response.output;
+    });
+    setPrDialogOpen(false);
+  }, [refreshStatusAndBranches, repoRoot, selectedPr, withBusyAction]);
+
+  const commentOnSelectedPr = useCallback(async () => {
+    if (!repoRoot || !selectedPr) {
       return;
     }
-    if (choice === "c") {
-      await withBusyAction("prs", async () => {
-        const response = await ghPrCheckout({ repoRoot, number: selectedPr.number });
-        await refreshStatusAndBranches();
-        return response.output;
-      });
-      return;
-    }
-    if (choice === "m") {
-      setConfirmState({
-        title: "Squash Merge Pull Request",
-        message: `Merge PR #${selectedPr.number} with squash strategy?`,
-        confirmLabel: "Squash Merge",
-        onConfirm: async () => {
-          const response = await ghPrMergeSquash({
-            repoRoot,
-            number: selectedPr.number,
-            deleteBranch: false,
-          });
-          setFeedback(response.output);
-          await refreshPrs();
-          await refreshStatusAndBranches();
-        },
-      });
+    const comment = prCommentDraft.trim();
+    if (comment.length === 0) {
       return;
     }
 
-    if (choice === "t") {
-      const comment = window.prompt(`Comment on PR #${selectedPr.number}`);
-      if (!comment || comment.trim().length === 0) {
-        return;
-      }
-      await withBusyAction("prs", async () => {
-        const response = await ghPrComment({
-          repoRoot,
-          number: selectedPr.number,
-          body: comment.trim(),
-        });
-        return response.output;
+    await withBusyAction("prs", async () => {
+      const response = await ghPrComment({
+        repoRoot,
+        number: selectedPr.number,
+        body: comment,
       });
-    }
-  }, [openPrDetail, refreshPrs, refreshStatusAndBranches, repoRoot, selectedPr, withBusyAction]);
+      return response.output;
+    });
+    setPrCommentDraft("");
+    setPrDialogOpen(false);
+  }, [prCommentDraft, repoRoot, selectedPr, withBusyAction]);
 
-  const quickIssueAction = useCallback(async () => {
+  const quickIssueAction = useCallback(() => {
     if (!repoRoot || !selectedIssue) {
       return;
     }
+    setIssueDialogOpen(true);
+  }, [repoRoot, selectedIssue]);
 
-    const action = window.prompt("Issue action: [o]pen, [c]omment, [l]abels, [a]ssignees", "o");
-    if (!action) {
+  const commentOnSelectedIssue = useCallback(async () => {
+    if (!repoRoot || !selectedIssue) {
+      return;
+    }
+    const comment = issueCommentDraft.trim();
+    if (comment.length === 0) {
       return;
     }
 
-    const choice = action.trim().toLowerCase();
-    if (choice === "o") {
-      await openIssueDetail(selectedIssue.number);
-      return;
-    }
-
-    if (choice === "c") {
-      const comment = window.prompt(`Comment on issue #${selectedIssue.number}`);
-      if (!comment || comment.trim().length === 0) {
-        return;
-      }
-      await withBusyAction("issues", async () => {
-        const response = await ghIssueComment({
-          repoRoot,
-          number: selectedIssue.number,
-          body: comment.trim(),
-        });
-        return response.output;
+    await withBusyAction("issues", async () => {
+      const response = await ghIssueComment({
+        repoRoot,
+        number: selectedIssue.number,
+        body: comment,
       });
+      return response.output;
+    });
+    setIssueCommentDraft("");
+    setIssueDialogOpen(false);
+  }, [issueCommentDraft, repoRoot, selectedIssue, withBusyAction]);
+
+  const editSelectedIssueLabels = useCallback(async () => {
+    if (!repoRoot || !selectedIssue) {
+      return;
+    }
+    const addLabels = parseCsvList(issueAddLabelsDraft);
+    const removeLabels = parseCsvList(issueRemoveLabelsDraft);
+    if (addLabels.length === 0 && removeLabels.length === 0) {
       return;
     }
 
-    if (choice === "l") {
-      const add = window.prompt("Add labels (comma separated)", "") ?? "";
-      const remove = window.prompt("Remove labels (comma separated)", "") ?? "";
-      const addLabels = add.split(",").map((item) => item.trim()).filter(Boolean);
-      const removeLabels = remove.split(",").map((item) => item.trim()).filter(Boolean);
-      if (addLabels.length === 0 && removeLabels.length === 0) {
-        return;
-      }
-      await withBusyAction("issues", async () => {
-        const response = await ghIssueEditLabels({
-          repoRoot,
-          number: selectedIssue.number,
-          addLabels,
-          removeLabels,
-        });
-        await refreshIssues();
-        return response.output;
+    await withBusyAction("issues", async () => {
+      const response = await ghIssueEditLabels({
+        repoRoot,
+        number: selectedIssue.number,
+        addLabels,
+        removeLabels,
       });
+      await refreshIssues();
+      return response.output;
+    });
+    setIssueAddLabelsDraft("");
+    setIssueRemoveLabelsDraft("");
+    setIssueDialogOpen(false);
+  }, [issueAddLabelsDraft, issueRemoveLabelsDraft, refreshIssues, repoRoot, selectedIssue, withBusyAction]);
+
+  const editSelectedIssueAssignees = useCallback(async () => {
+    if (!repoRoot || !selectedIssue) {
+      return;
+    }
+    const addAssignees = parseCsvList(issueAddAssigneesDraft);
+    const removeAssignees = parseCsvList(issueRemoveAssigneesDraft);
+    if (addAssignees.length === 0 && removeAssignees.length === 0) {
       return;
     }
 
-    if (choice === "a") {
-      const add = window.prompt("Add assignees (comma separated)", "") ?? "";
-      const remove = window.prompt("Remove assignees (comma separated)", "") ?? "";
-      const addAssignees = add.split(",").map((item) => item.trim()).filter(Boolean);
-      const removeAssignees = remove.split(",").map((item) => item.trim()).filter(Boolean);
-      if (addAssignees.length === 0 && removeAssignees.length === 0) {
-        return;
-      }
-      await withBusyAction("issues", async () => {
-        const response = await ghIssueEditAssignees({
-          repoRoot,
-          number: selectedIssue.number,
-          addAssignees,
-          removeAssignees,
-        });
-        await refreshIssues();
-        return response.output;
+    await withBusyAction("issues", async () => {
+      const response = await ghIssueEditAssignees({
+        repoRoot,
+        number: selectedIssue.number,
+        addAssignees,
+        removeAssignees,
       });
-    }
-  }, [openIssueDetail, refreshIssues, repoRoot, selectedIssue, withBusyAction]);
+      await refreshIssues();
+      return response.output;
+    });
+    setIssueAddAssigneesDraft("");
+    setIssueRemoveAssigneesDraft("");
+    setIssueDialogOpen(false);
+  }, [
+    issueAddAssigneesDraft,
+    issueRemoveAssigneesDraft,
+    refreshIssues,
+    repoRoot,
+    selectedIssue,
+    withBusyAction,
+  ]);
 
   const runDefaultAction = useCallback(async () => {
     if (activePanel === "status" && selectedStatusFile) {
@@ -1108,7 +1131,7 @@ export function GitSection({
 
       if (event.key.toLowerCase() === "c" && activePanel === "status") {
         event.preventDefault();
-        void createCommit();
+        openCommitDialog();
         return;
       }
 
@@ -1155,9 +1178,9 @@ export function GitSection({
   }, [
     active,
     activePanel,
-    createCommit,
     cycleFocusZone,
     moveCursor,
+    openCommitDialog,
     quickBranchAction,
     quickIssueAction,
     quickPrAction,
@@ -1197,27 +1220,27 @@ export function GitSection({
 
       <div className="git-toolbar">
         <div className="git-toolbar-meta">
-          <span className="top-workspace-pill">repo {repoRoot}</span>
-          {branch ? <span className="top-workspace-pill">branch {branch}</span> : null}
-          {worktreePath ? <span className="top-workspace-pill">worktree {worktreePath}</span> : null}
-          <span className="top-workspace-pill">focus {focusZone}</span>
+          <Badge>repo {repoRoot}</Badge>
+          {branch ? <Badge>branch {branch}</Badge> : null}
+          {worktreePath ? <Badge>worktree {worktreePath}</Badge> : null}
+          <Badge>focus {focusZone}</Badge>
         </div>
         <div className="git-toolbar-actions">
-          <button type="button" className="subtle-btn" onClick={() => void runFetch()}>
+          <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void runFetch()}>
             Fetch
-          </button>
-          <button type="button" className="subtle-btn" onClick={() => void runPull()}>
+          </Button>
+          <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void runPull()}>
             Pull
-          </button>
-          <button type="button" className="subtle-btn" onClick={() => void runPush()}>
+          </Button>
+          <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void runPush()}>
             Push
-          </button>
-          <button type="button" className="subtle-btn" onClick={() => void refreshActivePanel()}>
+          </Button>
+          <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void refreshActivePanel()}>
             Refresh
-          </button>
-          <button type="button" className="subtle-btn" onClick={onOpenWorktreeManager}>
+          </Button>
+          <Button type="button" variant="subtle" className="subtle-btn" onClick={onOpenWorktreeManager}>
             Worktree Manager
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1227,15 +1250,16 @@ export function GitSection({
       <div className="git-layout">
         <aside className={`git-pane git-pane-tabs ${focusZone === "tabs" ? "is-focused" : ""}`}>
           {PANEL_ORDER.map((panel) => (
-            <button
+            <Button
               key={panel}
               type="button"
+              variant="subtle"
               className={`git-tab-btn ${panel === activePanel ? "active" : ""}`}
               onClick={() => setFocusWithPanel(panel, "list")}
             >
               <span>{PANEL_LABELS[panel]}</span>
               {loadingByPanel[panel] ? <small>syncing</small> : <small>{formatTimestamp(lastSyncByPanel[panel])}</small>}
-            </button>
+            </Button>
           ))}
         </aside>
 
@@ -1244,12 +1268,13 @@ export function GitSection({
             <strong>{PANEL_LABELS[activePanel]}</strong>
             <small>{rows.length} items</small>
           </div>
-          <div className="git-list-body" role="listbox" aria-label={`${PANEL_LABELS[activePanel]} list`}>
+          <ScrollArea className="git-list-body" role="listbox" aria-label={`${PANEL_LABELS[activePanel]} list`}>
             {rows.length === 0 ? <p className="settings-caption">No items.</p> : null}
             {rows.map((row, index) => (
-              <button
+              <Button
                 key={row.id}
                 type="button"
+                variant="subtle"
                 role="option"
                 aria-selected={index === cursor}
                 className={`git-row ${index === cursor ? "active" : ""}`}
@@ -1263,15 +1288,15 @@ export function GitSection({
                 {row.badges?.length ? (
                   <span className="git-row-badges">
                     {row.badges.map((badge) => (
-                      <span key={badge} className="top-workspace-pill">
+                      <Badge key={badge}>
                         {badge}
-                      </span>
+                      </Badge>
                     ))}
                   </span>
                 ) : null}
-              </button>
+              </Button>
             ))}
-          </div>
+          </ScrollArea>
         </section>
 
         <section className={`git-pane git-pane-detail ${focusZone === "detail" ? "is-focused" : ""}`}>
@@ -1280,17 +1305,45 @@ export function GitSection({
             <small>{currentLoading || busyAction ? "working..." : "ready"}</small>
           </div>
           <pre className="git-detail-text">{detailValue}</pre>
+          {activePanel === "status" ? (
+            <div className="git-detail-actions">
+              <Button type="button" variant="subtle" className="subtle-btn" onClick={openCommitDialog}>
+                Commit…
+              </Button>
+            </div>
+          ) : null}
+          {activePanel === "branches" ? (
+            <div className="git-detail-actions">
+              <Button type="button" variant="subtle" className="subtle-btn" onClick={quickBranchAction}>
+                Branch actions…
+              </Button>
+            </div>
+          ) : null}
+          {activePanel === "prs" ? (
+            <div className="git-detail-actions">
+              <Button type="button" variant="subtle" className="subtle-btn" onClick={quickPrAction}>
+                PR actions…
+              </Button>
+            </div>
+          ) : null}
+          {activePanel === "issues" ? (
+            <div className="git-detail-actions">
+              <Button type="button" variant="subtle" className="subtle-btn" onClick={quickIssueAction}>
+                Issue actions…
+              </Button>
+            </div>
+          ) : null}
           {activePanel === "actions" && selectedRun ? (
             <div className="git-detail-actions">
-              <button type="button" className="subtle-btn" onClick={() => void openRunDetail(selectedRun.databaseId)}>
+              <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void openRunDetail(selectedRun.databaseId)}>
                 Open
-              </button>
-              <button type="button" className="subtle-btn" onClick={() => void rerunSelectedRun()}>
+              </Button>
+              <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void rerunSelectedRun()}>
                 Rerun Failed
-              </button>
-              <button type="button" className="subtle-btn" onClick={runDestructiveAction}>
+              </Button>
+              <Button type="button" variant="subtle" className="subtle-btn" onClick={runDestructiveAction}>
                 Cancel
-              </button>
+              </Button>
             </div>
           ) : null}
         </section>
@@ -1302,6 +1355,345 @@ export function GitSection({
           b branch menu, p PR menu, i issue menu, a actions tab, u rerun selected run, x destructive confirm.
         </small>
       </div>
+
+      <Dialog open={commitDialogOpen} onOpenChange={setCommitDialogOpen}>
+        <DialogContent className="workspace-modal git-confirm-modal">
+          <DialogHeader className="workspace-modal-head">
+            <DialogTitle>Commit staged changes</DialogTitle>
+            <DialogDescription className="settings-caption">Provide a commit message for current staged changes.</DialogDescription>
+          </DialogHeader>
+          <div className="workspace-modal-section">
+            <label className="input-label" htmlFor="git-commit-message">Message</label>
+            <Input
+              id="git-commit-message"
+              className="text-input"
+              placeholder="feat: describe change"
+              value={commitMessageDraft}
+              onChange={(event) => setCommitMessageDraft(event.currentTarget.value)}
+            />
+          </div>
+          <DialogFooter className="workspace-modal-actions">
+            <Button type="button" variant="subtle" className="subtle-btn" onClick={() => setCommitDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              className="primary-btn"
+              disabled={commitMessageDraft.trim().length === 0 || busyAction}
+              onClick={() => {
+                void submitCommit();
+              }}
+            >
+              Commit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen}>
+        <DialogContent className="workspace-modal git-confirm-modal">
+          <DialogHeader className="workspace-modal-head">
+            <DialogTitle>Branch actions</DialogTitle>
+            <DialogDescription className="settings-caption">Checkout, create, or delete branches for this repository.</DialogDescription>
+          </DialogHeader>
+          <div className="workspace-modal-section">
+            <p className="settings-caption">
+              Selected: {selectedBranch ? selectedBranch.name : "No branch selected"}
+            </p>
+            <div className="settings-inline-actions">
+              <Button
+                type="button"
+                variant="subtle"
+                className="subtle-btn"
+                disabled={!selectedBranch || selectedBranch.isCurrent || busyAction}
+                onClick={() => {
+                  void checkoutSelectedBranch();
+                }}
+              >
+                Checkout selected
+              </Button>
+              <Button
+                type="button"
+                variant="subtle"
+                className="subtle-btn"
+                disabled={!selectedBranch || selectedBranch.isCurrent || busyAction}
+                onClick={() => {
+                  if (!selectedBranch) {
+                    return;
+                  }
+                  setConfirmState({
+                    title: "Delete Branch",
+                    message: `Delete branch ${selectedBranch.name}? This cannot be undone.`,
+                    confirmLabel: "Delete",
+                    onConfirm: async () => {
+                      const response = await gitDeleteBranch({
+                        repoRoot,
+                        branch: selectedBranch.name,
+                        force: false,
+                      });
+                      setFeedback(response.output);
+                      await refreshStatusAndBranches();
+                    },
+                  });
+                  setBranchDialogOpen(false);
+                }}
+              >
+                Delete selected
+              </Button>
+            </div>
+          </div>
+          <div className="workspace-modal-section">
+            <h3>Create and checkout branch</h3>
+            <label className="input-label" htmlFor="git-create-branch-name">Branch</label>
+            <Input
+              id="git-create-branch-name"
+              className="text-input"
+              placeholder="feature/my-branch"
+              value={newBranchNameDraft}
+              onChange={(event) => setNewBranchNameDraft(event.currentTarget.value)}
+            />
+            <label className="input-label" htmlFor="git-create-branch-base">Base ref</label>
+            <Input
+              id="git-create-branch-base"
+              className="text-input"
+              placeholder="HEAD"
+              value={newBranchBaseRefDraft}
+              onChange={(event) => setNewBranchBaseRefDraft(event.currentTarget.value)}
+            />
+          </div>
+          <DialogFooter className="workspace-modal-actions">
+            <Button type="button" variant="subtle" className="subtle-btn" onClick={() => setBranchDialogOpen(false)}>
+              Close
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              className="primary-btn"
+              disabled={newBranchNameDraft.trim().length === 0 || busyAction}
+              onClick={() => {
+                void createBranchFromDialog();
+              }}
+            >
+              Create branch
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={prDialogOpen} onOpenChange={setPrDialogOpen}>
+        <DialogContent className="workspace-modal git-confirm-modal">
+          <DialogHeader className="workspace-modal-head">
+            <DialogTitle>Pull request actions</DialogTitle>
+            <DialogDescription className="settings-caption">Run PR commands against the selected pull request.</DialogDescription>
+          </DialogHeader>
+          <div className="workspace-modal-section">
+            <p className="settings-caption">
+              Selected PR: {selectedPr ? `#${selectedPr.number} ${selectedPr.title}` : "No PR selected"}
+            </p>
+            <div className="settings-inline-actions">
+              <Button
+                type="button"
+                variant="subtle"
+                className="subtle-btn"
+                disabled={!selectedPr || busyAction}
+                onClick={() => {
+                  if (!selectedPr) {
+                    return;
+                  }
+                  void openPrDetail(selectedPr.number);
+                  setPrDialogOpen(false);
+                }}
+              >
+                Open details
+              </Button>
+              <Button
+                type="button"
+                variant="subtle"
+                className="subtle-btn"
+                disabled={!selectedPr || busyAction}
+                onClick={() => {
+                  void checkoutSelectedPr();
+                }}
+              >
+                Checkout PR
+              </Button>
+              <Button
+                type="button"
+                variant="subtle"
+                className="subtle-btn"
+                disabled={!selectedPr || busyAction}
+                onClick={() => {
+                  if (!selectedPr) {
+                    return;
+                  }
+                  setConfirmState({
+                    title: "Squash Merge Pull Request",
+                    message: `Merge PR #${selectedPr.number} with squash strategy?`,
+                    confirmLabel: "Squash Merge",
+                    onConfirm: async () => {
+                      const response = await ghPrMergeSquash({
+                        repoRoot,
+                        number: selectedPr.number,
+                        deleteBranch: false,
+                      });
+                      setFeedback(response.output);
+                      await refreshPrs();
+                      await refreshStatusAndBranches();
+                    },
+                  });
+                  setPrDialogOpen(false);
+                }}
+              >
+                Squash merge
+              </Button>
+            </div>
+          </div>
+          <div className="workspace-modal-section">
+            <label className="input-label" htmlFor="git-pr-comment">Comment</label>
+            <Textarea
+              id="git-pr-comment"
+              className="text-input"
+              rows={4}
+              placeholder="Write a PR comment"
+              value={prCommentDraft}
+              onChange={(event) => setPrCommentDraft(event.currentTarget.value)}
+            />
+          </div>
+          <DialogFooter className="workspace-modal-actions">
+            <Button type="button" variant="subtle" className="subtle-btn" onClick={() => setPrDialogOpen(false)}>
+              Close
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              className="primary-btn"
+              disabled={!selectedPr || prCommentDraft.trim().length === 0 || busyAction}
+              onClick={() => {
+                void commentOnSelectedPr();
+              }}
+            >
+              Comment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen}>
+        <DialogContent className="workspace-modal git-confirm-modal">
+          <DialogHeader className="workspace-modal-head">
+            <DialogTitle>Issue actions</DialogTitle>
+            <DialogDescription className="settings-caption">Comment and update labels/assignees for the selected issue.</DialogDescription>
+          </DialogHeader>
+          <div className="workspace-modal-section">
+            <p className="settings-caption">
+              Selected issue: {selectedIssue ? `#${selectedIssue.number} ${selectedIssue.title}` : "No issue selected"}
+            </p>
+            <div className="settings-inline-actions">
+              <Button
+                type="button"
+                variant="subtle"
+                className="subtle-btn"
+                disabled={!selectedIssue || busyAction}
+                onClick={() => {
+                  if (!selectedIssue) {
+                    return;
+                  }
+                  void openIssueDetail(selectedIssue.number);
+                  setIssueDialogOpen(false);
+                }}
+              >
+                Open details
+              </Button>
+            </div>
+          </div>
+          <div className="workspace-modal-section">
+            <label className="input-label" htmlFor="git-issue-comment">Comment</label>
+            <Textarea
+              id="git-issue-comment"
+              className="text-input"
+              rows={4}
+              placeholder="Write an issue comment"
+              value={issueCommentDraft}
+              onChange={(event) => setIssueCommentDraft(event.currentTarget.value)}
+            />
+            <div className="settings-inline-actions">
+              <Button
+                type="button"
+                variant="primary"
+                className="primary-btn"
+                disabled={!selectedIssue || issueCommentDraft.trim().length === 0 || busyAction}
+                onClick={() => {
+                  void commentOnSelectedIssue();
+                }}
+              >
+                Add comment
+              </Button>
+            </div>
+          </div>
+          <div className="workspace-modal-section">
+            <label className="input-label" htmlFor="git-issue-add-labels">Add labels (comma separated)</label>
+            <Input
+              id="git-issue-add-labels"
+              className="text-input"
+              value={issueAddLabelsDraft}
+              onChange={(event) => setIssueAddLabelsDraft(event.currentTarget.value)}
+            />
+            <label className="input-label" htmlFor="git-issue-remove-labels">Remove labels (comma separated)</label>
+            <Input
+              id="git-issue-remove-labels"
+              className="text-input"
+              value={issueRemoveLabelsDraft}
+              onChange={(event) => setIssueRemoveLabelsDraft(event.currentTarget.value)}
+            />
+            <div className="settings-inline-actions">
+              <Button
+                type="button"
+                variant="subtle"
+                className="subtle-btn"
+                disabled={busyAction || (parseCsvList(issueAddLabelsDraft).length === 0 && parseCsvList(issueRemoveLabelsDraft).length === 0)}
+                onClick={() => {
+                  void editSelectedIssueLabels();
+                }}
+              >
+                Apply labels
+              </Button>
+            </div>
+          </div>
+          <div className="workspace-modal-section">
+            <label className="input-label" htmlFor="git-issue-add-assignees">Add assignees (comma separated)</label>
+            <Input
+              id="git-issue-add-assignees"
+              className="text-input"
+              value={issueAddAssigneesDraft}
+              onChange={(event) => setIssueAddAssigneesDraft(event.currentTarget.value)}
+            />
+            <label className="input-label" htmlFor="git-issue-remove-assignees">Remove assignees (comma separated)</label>
+            <Input
+              id="git-issue-remove-assignees"
+              className="text-input"
+              value={issueRemoveAssigneesDraft}
+              onChange={(event) => setIssueRemoveAssigneesDraft(event.currentTarget.value)}
+            />
+          </div>
+          <DialogFooter className="workspace-modal-actions">
+            <Button type="button" variant="subtle" className="subtle-btn" onClick={() => setIssueDialogOpen(false)}>
+              Close
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              className="primary-btn"
+              disabled={busyAction || (parseCsvList(issueAddAssigneesDraft).length === 0 && parseCsvList(issueRemoveAssigneesDraft).length === 0)}
+              onClick={() => {
+                void editSelectedIssueAssignees();
+              }}
+            >
+              Apply assignees
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <GitActionConfirmModal
         open={confirmState !== null}

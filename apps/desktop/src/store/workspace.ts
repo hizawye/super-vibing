@@ -215,7 +215,7 @@ function defaultUiPreferences(): UiPreferences {
     theme: DEFAULT_THEME_ID,
     reduceMotion: false,
     highContrastAssist: false,
-    density: "comfortable",
+    density: "compact",
   };
 }
 
@@ -1642,7 +1642,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   themeId: DEFAULT_THEME_ID,
   reduceMotion: false,
   highContrastAssist: false,
-  density: "comfortable",
+  density: "compact",
   agentStartupDefaults: defaultAgentStartupDefaults(),
   discordPresenceEnabled: false,
   workspaces: [],
@@ -1780,7 +1780,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       themeId: DEFAULT_THEME_ID,
       reduceMotion: false,
       highContrastAssist: false,
-      density: "comfortable",
+      density: "compact",
       agentStartupDefaults: defaultAgentStartupDefaults(),
       discordPresenceEnabled: false,
       workspaces: [],

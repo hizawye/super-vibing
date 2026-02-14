@@ -1,4 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  ScrollArea,
+} from "@supervibing/ui";
 import type { WorktreeEntry } from "../types";
 
 export interface PaneWorktreeModalSubmitInput {
@@ -95,29 +106,23 @@ export function NewPaneModal({
     setSelectedWorktreePath(fallback);
   }, [initialWorktreePath, open, selectedWorktreePath, sortedEntries]);
 
-  if (!open) {
-    return null;
-  }
-
   const canSubmitExisting = selectedWorktreePath.trim().length > 0;
   const canSubmitCreate = branch.trim().length > 0 && Boolean(repoRoot);
   const submitDisabled = working || (selectionMode === "existing" ? !canSubmitExisting : !canSubmitCreate);
   const title = mode === "reassign" ? "Change Pane Worktree" : "Create Worktree Pane";
 
   return (
-    <div className="workspace-modal-overlay pane-modal-overlay" role="presentation" onClick={onClose}>
-      <div
-        className="workspace-modal pane-worktree-modal"
-        role="dialog"
-        aria-label={title}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="workspace-modal-head">
-          <h2>{title}</h2>
-          <button type="button" className="modal-close" aria-label="Close" onClick={onClose}>
-            x
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) {
+        onClose();
+      }
+    }}
+    >
+      <DialogContent className="workspace-modal pane-worktree-modal" aria-label={title}>
+        <DialogHeader className="workspace-modal-head">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription className="settings-caption">Choose an existing worktree or create a branch worktree.</DialogDescription>
+        </DialogHeader>
 
         <div className="workspace-modal-section">
           <div className="worktree-toolbar">
@@ -127,8 +132,9 @@ export function NewPaneModal({
               {paneId ? <p className="settings-caption">Target pane: {paneId}</p> : null}
             </div>
             <div className="worktree-toolbar-actions">
-              <button
+              <Button
                 type="button"
+                variant="subtle"
                 className="subtle-btn"
                 onClick={() => {
                   void onRefresh();
@@ -136,7 +142,7 @@ export function NewPaneModal({
                 disabled={working || loading}
               >
                 Refresh
-              </button>
+              </Button>
             </div>
           </div>
           {error ? <p className="worktree-error">{error}</p> : null}
@@ -146,32 +152,34 @@ export function NewPaneModal({
         <div className="workspace-modal-section">
           <h3>Worktree Source</h3>
           <div className="density-toggle" role="group" aria-label="Worktree source">
-            <button
+            <Button
               type="button"
+              variant="subtle"
               className={`layout-mode-btn ${selectionMode === "existing" ? "active" : ""}`}
               onClick={() => setSelectionMode("existing")}
             >
               Existing Worktree
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="subtle"
               className={`layout-mode-btn ${selectionMode === "create" ? "active" : ""}`}
               onClick={() => setSelectionMode("create")}
               disabled={!repoRoot}
             >
               Create Branch Worktree
-            </button>
+            </Button>
           </div>
 
           {selectionMode === "existing" ? (
             <>
-              <input
+              <Input
                 className="text-input"
                 placeholder="Search branch or path"
                 value={query}
                 onChange={(event) => setQuery(event.currentTarget.value)}
               />
-              <div className="pane-worktree-list" role="listbox" aria-label="Available worktrees">
+              <ScrollArea className="pane-worktree-list" role="listbox" aria-label="Available worktrees">
                 {loading ? <p className="settings-caption">Loading worktrees...</p> : null}
                 {!loading && filteredEntries.length === 0 ? (
                   <p className="settings-caption">No worktrees available.</p>
@@ -179,25 +187,26 @@ export function NewPaneModal({
                 {filteredEntries.map((entry) => {
                   const active = normalizePath(entry.worktreePath) === normalizePath(selectedWorktreePath);
                   return (
-                    <button
+                    <Button
                       key={entry.worktreePath}
                       type="button"
                       role="option"
                       aria-selected={active}
+                      variant="subtle"
                       className={`subtle-btn pane-worktree-option ${active ? "active" : ""}`}
                       onClick={() => setSelectedWorktreePath(entry.worktreePath)}
                     >
                       <span>{entry.branch}</span>
                       <small>{entry.worktreePath}</small>
-                    </button>
+                    </Button>
                   );
                 })}
-              </div>
+              </ScrollArea>
             </>
           ) : (
             <div className="worktree-create-grid">
               <label className="input-label" htmlFor="pane-worktree-branch">Branch</label>
-              <input
+              <Input
                 id="pane-worktree-branch"
                 className="text-input"
                 placeholder="feature/my-pane"
@@ -206,7 +215,7 @@ export function NewPaneModal({
               />
 
               <label className="input-label" htmlFor="pane-worktree-base-ref">Base Ref</label>
-              <input
+              <Input
                 id="pane-worktree-base-ref"
                 className="text-input"
                 placeholder="HEAD"
@@ -217,12 +226,13 @@ export function NewPaneModal({
           )}
         </div>
 
-        <div className="workspace-modal-actions">
-          <button type="button" className="subtle-btn" onClick={onClose} disabled={working}>
+        <DialogFooter className="workspace-modal-actions">
+          <Button type="button" variant="subtle" className="subtle-btn" onClick={onClose} disabled={working}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="primary"
             className="primary-btn"
             disabled={submitDisabled}
             onClick={() => {
@@ -244,9 +254,9 @@ export function NewPaneModal({
             }}
           >
             {mode === "reassign" ? "Apply Worktree" : "Create Pane"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Badge, Button } from "@supervibing/ui";
 import type { AppSection } from "../types";
 
 interface TopChromeProps {
@@ -71,9 +72,9 @@ export function TopChrome({
     <header className={`top-chrome ${hasTerminalControls ? "top-chrome-terminal top-chrome-minimal" : ""}`}>
       <div className="top-chrome-row">
         <div className="top-chrome-left">
-          <button type="button" className="mobile-nav-toggle" aria-label="Open navigation" onClick={onToggleSidebar}>
+          <Button type="button" variant="subtle" className="mobile-nav-toggle" aria-label="Open navigation" onClick={onToggleSidebar}>
             <span aria-hidden="true">☰</span>
-          </button>
+          </Button>
 
           <div className="top-chrome-context">
             {hasTerminalControls ? (
@@ -85,7 +86,7 @@ export function TopChrome({
                 <h1>
                   <span>{titleForSection(activeSection)}</span>
                   <span className="top-section-dot" aria-hidden="true" />
-                  <span className="top-workspace-pill">{workspaceLabel}</span>
+                  <Badge>{workspaceLabel}</Badge>
                 </h1>
                 <p>{fallbackSubtitle}</p>
               </>
@@ -96,15 +97,16 @@ export function TopChrome({
         {hasTerminalControls ? <div className="top-chrome-controls">{terminalControls}</div> : null}
 
         {showCommandPalette ? (
-          <button
+          <Button
             type="button"
+            variant="subtle"
             className="top-command-btn"
             aria-label="Open command palette"
             onClick={onOpenCommandPalette}
           >
             <span>Command Palette</span>
             <kbd>Ctrl/Cmd + P</kbd>
-          </button>
+          </Button>
         ) : null}
       </div>
 

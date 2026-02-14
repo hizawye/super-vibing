@@ -1,3 +1,5 @@
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@supervibing/ui";
+
 interface GitActionConfirmModalProps {
   open: boolean;
   title: string;
@@ -17,36 +19,32 @@ export function GitActionConfirmModal({
   onCancel,
   onConfirm,
 }: GitActionConfirmModalProps) {
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div className="workspace-modal-overlay" role="presentation" onClick={onCancel}>
-      <div
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) {
+        onCancel();
+      }
+    }}
+    >
+      <DialogContent
         className="workspace-modal git-confirm-modal"
-        role="dialog"
         aria-label={title}
-        onClick={(event) => event.stopPropagation()}
       >
-        <div className="workspace-modal-head">
-          <h2>{title}</h2>
-          <button type="button" className="modal-close" aria-label="Close" onClick={onCancel} disabled={busy}>
-            x
-          </button>
-        </div>
+        <DialogHeader className="workspace-modal-head">
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
         <div className="workspace-modal-section">
-          <p className="settings-caption">{message}</p>
+          <DialogDescription className="settings-caption">{message}</DialogDescription>
         </div>
-        <div className="workspace-modal-actions">
-          <button type="button" className="subtle-btn" onClick={onCancel} disabled={busy}>
+        <DialogFooter className="workspace-modal-actions">
+          <Button type="button" variant="subtle" className="subtle-btn" onClick={onCancel} disabled={busy}>
             Cancel
-          </button>
-          <button type="button" className="primary-btn" onClick={onConfirm} disabled={busy}>
+          </Button>
+          <Button type="button" variant="primary" className="primary-btn" onClick={onConfirm} disabled={busy}>
             {busy ? "Working..." : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

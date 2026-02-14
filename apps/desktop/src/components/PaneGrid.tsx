@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Badge, Button } from "@supervibing/ui";
 import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
 import type { LayoutMode, PaneStatus } from "../types";
 import { TerminalPane } from "./TerminalPane";
@@ -97,26 +98,27 @@ export function PaneGrid({
             onDoubleClick={() => onToggleZoom(zoomedPaneId)}
             onMouseDown={() => onPaneFocus(zoomedPaneId)}
           >
-            <div className="pane-header-main">
-              <strong>{paneMeta?.title ?? zoomedPaneId}</strong>
-              <small>{formatWorktreeLabel(paneMeta?.worktreePath ?? "")}</small>
-            </div>
-            {onRequestPaneWorktreeChange ? (
-              <button
-                type="button"
-                className="subtle-btn pane-worktree-btn"
-                data-testid={`pane-worktree-btn-${zoomedPaneId}`}
-                onMouseDown={(event) => event.stopPropagation()}
+                  <div className="pane-header-main">
+                    <strong>{paneMeta?.title ?? zoomedPaneId}</strong>
+                    <Badge>{formatWorktreeLabel(paneMeta?.worktreePath ?? "")}</Badge>
+                  </div>
+                  {onRequestPaneWorktreeChange ? (
+                    <Button
+                      type="button"
+                      variant="subtle"
+                      className="subtle-btn pane-worktree-btn"
+                      data-testid={`pane-worktree-btn-${zoomedPaneId}`}
+                      onMouseDown={(event) => event.stopPropagation()}
                 onDoubleClick={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRequestPaneWorktreeChange(zoomedPaneId);
-                }}
-              >
-                Worktree
-              </button>
-            ) : null}
-          </div>
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRequestPaneWorktreeChange(zoomedPaneId);
+                      }}
+                    >
+                      Worktree
+                    </Button>
+                  ) : null}
+                </div>
           <TerminalPane
             workspaceId={workspaceId}
             paneId={zoomedPaneId}
@@ -157,11 +159,12 @@ export function PaneGrid({
                 >
                   <div className="pane-header-main">
                     <strong>{paneMeta?.title ?? paneId}</strong>
-                    <small>{formatWorktreeLabel(paneMeta?.worktreePath ?? "")}</small>
+                    <Badge>{formatWorktreeLabel(paneMeta?.worktreePath ?? "")}</Badge>
                   </div>
                   {onRequestPaneWorktreeChange ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="subtle"
                       className="subtle-btn pane-worktree-btn"
                       data-testid={`pane-worktree-btn-${paneId}`}
                       onMouseDown={(event) => event.stopPropagation()}
@@ -172,7 +175,7 @@ export function PaneGrid({
                       }}
                     >
                       Worktree
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               );

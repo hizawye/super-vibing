@@ -1,6 +1,20 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import type { Layout } from "react-grid-layout";
 import { listen } from "@tauri-apps/api/event";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Badge,
+  Button,
+  Checkbox,
+  Input,
+} from "@supervibing/ui";
 import { useShallow } from "zustand/react/shallow";
 import { AppSidebar, type WorkspaceNavView } from "./components/AppSidebar";
 import { EmptyStatePage } from "./components/EmptyStatePage";
@@ -115,6 +129,12 @@ type WorkspaceStoreState = ReturnType<typeof useWorkspaceStore.getState>;
 interface PaneCreatorTarget {
   workspaceId: string;
   paneId?: string;
+}
+
+interface PendingPaneWorktreeConfirm {
+  workspaceId: string;
+  paneId: string;
+  worktreePath: string;
 }
 
 function isTerminalShortcutScope(target: EventTarget | null): boolean {
@@ -658,9 +678,10 @@ export function SettingsSection({
               const theme = THEME_DEFINITIONS[id];
               const active = themeId === id;
               return (
-                <button
+                <Button
                   key={id}
                   type="button"
+                  variant="subtle"
                   role="radio"
                   aria-checked={active}
                   className={`theme-card ${active ? "active" : ""}`}
@@ -673,7 +694,7 @@ export function SettingsSection({
                       <span key={swatch} style={{ backgroundColor: swatch }} />
                     ))}
                   </span>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -683,18 +704,16 @@ export function SettingsSection({
           <h3>Accessibility</h3>
           <div className="settings-toggle-list">
             <label className="check-label">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={reduceMotion}
-                onChange={(event) => onReduceMotionChange(event.currentTarget.checked)}
+                onCheckedChange={(checked) => onReduceMotionChange(checked === true)}
               />
               Reduce motion
             </label>
             <label className="check-label">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={highContrastAssist}
-                onChange={(event) => onHighContrastAssistChange(event.currentTarget.checked)}
+                onCheckedChange={(checked) => onHighContrastAssistChange(checked === true)}
               />
               High contrast assist
             </label>
@@ -706,10 +725,9 @@ export function SettingsSection({
           <p className="settings-caption">Show SuperVibing as an active app in Discord.</p>
           <div className="settings-toggle-list">
             <label className="check-label">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={discordPresenceEnabled}
-                onChange={(event) => onDiscordPresenceEnabledChange(event.currentTarget.checked)}
+                onCheckedChange={(checked) => onDiscordPresenceEnabledChange(checked === true)}
               />
               Show activity in Discord
             </label>
@@ -719,20 +737,22 @@ export function SettingsSection({
         <section className="settings-block">
           <h3>Density</h3>
           <div className="density-toggle" role="group" aria-label="Density">
-            <button
+            <Button
               type="button"
+              variant="subtle"
               className={`layout-mode-btn ${density === "comfortable" ? "active" : ""}`}
               onClick={() => onDensityChange("comfortable")}
             >
               Comfortable
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="subtle"
               className={`layout-mode-btn ${density === "compact" ? "active" : ""}`}
               onClick={() => onDensityChange("compact")}
             >
               Compact
-            </button>
+            </Button>
           </div>
         </section>
 
@@ -745,7 +765,7 @@ export function SettingsSection({
                 <label className="input-label" htmlFor={`agent-default-${agent.profile}`}>
                   {agent.label}
                 </label>
-                <input
+                <Input
                   id={`agent-default-${agent.profile}`}
                   className="text-input"
                   value={agentStartupDefaults[agent.profile]}
@@ -757,9 +777,9 @@ export function SettingsSection({
             ))}
           </div>
           <div className="settings-inline-actions">
-            <button type="button" className="subtle-btn" onClick={onResetAgentStartupDefaults}>
+            <Button type="button" variant="subtle" className="subtle-btn" onClick={onResetAgentStartupDefaults}>
               Reset defaults
-            </button>
+            </Button>
           </div>
         </section>
 
@@ -768,8 +788,9 @@ export function SettingsSection({
           <p className="settings-caption">Check for signed GitHub releases and install updates in place.</p>
 
           <div className="settings-inline-actions">
-            <button
+            <Button
               type="button"
+              variant="subtle"
               className="subtle-btn"
               onClick={() => {
                 void handleCheckForUpdates();
@@ -777,41 +798,44 @@ export function SettingsSection({
               disabled={updateUi.status === "checking" || updateUi.status === "installing"}
             >
               {updateUi.status === "checking" ? "Checking..." : "Check for updates"}
-            </button>
+            </Button>
 
             {updateUi.status === "available" && pendingUpdate ? (
               <>
-                <button
+                <Button
                   type="button"
+                  variant="primary"
                   className="primary-btn"
                   onClick={() => {
                     void handleInstallUpdate();
                   }}
                 >
                   Install update
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="subtle"
                   className="subtle-btn"
                   onClick={() => {
                     void handleDismissUpdate();
                   }}
                 >
                   Not now
-                </button>
+                </Button>
               </>
             ) : null}
 
             {updateUi.status === "installed" ? (
-              <button
+              <Button
                 type="button"
+                variant="primary"
                 className="primary-btn"
                 onClick={() => {
                   void handleRestartNow();
                 }}
               >
                 Restart now
-              </button>
+              </Button>
             ) : null}
           </div>
 
@@ -835,7 +859,7 @@ export function SettingsSection({
                 {group.shortcuts.map(([label, keys]) => (
                   <div key={label} className="shortcut-row">
                     <span>{label}</span>
-                    <kbd>{keys}</kbd>
+                    <Badge><kbd>{keys}</kbd></Badge>
                   </div>
                 ))}
               </div>
@@ -1016,6 +1040,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
   const [paneCreatorTarget, setPaneCreatorTarget] = useState<PaneCreatorTarget | null>(null);
+  const [pendingPaneWorktreeConfirm, setPendingPaneWorktreeConfirm] = useState<PendingPaneWorktreeConfirm | null>(null);
   const agentDefaults = useMemo(
     () => getAgentDefaults(agentStartupDefaults),
     [agentStartupDefaults],
@@ -1229,12 +1254,12 @@ function App() {
       const restartNeeded = latestPane ? isPaneRunningLike(latestPane.status) : false;
 
       if (restartNeeded) {
-        const confirmed = window.confirm(
-          "This pane is running. Reassigning worktree will restart that pane. Continue?",
-        );
-        if (!confirmed) {
-          return;
-        }
+        setPendingPaneWorktreeConfirm({
+          workspaceId: target.workspaceId,
+          paneId: target.paneId,
+          worktreePath,
+        });
+        return;
       }
 
       await setPaneWorktree(target.workspaceId, target.paneId, worktreePath, {
@@ -1250,10 +1275,11 @@ function App() {
   const terminalControls =
     activeSection === "terminal" && activeWorkspace ? (
       <div className="terminal-controls">
-        <span className="compact-label">Panes {activeWorkspace.paneCount}</span>
+        <Badge className="compact-label">Panes {activeWorkspace.paneCount}</Badge>
         <div className="pane-stepper" role="group" aria-label="Pane count quick controls">
-          <button
+          <Button
             type="button"
+            variant="subtle"
             className="subtle-btn pane-stepper-btn"
             onClick={() => {
               void setActiveWorkspacePaneCount(activeWorkspace.paneCount - 1);
@@ -1262,9 +1288,10 @@ function App() {
             aria-label="Decrease pane count"
           >
             -
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="subtle"
             className="subtle-btn pane-stepper-btn"
             onClick={() => {
               void setActiveWorkspacePaneCount(activeWorkspace.paneCount + 1);
@@ -1273,54 +1300,59 @@ function App() {
             aria-label="Increase pane count"
           >
             +
-          </button>
+          </Button>
         </div>
-        <button
+        <Button
           type="button"
+          variant="subtle"
           className="subtle-btn"
           onClick={() => openPaneCreator()}
         >
           New Worktree Pane
-        </button>
+        </Button>
         <div className="layout-mode-toggle" role="group" aria-label="Layout mode">
-          <button
+          <Button
             type="button"
+            variant="subtle"
             className={`layout-mode-btn ${activeWorkspace.layoutMode === "tiling" ? "active" : ""}`}
             onClick={() => setActiveWorkspaceLayoutMode("tiling")}
           >
             Tiling
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="subtle"
             className={`layout-mode-btn ${activeWorkspace.layoutMode === "freeform" ? "active" : ""}`}
             onClick={() => setActiveWorkspaceLayoutMode("freeform")}
           >
             Free-form
-          </button>
+          </Button>
         </div>
         {activeWorkspaceBoot ? (
           <>
-            <span className="compact-label">
+            <Badge className="compact-label">
               Boot {activeWorkspaceBoot.completed}/{activeWorkspaceBoot.totalAgents}
               {activeWorkspaceBoot.failed > 0 ? ` · failed ${activeWorkspaceBoot.failed}` : ""}
-            </span>
+            </Badge>
             {activeWorkspaceBoot.status === "running" ? (
-              <button
+              <Button
                 type="button"
+                variant="subtle"
                 className="subtle-btn"
                 onClick={() => pauseWorkspaceBoot(activeWorkspace.id)}
               >
                 Pause boot
-              </button>
+              </Button>
             ) : null}
             {activeWorkspaceBoot.status === "paused" ? (
-              <button
+              <Button
                 type="button"
+                variant="subtle"
                 className="subtle-btn"
                 onClick={() => resumeWorkspaceBoot(activeWorkspace.id)}
               >
                 Resume boot
-              </button>
+              </Button>
             ) : null}
           </>
         ) : null}
@@ -1582,6 +1614,45 @@ function App() {
           />
         ) : null}
       </Suspense>
+
+      <AlertDialog
+        open={pendingPaneWorktreeConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingPaneWorktreeConfirm(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restart Pane to Apply Worktree</AlertDialogTitle>
+            <AlertDialogDescription>
+              This pane is running. Applying a new worktree will restart the pane. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const pending = pendingPaneWorktreeConfirm;
+                if (!pending) {
+                  return;
+                }
+
+                void setPaneWorktree(pending.workspaceId, pending.paneId, pending.worktreePath, {
+                  restartRunning: true,
+                }).then(() => {
+                  setPaneCreatorTarget(null);
+                }).finally(() => {
+                  setPendingPaneWorktreeConfirm(null);
+                });
+              }}
+            >
+              Restart and apply
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

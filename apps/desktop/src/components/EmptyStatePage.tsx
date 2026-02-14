@@ -1,3 +1,5 @@
+import { Button } from "@supervibing/ui";
+
 interface EmptyStatePageProps {
   title: string;
   subtitle: string;
@@ -19,9 +21,9 @@ export function EmptyStatePage({ title, subtitle, actionLabel, onAction }: Empty
         <h3>{title}</h3>
         <p>{subtitle}</p>
         {actionLabel && onAction ? (
-          <button type="button" className="primary-btn" onClick={onAction}>
+          <Button type="button" variant="primary" className="primary-btn" onClick={onAction}>
             {actionLabel}
-          </button>
+          </Button>
         ) : null}
       </div>
     </section>

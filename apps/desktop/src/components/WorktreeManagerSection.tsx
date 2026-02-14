@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Button, Checkbox, Input, ScrollArea } from "@supervibing/ui";
 import type { WorktreeCreateMode, WorktreeEntry } from "../types";
 
 interface WorktreeManagerSectionProps {
@@ -78,15 +79,15 @@ export function WorktreeManagerSection({
               {lastLoadedAt ? <small className="settings-caption">Last sync: {new Date(lastLoadedAt).toLocaleString()}</small> : null}
             </div>
             <div className="worktree-toolbar-actions">
-              <button type="button" className="subtle-btn" onClick={() => void run("refresh", onRefresh)} disabled={working !== null}>
+              <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void run("refresh", onRefresh)} disabled={working !== null}>
                 Refresh
-              </button>
-              <button type="button" className="subtle-btn" onClick={() => void run("prune-dry", async () => onPrune(true))} disabled={working !== null || !repoRoot}>
+              </Button>
+              <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void run("prune-dry", async () => onPrune(true))} disabled={working !== null || !repoRoot}>
                 Prune (Dry Run)
-              </button>
-              <button type="button" className="subtle-btn" onClick={() => void run("prune", async () => onPrune(false))} disabled={working !== null || !repoRoot}>
+              </Button>
+              <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void run("prune", async () => onPrune(false))} disabled={working !== null || !repoRoot}>
                 Prune
-              </button>
+              </Button>
             </div>
           </div>
           {lastActionMessage ? <p className="worktree-message">{lastActionMessage}</p> : null}
@@ -98,24 +99,26 @@ export function WorktreeManagerSection({
           <h3>Create Worktree</h3>
           <div className="worktree-create-grid">
             <div className="density-toggle" role="group" aria-label="Create mode">
-              <button
+              <Button
                 type="button"
+                variant="subtle"
                 className={`layout-mode-btn ${mode === "newBranch" ? "active" : ""}`}
                 onClick={() => setMode("newBranch")}
               >
                 New Branch
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="subtle"
                 className={`layout-mode-btn ${mode === "existingBranch" ? "active" : ""}`}
                 onClick={() => setMode("existingBranch")}
               >
                 Existing Branch
-              </button>
+              </Button>
             </div>
 
             <label className="input-label" htmlFor="worktree-branch-input">Branch</label>
-            <input
+            <Input
               id="worktree-branch-input"
               className="text-input"
               placeholder="feature/my-task"
@@ -126,7 +129,7 @@ export function WorktreeManagerSection({
             {mode === "newBranch" ? (
               <>
                 <label className="input-label" htmlFor="worktree-base-ref">Base Ref</label>
-                <input
+                <Input
                   id="worktree-base-ref"
                   className="text-input"
                   placeholder="HEAD"
@@ -137,16 +140,16 @@ export function WorktreeManagerSection({
             ) : null}
 
             <label className="check-label">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={openAfterCreate}
-                onChange={(event) => setOpenAfterCreate(event.currentTarget.checked)}
+                onCheckedChange={(checked) => setOpenAfterCreate(checked === true)}
               />
               Open workspace after create
             </label>
 
-            <button
+            <Button
               type="button"
+              variant="primary"
               className="primary-btn"
               disabled={working !== null || !repoRoot || branch.trim().length === 0}
               onClick={() =>
@@ -162,7 +165,7 @@ export function WorktreeManagerSection({
               }
             >
               Create Worktree
-            </button>
+            </Button>
           </div>
         </section>
 
@@ -171,7 +174,7 @@ export function WorktreeManagerSection({
           {loading ? <p className="settings-caption">Loading worktrees...</p> : null}
           {!loading && sortedEntries.length === 0 ? <p className="settings-caption">No worktrees found for this repository.</p> : null}
 
-          <div className="worktree-list">
+          <ScrollArea className="worktree-list">
             {sortedEntries.map((entry) => {
               const isOpen = isWorktreeOpen(entry.worktreePath);
               const removePending = pendingRemovePath === entry.worktreePath;
@@ -193,16 +196,18 @@ export function WorktreeManagerSection({
                   </div>
 
                   <div className="worktree-row-actions">
-                    <button
+                    <Button
                       type="button"
+                      variant="subtle"
                       className="subtle-btn"
                       disabled={working !== null}
                       onClick={() => void run(`open:${entry.worktreePath}`, async () => onImport(entry.worktreePath))}
                     >
                       {isOpen ? "Switch" : "Open"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="subtle"
                       className="subtle-btn"
                       disabled={working !== null || removeDisabled}
                       onClick={() => {
@@ -212,33 +217,32 @@ export function WorktreeManagerSection({
                       }}
                     >
                       Remove
-                    </button>
+                    </Button>
                   </div>
 
                   {removePending ? (
                     <div className="worktree-remove-confirm">
                       <label className="check-label">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={removeForce}
-                          onChange={(event) => setRemoveForce(event.currentTarget.checked)}
+                          onCheckedChange={(checked) => setRemoveForce(checked === true)}
                         />
                         Force remove if dirty
                       </label>
                       <label className="check-label">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={removeDeleteBranch}
-                          onChange={(event) => setRemoveDeleteBranch(event.currentTarget.checked)}
+                          onCheckedChange={(checked) => setRemoveDeleteBranch(checked === true)}
                         />
                         Delete branch after remove
                       </label>
                       <div className="worktree-remove-actions">
-                        <button type="button" className="subtle-btn" onClick={() => setPendingRemovePath(null)}>
+                        <Button type="button" variant="subtle" className="subtle-btn" onClick={() => setPendingRemovePath(null)}>
                           Cancel
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
+                          variant="primary"
                           className="primary-btn"
                           onClick={() =>
                             void run(`remove:${entry.worktreePath}`, async () => {
@@ -252,14 +256,14 @@ export function WorktreeManagerSection({
                           }
                         >
                           Confirm Remove
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ) : null}
                 </div>
               );
             })}
-          </div>
+          </ScrollArea>
         </section>
       </div>
     </section>

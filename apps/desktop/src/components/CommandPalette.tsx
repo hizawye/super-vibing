@@ -1,4 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Badge,
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@supervibing/ui";
 import { useWorkspaceStore } from "../store/workspace";
 import { useGitViewStore } from "../store/gitView";
 
@@ -24,7 +38,6 @@ const QUICK_COMMANDS = ["npm test", "cargo check", "pnpm build"] as const;
 export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandPaletteProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const [runningId, setRunningId] = useState<string | null>(null);
 
   const workspaces = useWorkspaceStore((state) => state.workspaces);
@@ -267,29 +280,14 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
     });
   }, [commandText, entries, query, runGlobalCommand]);
 
-  const rows = useMemo(() => {
-    const output: Array<{ type: "section"; id: string; label: string } | { type: "entry"; id: string; index: number; entry: PaletteEntry }> = [];
-    let currentSection = "";
-
-    filteredEntries.forEach((entry, index) => {
-      if (entry.section !== currentSection) {
-        currentSection = entry.section;
-        output.push({
-          type: "section",
-          id: `section-${entry.section}-${index}`,
-          label: entry.section,
-        });
-      }
-
-      output.push({
-        type: "entry",
-        id: entry.id,
-        index,
-        entry,
-      });
+  const groupedRows = useMemo(() => {
+    const groups = new Map<string, PaletteEntry[]>();
+    filteredEntries.forEach((entry) => {
+      const current = groups.get(entry.section) ?? [];
+      current.push(entry);
+      groups.set(entry.section, current);
     });
-
-    return output;
+    return Array.from(groups.entries());
   }, [filteredEntries]);
 
   useEffect(() => {
@@ -297,16 +295,9 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
       return;
     }
 
-    setSelectedIndex(0);
     setQuery("");
     setTimeout(() => inputRef.current?.focus(), 0);
   }, [open]);
-
-  useEffect(() => {
-    if (selectedIndex > filteredEntries.length - 1) {
-      setSelectedIndex(Math.max(0, filteredEntries.length - 1));
-    }
-  }, [filteredEntries.length, selectedIndex]);
 
   const runEntry = async (entry: PaletteEntry): Promise<void> => {
     setRunningId(entry.id);
@@ -318,98 +309,68 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
     }
   };
 
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div className="palette-overlay" role="presentation" onClick={onClose}>
-      <div className="palette-modal" role="dialog" aria-label="Command palette" onClick={(event) => event.stopPropagation()}>
-        <div className="palette-head">
-          <h2>Command Palette</h2>
-          <span>{activeWorkspaceId ? "workspace active" : "no workspace"}</span>
-        </div>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) {
+        onClose();
+      }
+    }}
+    >
+      <DialogContent className="palette-modal" aria-label="Command palette">
+        <DialogHeader className="palette-head">
+          <DialogTitle>Command Palette</DialogTitle>
+          <DialogDescription className="settings-caption">Search actions and run workspace commands.</DialogDescription>
+          {activeWorkspaceId ? <Badge>workspace active</Badge> : <Badge>no workspace</Badge>}
+        </DialogHeader>
 
-        <input
-          ref={inputRef}
-          className="text-input palette-input"
-          placeholder="Search actions, or type >command"
-          value={query}
-          onChange={(event) => setQuery(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setSelectedIndex((current) => Math.min(current + 1, Math.max(0, filteredEntries.length - 1)));
-              return;
-            }
+        <Command className="border border-[var(--line-soft)]">
+          <CommandInput
+            ref={inputRef}
+            className="palette-input"
+            placeholder="Search actions, or type >command"
+            value={query}
+            onValueChange={setQuery}
+          />
 
-            if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setSelectedIndex((current) => Math.max(0, current - 1));
-              return;
-            }
+          <CommandList className="palette-list" role="listbox" aria-label="Palette results">
+            {commandText.length === 0 && query.trim().startsWith(">") ? (
+              <div className="palette-empty">Type a command after &gt; to run it in all panes.</div>
+            ) : null}
 
-            if (event.key === "Enter") {
-              event.preventDefault();
-              const candidate = filteredEntries[selectedIndex];
-              if (candidate) {
-                void runEntry(candidate);
-              }
-              return;
-            }
+            {filteredEntries.length === 0 && !(query.trim().startsWith(">") && commandText.length === 0) ? (
+              <CommandEmpty className="palette-empty">No matching actions.</CommandEmpty>
+            ) : null}
 
-            if (event.key === "Escape") {
-              event.preventDefault();
-              onClose();
-            }
-          }}
-        />
-
-        <div className="palette-list" role="listbox" aria-label="Palette results">
-          {commandText.length === 0 && query.trim().startsWith(">") ? (
-            <div className="palette-empty">Type a command after &gt; to run it in all panes.</div>
-          ) : null}
-
-          {filteredEntries.length === 0 && !(query.trim().startsWith(">") && commandText.length === 0) ? (
-            <div className="palette-empty">No matching actions.</div>
-          ) : null}
-
-          {rows.map((row) => {
-            if (row.type === "section") {
-              return (
-                <p key={row.id} className="palette-group-title">
-                  {row.label}
-                </p>
-              );
-            }
-
-            const active = row.index === selectedIndex;
-            const loading = runningId === row.entry.id;
-
-            return (
-              <button
-                key={row.id}
-                type="button"
-                className={`palette-item ${active ? "active" : ""}`}
-                onMouseEnter={() => setSelectedIndex(row.index)}
-                onClick={() => {
-                  void runEntry(row.entry);
-                }}
-                disabled={loading}
-              >
-                <span>{row.entry.label}</span>
-                {row.entry.description ? <small>{row.entry.description}</small> : null}
-              </button>
-            );
-          })}
-        </div>
+            {groupedRows.map(([section, sectionEntries]) => (
+              <CommandGroup key={section} heading={section}>
+                {sectionEntries.map((entry) => {
+                  const loading = runningId === entry.id;
+                  return (
+                    <CommandItem
+                      key={entry.id}
+                      className="palette-item"
+                      value={`${entry.label} ${entry.description ?? ""} ${entry.keywords} ${entry.section}`}
+                      disabled={loading}
+                      onSelect={() => {
+                        void runEntry(entry);
+                      }}
+                    >
+                      <span>{entry.label}</span>
+                      {entry.description ? <small>{entry.description}</small> : null}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
 
         <div className="palette-footer">
           <span>Enter run</span>
           <span>Arrow keys navigate</span>
           <span>Esc close</span>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

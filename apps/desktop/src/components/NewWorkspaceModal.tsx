@@ -1,4 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+} from "@supervibing/ui";
 import { pickDirectory } from "../lib/tauri";
 import type { AgentAllocation } from "../types";
 
@@ -80,25 +91,24 @@ export function NewWorkspaceModal({
     }
   };
 
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div className="workspace-modal-overlay" role="presentation" onClick={onClose}>
-      <div className="workspace-modal" role="dialog" aria-label="New Workspace" onClick={(event) => event.stopPropagation()}>
-        <div className="workspace-modal-head">
-          <h2>New Workspace</h2>
-          <button type="button" className="modal-close" aria-label="Close" onClick={onClose}>
-            x
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) {
+        onClose();
+      }
+    }}
+    >
+      <DialogContent className="workspace-modal" aria-label="New Workspace">
+        <DialogHeader className="workspace-modal-head">
+          <DialogTitle>New Workspace</DialogTitle>
+          <DialogDescription className="settings-caption">Create a workspace and optional agent allocation.</DialogDescription>
+        </DialogHeader>
 
         <div className="workspace-modal-section">
           <label className="input-label" htmlFor="workspace-name">
             Name
           </label>
-          <input
+          <Input
             id="workspace-name"
             className="text-input"
             placeholder="Workspace"
@@ -111,14 +121,15 @@ export function NewWorkspaceModal({
           <h3>Layout</h3>
           <div className="layout-grid">
             {LAYOUT_OPTIONS.map((count) => (
-              <button
+              <Button
                 key={count}
                 type="button"
+                variant="subtle"
                 className={`layout-card ${paneCount === count ? "active" : ""}`}
                 onClick={() => setPaneCount(count)}
               >
                 <span>{count}</span>
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -128,7 +139,7 @@ export function NewWorkspaceModal({
             Directory
           </label>
           <div className="directory-row">
-            <input
+            <Input
               id="workspace-directory"
               className="text-input"
               placeholder="/path/to/project"
@@ -140,16 +151,18 @@ export function NewWorkspaceModal({
                 }
               }}
             />
-            <button
+            <Button
               type="button"
+              variant="subtle"
               className="subtle-btn"
               disabled={pathPickerPending}
               onClick={() => void handleBrowseDirectory()}
             >
               {pathPickerPending ? "Opening..." : "Browse"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="subtle"
               className="subtle-btn"
               onClick={() => {
                 setDirectory(defaultDirectory);
@@ -159,34 +172,37 @@ export function NewWorkspaceModal({
               }}
             >
               Reset
-            </button>
+            </Button>
           </div>
           {pathPickerError ? <p className="workspace-modal-error" role="alert">{pathPickerError}</p> : null}
         </div>
 
         <div className="workspace-modal-section">
-          <button
+          <Button
             type="button"
+            variant="subtle"
             className="expand-toggle"
             onClick={() => setAgentsOpen((previous) => !previous)}
           >
             AI Agents <small>optional</small>
-          </button>
+          </Button>
 
           {agentsOpen ? (
             <div className="agent-panel">
               <div className="agent-panel-toolbar">
-                <button
+                <Button
                   type="button"
+                  variant="subtle"
                   className="subtle-btn"
                   onClick={() => {
                     setAllocation((current) => current.map((item) => ({ ...item, enabled: true })));
                   }}
                 >
                   Select All
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="subtle"
                   className="subtle-btn"
                   onClick={() => {
                     setAllocation((current) =>
@@ -199,9 +215,10 @@ export function NewWorkspaceModal({
                   }}
                 >
                   1 Each
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="subtle"
                   className="subtle-btn"
                   onClick={() => {
                     setAllocation((current) => {
@@ -220,25 +237,24 @@ export function NewWorkspaceModal({
                   }}
                 >
                   Fill Evenly
-                </button>
+                </Button>
               </div>
 
               <div className="agent-list">
                 {allocation.map((agent) => (
                   <div key={agent.profile} className="agent-row">
                     <label className="agent-toggle">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={agent.enabled}
-                        onChange={(event) => {
-                          const checked = event.currentTarget.checked;
+                        onCheckedChange={(checked) => {
+                          const isChecked = checked === true;
                           setAllocation((current) =>
                             current.map((item) =>
                               item.profile === agent.profile
                                 ? {
                                     ...item,
-                                    enabled: checked,
-                                    count: checked && item.count === 0 ? 1 : item.count,
+                                    enabled: isChecked,
+                                    count: isChecked && item.count === 0 ? 1 : item.count,
                                   }
                                 : item,
                             ),
@@ -249,8 +265,9 @@ export function NewWorkspaceModal({
                     </label>
 
                     <div className="count-stepper">
-                      <button
+                      <Button
                         type="button"
+                        variant="subtle"
                         className="stepper-btn"
                         onClick={() => {
                           setAllocation((current) =>
@@ -267,10 +284,11 @@ export function NewWorkspaceModal({
                         }}
                       >
                         -
-                      </button>
+                      </Button>
                       <span>{agent.count}</span>
-                      <button
+                      <Button
                         type="button"
+                        variant="subtle"
                         className="stepper-btn"
                         onClick={() => {
                           setAllocation((current) =>
@@ -287,7 +305,7 @@ export function NewWorkspaceModal({
                         }}
                       >
                         +
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -298,12 +316,13 @@ export function NewWorkspaceModal({
           ) : null}
         </div>
 
-        <div className="workspace-modal-actions">
-          <button type="button" className="subtle-btn" onClick={onClose}>
+        <DialogFooter className="workspace-modal-actions">
+          <Button type="button" variant="subtle" className="subtle-btn" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="primary"
             className="primary-btn"
             onClick={() => {
               onSubmit({
@@ -316,9 +335,9 @@ export function NewWorkspaceModal({
             }}
           >
             Create
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

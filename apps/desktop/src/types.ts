@@ -26,7 +26,7 @@ export interface AgentAllocation {
 
 export type AppSection = "terminal" | "git" | "worktrees" | "kanban" | "agents" | "prompts" | "settings";
 export type LayoutMode = "tiling" | "freeform";
-export type ThemeId = "apple-dark" | "apple-light" | "graphite" | "midnight" | "solarized" | "nord";
+export type ThemeId = "apple-dark" | "apple-light";
 export type DensityMode = "comfortable" | "compact";
 
 export interface UiPreferences {

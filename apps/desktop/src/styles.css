@@ -5,198 +5,10 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
-  --font-ui: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
+  --font-ui: "Manrope", "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", monospace;
-
-  --bg-root: #080c14;
-  --bg-subtle: #0d1220;
-  --surface-1: #11192b;
-  --surface-2: #172238;
-  --surface-3: #1f2d48;
-
-  --surface-floating: color-mix(in oklab, var(--surface-1) 82%, #060911);
-  --surface-glass: color-mix(in oklab, var(--surface-2) 74%, transparent);
-  --surface-raised: color-mix(in oklab, var(--surface-3) 82%, #0b111d);
-
-  --line-soft: color-mix(in oklab, #4d6389 34%, transparent);
-  --line-strong: color-mix(in oklab, #6380b0 46%, transparent);
-  --line-hairline: color-mix(in oklab, #88a2cf 22%, transparent);
-  --line-quiet: color-mix(in oklab, #7995c8 15%, transparent);
-  --line-focus: color-mix(in oklab, #8bb3ff 64%, transparent);
-
-  --text-main: #edf3ff;
-  --text-dim: #a7b6d2;
-  --text-muted: #7f90b0;
-
-  --accent: #4f8dff;
-  --accent-strong: #76a9ff;
-  --accent-ink: #edf4ff;
-
-  --danger: #ec6d6d;
-  --success: #4dc080;
-
-  --overlay: rgba(4, 9, 18, 0.6);
-  --overlay-strong: rgba(4, 9, 18, 0.8);
-
-  --shadow-soft: 0 16px 30px rgba(3, 7, 14, 0.3);
-  --shadow-float: 0 22px 52px rgba(3, 7, 14, 0.5);
-  --shadow-pop: 0 26px 60px rgba(2, 5, 12, 0.58);
-
-  --radius-xs: 8px;
-  --radius-sm: 12px;
-  --radius-md: 16px;
-  --radius-lg: 20px;
-  --radius-pill: 999px;
-  --radius-panel: 18px;
-  --radius-card: 14px;
-
-  --space-1: 6px;
-  --space-2: 10px;
-  --space-3: 14px;
-  --space-4: 18px;
-
-  --control-py: 7px;
-  --control-px: 11px;
-  --head-padding: 14px;
-
-  --motion-fast: 160ms;
-  --motion-fn: cubic-bezier(0.22, 0, 0.2, 1);
-}
-
-:root[data-density="compact"] {
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 11px;
-  --space-4: 14px;
-  --control-py: 5px;
-  --control-px: 9px;
-  --head-padding: 10px;
-}
-
-:root[data-theme="apple-dark"] {
-  color-scheme: dark;
-  --bg-root: #080c14;
-  --bg-subtle: #0d1220;
-  --surface-1: #11192b;
-  --surface-2: #172238;
-  --surface-3: #1f2d48;
-  --text-main: #edf3ff;
-  --text-dim: #a7b6d2;
-  --text-muted: #7f90b0;
-  --accent: #4f8dff;
-  --accent-strong: #76a9ff;
-  --accent-ink: #edf4ff;
-}
-
-:root[data-theme="apple-light"] {
-  color-scheme: light;
-  --bg-root: #edf2fb;
-  --bg-subtle: #f6f8fd;
-  --surface-1: #ffffff;
-  --surface-2: #f3f7ff;
-  --surface-3: #e8effb;
-
-  --surface-floating: color-mix(in oklab, var(--surface-1) 90%, #dce6f7);
-  --surface-glass: color-mix(in oklab, var(--surface-2) 88%, transparent);
-  --surface-raised: color-mix(in oklab, var(--surface-3) 92%, white);
-
-  --line-soft: color-mix(in oklab, #8ba0c2 32%, transparent);
-  --line-strong: color-mix(in oklab, #7085a7 45%, transparent);
-  --line-hairline: color-mix(in oklab, #879fca 28%, transparent);
-  --line-quiet: color-mix(in oklab, #7f99c5 20%, transparent);
-  --line-focus: color-mix(in oklab, #4c82de 56%, transparent);
-
-  --text-main: #1d2738;
-  --text-dim: #4e607f;
-  --text-muted: #667898;
-
-  --accent: #2f7be5;
-  --accent-strong: #1f66cc;
-  --accent-ink: #ffffff;
-
-  --overlay: rgba(232, 239, 250, 0.72);
-  --overlay-strong: rgba(229, 236, 248, 0.84);
-  --shadow-soft: 0 14px 28px rgba(26, 36, 54, 0.14);
-  --shadow-float: 0 22px 44px rgba(26, 36, 54, 0.18);
-  --shadow-pop: 0 26px 54px rgba(26, 36, 54, 0.22);
-}
-
-:root[data-theme="graphite"] {
-  color-scheme: dark;
-  --bg-root: #111417;
-  --bg-subtle: #161a1e;
-  --surface-1: #1b2128;
-  --surface-2: #202730;
-  --surface-3: #29313d;
-  --text-main: #eceff4;
-  --text-dim: #b4bcc8;
-  --text-muted: #919baa;
-  --accent: #8da6be;
-  --accent-strong: #adc1d3;
-  --accent-ink: #10141a;
-}
-
-:root[data-theme="midnight"] {
-  color-scheme: dark;
-  --bg-root: #040914;
-  --bg-subtle: #091022;
-  --surface-1: #0f1b32;
-  --surface-2: #12213d;
-  --surface-3: #17305a;
-  --text-main: #e8f0ff;
-  --text-dim: #b0c4ea;
-  --text-muted: #90a8d8;
-  --accent: #5f95ff;
-  --accent-strong: #89b2ff;
-  --accent-ink: #eef4ff;
-}
-
-:root[data-theme="solarized"] {
-  color-scheme: dark;
-  --bg-root: #00232c;
-  --bg-subtle: #002a33;
-  --surface-1: #073642;
-  --surface-2: #0b4654;
-  --surface-3: #115668;
-  --text-main: #e7e2cf;
-  --text-dim: #bbc0af;
-  --text-muted: #97a49e;
-  --accent: #2aa1d3;
-  --accent-strong: #60c0e2;
-  --accent-ink: #04252e;
-}
-
-:root[data-theme="nord"] {
-  color-scheme: dark;
-  --bg-root: #272d3a;
-  --bg-subtle: #2e3440;
-  --surface-1: #344050;
-  --surface-2: #3a4759;
-  --surface-3: #45576e;
-  --text-main: #eceff4;
-  --text-dim: #c7d2e4;
-  --text-muted: #a7b8d2;
-  --accent: #88c0d0;
-  --accent-strong: #abd8e3;
-  --accent-ink: #1f252f;
-}
-
-:root.high-contrast {
-  --line-soft: color-mix(in oklab, var(--line-soft) 44%, #ffffff);
-  --line-strong: color-mix(in oklab, var(--line-strong) 54%, #ffffff);
-  --line-hairline: color-mix(in oklab, var(--line-hairline) 48%, #ffffff);
-  --text-dim: color-mix(in oklab, var(--text-main) 84%, #ffffff);
-  --text-muted: color-mix(in oklab, var(--text-main) 70%, #ffffff);
-}
-
-:root.reduce-motion *,
-:root.reduce-motion *::before,
-:root.reduce-motion *::after {
-  animation-duration: 0.001ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.001ms !important;
-  scroll-behavior: auto !important;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.2);
+  --shadow-md: 0 10px 30px rgba(15, 23, 42, 0.26);
 }
 
 * {
@@ -210,11 +22,8 @@ body,
   width: 100%;
   height: 100%;
   font-family: var(--font-ui);
-  background:
-    radial-gradient(circle at 12% -20%, color-mix(in oklab, var(--accent) 20%, transparent), transparent 36%),
-    radial-gradient(circle at 88% -14%, color-mix(in oklab, var(--accent) 12%, transparent), transparent 34%),
-    linear-gradient(180deg, var(--bg-subtle), var(--bg-root));
-  color: var(--text-main);
+  background: var(--background);
+  color: var(--foreground);
 }
 
 code,
@@ -232,48 +41,36 @@ select {
 
 button,
 input,
-.palette-item,
+textarea,
+select,
+.sidebar-workspace-row,
+.pane-card,
+.git-row,
+.git-tab-btn,
 .layout-card,
 .theme-card,
-.agent-row,
-.expand-toggle,
-.workspace-add,
-.sidebar-section-item,
-.sidebar-workspace-row,
-.sidebar-workspace-close,
-.sidebar-close-btn,
-.mobile-nav-toggle,
-.top-command-btn {
+.palette-item,
+.pane-worktree-option {
   transition:
-    background-color var(--motion-fast) var(--motion-fn),
-    border-color var(--motion-fast) var(--motion-fn),
-    color var(--motion-fast) var(--motion-fn),
-    box-shadow var(--motion-fast) var(--motion-fn),
-    transform var(--motion-fast) var(--motion-fn),
-    opacity var(--motion-fast) var(--motion-fn);
-}
-
-button:focus-visible,
-input:focus-visible,
-.palette-item:focus-visible,
-.theme-card:focus-visible,
-.layout-card:focus-visible,
-.sidebar-section-item:focus-visible,
-.sidebar-workspace-btn:focus-visible,
-.mobile-nav-toggle:focus-visible,
-.top-command-btn:focus-visible {
-  outline: 2px solid var(--line-focus);
-  outline-offset: 1px;
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
 }
 
 button:disabled {
-  opacity: 0.58;
   cursor: not-allowed;
 }
 
 .app-shell {
   height: 100%;
-  padding: var(--space-2);
+  padding: var(--space-3);
+  background: var(--background);
+}
+
+.app-shell.app-shell-terminal {
+  padding: var(--space-3);
 }
 
 .app-loading {
@@ -285,32 +82,33 @@ button:disabled {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1fr;
-  grid-template-rows: minmax(0, 1fr);
-  gap: var(--space-2);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
 }
 
 .app-main {
   height: 100%;
-  min-width: 0;
   min-height: 0;
+  min-width: 0;
   display: grid;
   grid-template-rows: auto 1fr;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .sidebar-backdrop {
   position: fixed;
   inset: 0;
-  display: block;
   border: 0;
-  padding: 0;
   margin: 0;
-  background: var(--overlay);
-  backdrop-filter: blur(7px);
+  padding: 0;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(1px);
   opacity: 0;
   pointer-events: none;
-  z-index: 35;
+  z-index: 30;
 }
 
 .sidebar-backdrop.open {
@@ -318,27 +116,25 @@ button:disabled {
   pointer-events: auto;
 }
 
+.sidebar-backdrop:hover {
+  background: rgba(2, 6, 23, 0.55);
+}
+
 .app-sidebar {
   position: fixed;
-  left: var(--space-2);
-  top: calc(var(--space-2) + 50px);
-  bottom: var(--space-2);
-  width: min(86vw, 312px);
+  left: var(--space-3);
+  top: var(--space-3);
+  bottom: var(--space-3);
+  width: min(86vw, 304px);
   min-height: 0;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
   gap: var(--space-2);
-  padding: 12px;
-  border: 1px solid var(--line-hairline);
-  border-radius: var(--radius-panel);
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--surface-floating) 92%, transparent),
-    color-mix(in oklab, var(--surface-floating) 98%, #05080e)
-  );
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklab, var(--line-hairline) 56%, transparent),
-    var(--shadow-float);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-md);
   transform: translateX(calc(-100% - 24px));
   opacity: 0;
   pointer-events: none;
@@ -355,7 +151,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
 .sidebar-brand {
@@ -366,185 +162,99 @@ button:disabled {
 }
 
 .sidebar-brand-dot {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  border: 1px solid var(--line-quiet);
+  width: 28px;
+  height: 28px;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
   display: grid;
   place-items: center;
-  font-size: 0.92rem;
-  color: var(--accent-strong);
-  background:
-    radial-gradient(circle at 35% 30%, color-mix(in oklab, var(--accent) 24%, transparent), transparent 74%),
-    color-mix(in oklab, var(--surface-raised) 86%, transparent);
+  color: var(--primary);
+  background: var(--muted);
+  font-size: 0.9rem;
 }
 
 .sidebar-brand-copy {
   min-width: 0;
   display: grid;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .sidebar-brand-copy strong {
-  font-size: 0.84rem;
-  letter-spacing: 0.01em;
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .sidebar-brand-copy small {
-  color: var(--text-dim);
-  font-size: 0.69rem;
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
   white-space: nowrap;
 }
 
 .sidebar-close-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-  border: 1px solid var(--line-quiet);
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
   padding: 0;
-  display: grid;
-  place-items: center;
-  color: var(--text-dim);
-  background: color-mix(in oklab, var(--surface-2) 86%, transparent);
-}
-
-.sidebar-close-btn:hover {
-  color: var(--text-main);
-  border-color: var(--line-strong);
-  background: color-mix(in oklab, var(--surface-3) 78%, transparent);
 }
 
 .sidebar-section-nav {
   display: grid;
-  gap: var(--space-1);
+  gap: 0.125rem;
 }
 
 .sidebar-nav-label {
   margin: 0;
-  color: var(--text-muted);
+  padding: 0 var(--space-1);
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  font-size: 0.65rem;
-  letter-spacing: 0.08em;
-  padding: 0 4px;
-}
-
-.sidebar-section-item,
-.workspace-add,
-.subtle-btn,
-.toolbar-btn,
-.primary-btn,
-.layout-mode-btn,
-.layout-card,
-.expand-toggle,
-.stepper-btn,
-.theme-card,
-.palette-item,
-.sidebar-workspace-close,
-.top-command-btn,
-.mobile-nav-toggle {
-  border: 1px solid var(--line-quiet);
-  border-radius: var(--radius-card);
-  background: color-mix(in oklab, var(--surface-2) 84%, transparent);
-  color: var(--text-main);
-  cursor: pointer;
-}
-
-.sidebar-section-item,
-.workspace-add,
-.subtle-btn,
-.toolbar-btn,
-.primary-btn,
-.layout-mode-btn,
-.stepper-btn,
-.palette-item,
-.expand-toggle,
-.layout-card,
-.sidebar-workspace-close,
-.top-command-btn {
-  padding: var(--control-py) var(--control-px);
-  font-size: 0.8rem;
+  color: var(--muted-foreground);
 }
 
 .sidebar-section-item {
   width: 100%;
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   text-align: left;
-  font-weight: 600;
-  border-radius: 12px;
-  border-color: transparent;
-  background: transparent;
+  min-height: var(--control-height);
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
 }
 
 .sidebar-section-main {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   min-width: 0;
 }
 
 .sidebar-item-icon {
-  width: 20px;
-  height: 20px;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
   display: grid;
   place-items: center;
-  border-radius: 7px;
-  border: 1px solid color-mix(in oklab, var(--line-quiet) 90%, transparent);
-  color: var(--text-dim);
-  font-size: 0.62rem;
-  letter-spacing: 0.03em;
-  background: color-mix(in oklab, var(--surface-2) 90%, transparent);
+  font-size: 0.58rem;
+  font-weight: 700;
 }
 
-.sidebar-section-item:hover,
-.workspace-add:hover,
-.subtle-btn:hover,
-.toolbar-btn:hover,
-.layout-mode-btn:hover,
-.layout-card:hover,
-.expand-toggle:hover,
-.stepper-btn:hover,
-.palette-item:hover,
-.sidebar-workspace-row:hover,
-.sidebar-workspace-close:hover,
-.top-command-btn:hover,
-.mobile-nav-toggle:hover {
-  border-color: var(--line-strong);
-  background: color-mix(in oklab, var(--surface-3) 70%, transparent);
+.sidebar-section-item.active {
+  background: color-mix(in oklab, var(--primary) 18%, var(--secondary));
+  border-color: color-mix(in oklab, var(--primary) 48%, var(--border));
+  color: var(--foreground);
 }
 
-.sidebar-section-item.active,
-.sidebar-workspace-row.active {
-  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in oklab, var(--accent) 28%, transparent),
-      color-mix(in oklab, var(--surface-2) 82%, transparent)
-    );
-}
-
-.sidebar-section-item.active .sidebar-item-icon,
-.sidebar-settings.active .sidebar-item-icon {
-  border-color: color-mix(in oklab, var(--accent) 60%, transparent);
-  color: var(--accent-strong);
-  background: color-mix(in oklab, var(--accent) 20%, var(--surface-2));
+.sidebar-section-item.active .sidebar-item-icon {
+  color: var(--primary);
+  border-color: color-mix(in oklab, var(--primary) 52%, var(--border));
+  background: color-mix(in oklab, var(--primary) 20%, var(--muted));
 }
 
 .sidebar-section-item.locked {
-  color: var(--text-dim);
-  opacity: 0.8;
-  cursor: not-allowed;
-}
-
-.sidebar-section-item small {
-  color: var(--text-muted);
-  border: 1px solid var(--line-quiet);
-  border-radius: var(--radius-pill);
-  padding: 1px 7px;
-  font-size: 0.62rem;
+  opacity: 0.6;
 }
 
 .sidebar-workspace-panel {
@@ -563,19 +273,18 @@ button:disabled {
 
 .sidebar-panel-head h2 {
   margin: 0;
-  font-size: 0.74rem;
-  color: var(--text-dim);
-  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  color: var(--muted-foreground);
 }
 
 .workspace-add {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
   padding: 0;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
 }
 
 .sidebar-workspace-list {
@@ -583,21 +292,26 @@ button:disabled {
   overflow: auto;
   display: grid;
   align-content: start;
-  gap: var(--space-1);
+  gap: 0.35rem;
 }
 
 .sidebar-workspace-row {
   display: flex;
   align-items: stretch;
-  border: 1px solid var(--line-quiet);
-  border-radius: 12px;
-  background: color-mix(in oklab, var(--surface-2) 72%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+}
+
+.sidebar-workspace-row.active {
+  border-color: color-mix(in oklab, var(--primary) 48%, var(--border));
+  background: color-mix(in oklab, var(--primary) 12%, var(--muted));
 }
 
 .sidebar-workspace-btn {
   border: 0;
   background: transparent;
-  color: var(--text-main);
+  color: inherit;
   width: 100%;
   min-width: 0;
   display: inline-flex;
@@ -605,62 +319,53 @@ button:disabled {
   justify-content: space-between;
   gap: var(--space-1);
   text-align: left;
-  padding: var(--control-py) var(--control-px);
+  padding: 0.35rem 0.5rem;
   cursor: pointer;
 }
 
 .sidebar-workspace-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
 }
 
 .sidebar-workspace-count {
-  border-radius: var(--radius-pill);
-  padding: 1px 7px;
   font-size: 0.68rem;
-  border: 1px solid var(--line-quiet);
-  color: var(--text-dim);
-  background: color-mix(in oklab, var(--surface-1) 84%, transparent);
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--muted-foreground);
+  background: var(--background);
 }
 
 .sidebar-workspace-close {
-  width: 30px;
-  min-width: 30px;
-  border-radius: 0 11px 11px 0;
-  border-left: 1px solid var(--line-quiet);
-  border-top: 0;
-  border-right: 0;
-  border-bottom: 0;
-  background: transparent;
-  color: var(--text-dim);
+  border-left-width: 1px;
+  border-left-style: solid;
+  border-left-color: var(--border);
+  border-top-width: 0;
+  border-right-width: 0;
+  border-bottom-width: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  width: 28px;
+  min-width: 28px;
   padding: 0;
-  font-size: 0.74rem;
 }
 
 .sidebar-footer {
-  margin-top: auto;
-  border-top: 1px solid var(--line-hairline);
+  border-top: 1px solid var(--border);
   padding-top: var(--space-2);
 }
 
 .top-chrome {
-  min-height: 50px;
-  border: 1px solid var(--line-hairline);
-  border-radius: var(--radius-panel);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--surface-glass) 90%, transparent),
-      color-mix(in oklab, var(--surface-1) 90%, transparent)
-    );
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklab, var(--line-hairline) 46%, transparent),
-    var(--shadow-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
   display: grid;
-  row-gap: 6px;
-  padding: 8px 10px;
+  row-gap: 0.375rem;
+  padding: 0.5rem 0.625rem;
 }
 
 .top-chrome-row {
@@ -682,27 +387,19 @@ button:disabled {
   min-width: 0;
 }
 
-.top-chrome-context h1 {
-  margin: 0;
-  font-size: 0.88rem;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-}
-
+.top-chrome-context h1,
 .top-terminal-title {
   margin: 0;
-  font-size: 0.88rem;
-  font-weight: 600;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  font-weight: 600;
   min-width: 0;
 }
 
 .top-terminal-name {
-  max-width: 240px;
+  max-width: 280px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -712,120 +409,78 @@ button:disabled {
   width: 4px;
   height: 4px;
   border-radius: 999px;
-  background: var(--line-strong);
+  background: var(--muted-foreground);
 }
 
 .top-workspace-pill {
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.76rem;
-  color: var(--text-dim);
-  border: 1px solid var(--line-quiet);
-  border-radius: var(--radius-pill);
-  padding: 3px 9px;
-  background: color-mix(in oklab, var(--surface-1) 86%, transparent);
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  padding: 0.08rem 0.38rem;
+  font-size: 0.68rem;
 }
 
-.top-chrome-context p {
-  margin: 2px 0 0;
-  color: var(--text-dim);
-  font-size: 0.73rem;
+.top-chrome-context p,
+.top-chrome-subtitle {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--muted-foreground);
+}
+
+.top-chrome-subtitle {
+  padding-left: calc(2rem + var(--space-2));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .top-chrome-controls {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex: 1;
   min-width: 0;
-  overflow: hidden;
+  flex: 1;
 }
 
 .top-chrome-controls .terminal-controls {
   width: 100%;
 }
 
-.top-chrome-subtitle {
-  font-size: 0.74rem;
-  color: var(--text-dim);
-  padding-left: calc(32px + var(--space-2));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.top-chrome-minimal {
+.top-chrome-terminal.top-chrome-minimal {
   row-gap: 0;
-  padding-top: 6px;
-  padding-bottom: 6px;
-}
-
-.top-chrome-minimal .top-terminal-title {
-  font-size: 0.9rem;
-}
-
-.top-chrome-minimal .top-command-btn {
-  display: none;
 }
 
 .mobile-nav-toggle {
-  width: 32px;
-  height: 32px;
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
   padding: 0;
-  place-items: center;
-  display: grid;
-  border-radius: 10px;
-  border-color: var(--line-quiet);
-  background: color-mix(in oklab, var(--surface-2) 84%, transparent);
-  color: var(--text-main);
 }
 
 .top-command-btn {
-  min-height: 32px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 10px;
-  padding: 0 10px;
-  background: color-mix(in oklab, var(--surface-2) 72%, transparent);
+  min-height: var(--control-height);
+  gap: 0.45rem;
 }
 
 .top-command-btn kbd {
-  font-size: 0.65rem;
-  color: var(--text-dim);
-  border: 1px solid var(--line-quiet);
-  border-radius: 7px;
-  padding: 1px 5px;
-  background: color-mix(in oklab, var(--surface-1) 84%, transparent);
-}
-
-.primary-btn {
-  background: linear-gradient(180deg, var(--accent), color-mix(in oklab, var(--accent) 62%, #051633));
-  border-color: color-mix(in oklab, var(--accent) 62%, #061429);
-  color: var(--accent-ink);
-}
-
-.primary-btn:hover {
-  filter: brightness(1.06);
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.64rem;
+  color: var(--muted-foreground);
+  background: var(--muted);
 }
 
 .section-surface {
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  border: 1px solid var(--line-hairline);
-  border-radius: var(--radius-panel);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--surface-floating) 88%, transparent),
-      color-mix(in oklab, var(--surface-1) 94%, #050910)
-    );
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklab, var(--line-hairline) 42%, transparent),
-    var(--shadow-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
 }
 
 .section-surface--headed {
@@ -842,98 +497,96 @@ button:disabled {
   min-height: 0;
 }
 
+.section-head {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.section-head h2 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.section-head p {
+  margin: 0.2rem 0 0;
+  font-size: 0.76rem;
+  color: var(--muted-foreground);
+}
 
 .terminal-controls {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  flex-wrap: nowrap;
   justify-content: flex-end;
+  gap: var(--space-1);
   min-width: 0;
   overflow-x: auto;
   white-space: nowrap;
 }
 
 .compact-label,
-.check-label,
 .input-label,
-.settings-caption {
+.settings-caption,
+.check-label {
   font-size: 0.74rem;
-  color: var(--text-dim);
+  color: var(--muted-foreground);
+}
+
+.subtle-btn,
+.toolbar-btn,
+.primary-btn {
+  min-height: var(--control-height);
 }
 
 .check-label {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-}
-
-input[type="checkbox"] {
-  accent-color: var(--accent);
+  gap: 0.45rem;
 }
 
 .text-input {
-  flex: 1;
-  border: 1px solid var(--line-quiet);
-  border-radius: 11px;
-  background: color-mix(in oklab, var(--surface-2) 82%, transparent);
-  color: var(--text-main);
-  padding: var(--control-py) var(--control-px);
-  font-size: 0.84rem;
-}
-
-.text-input::placeholder {
-  color: var(--text-muted);
+  width: 100%;
 }
 
 .pane-stepper {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 0.25rem;
 }
 
 .pane-stepper-btn {
-  min-width: 28px;
-  padding: var(--control-py) 8px;
+  min-width: 1.75rem;
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
 }
 
 .layout-mode-toggle,
 .density-toggle {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--line-quiet);
-  border-radius: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
   overflow: hidden;
-  background: color-mix(in oklab, var(--surface-2) 82%, transparent);
 }
 
 .layout-mode-btn {
-  border: 0;
-  border-right: 1px solid var(--line-quiet);
-  border-radius: 0;
-  background: transparent;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  min-height: calc(var(--control-height) - 2px);
+  padding: 0 0.7rem;
 }
 
-.layout-mode-btn:last-child {
-  border-right: 0;
-}
-
-.layout-mode-btn.active,
-.layout-card.active,
-.palette-item.active,
-.theme-card.active {
-  background: color-mix(in oklab, var(--accent) 24%, var(--surface-2));
-  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
-  color: var(--text-main);
+.layout-mode-btn.active {
+  background: color-mix(in oklab, var(--primary) 18%, var(--secondary)) !important;
+  color: var(--foreground) !important;
 }
 
 .grid-shell {
   min-height: 0;
   height: 100%;
   padding: var(--space-2);
-  background:
-    radial-gradient(circle at 18% 0%, color-mix(in oklab, var(--accent) 14%, transparent), transparent 34%),
-    linear-gradient(180deg, color-mix(in oklab, var(--surface-1) 80%, transparent), color-mix(in oklab, var(--bg-root) 92%, black));
 }
 
 .workspace-grid-stack {
@@ -941,10 +594,10 @@ input[type="checkbox"] {
 }
 
 .workspace-grid-panel {
-  display: none;
   position: absolute;
   inset: 0;
   min-height: 0;
+  display: none;
 }
 
 .workspace-grid-panel.is-active {
@@ -958,36 +611,27 @@ input[type="checkbox"] {
 }
 
 .layout .react-grid-item.react-grid-placeholder {
-  background: color-mix(in oklab, var(--accent) 22%, transparent);
-  border-radius: 0;
-  border: 1px solid color-mix(in oklab, var(--accent) 44%, transparent);
+  background: color-mix(in oklab, var(--primary) 18%, transparent);
+  border: 1px dashed color-mix(in oklab, var(--primary) 50%, var(--border));
 }
 
 .layout .react-resizable-handle::after {
-  border-color: var(--line-strong);
+  border-color: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
 }
 
 .pane-card {
   min-height: 0;
   display: grid;
   grid-template-rows: auto 1fr;
-  border: 1px solid var(--line-quiet);
-  border-radius: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   overflow: hidden;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--surface-2) 82%, transparent),
-      color-mix(in oklab, var(--surface-1) 92%, transparent)
-    );
-  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--line-hairline) 40%, transparent);
+  background: var(--background);
 }
 
 .pane-card.is-focused {
-  border-color: color-mix(in oklab, var(--accent) 56%, var(--line-quiet));
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent),
-    0 0 0 1px color-mix(in oklab, var(--accent) 26%, transparent);
+  border-color: color-mix(in oklab, var(--primary) 52%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 28%, transparent);
 }
 
 .pane-card.is-zoomed {
@@ -995,62 +639,52 @@ input[type="checkbox"] {
 }
 
 .pane-header {
-  min-height: 34px;
-  border-bottom: 1px solid var(--line-hairline);
-  padding: 6px 8px;
-  cursor: default;
+  min-height: 2rem;
+  padding: 0.35rem 0.45rem;
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-1);
-}
-
-.pane-header-main {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.pane-header-main strong {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-main);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pane-header-main small {
-  font-size: 0.68rem;
-  color: var(--text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pane-worktree-btn {
-  font-size: 0.68rem;
-  padding: 3px 7px;
-  border-radius: 9px;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.pane-card:hover .pane-worktree-btn,
-.pane-card:focus-within .pane-worktree-btn {
-  opacity: 1;
-  pointer-events: auto;
+  gap: 0.3rem;
+  background: var(--card);
+  cursor: default;
 }
 
 .pane-header.is-draggable {
   cursor: move;
 }
 
-.toolbar-btn,
-.subtle-btn {
-  border-radius: 10px;
-  border-color: var(--line-quiet);
-  background: color-mix(in oklab, var(--surface-2) 80%, transparent);
+.pane-header-main {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.pane-header-main strong {
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-header-main small {
+  font-size: 0.66rem;
+  color: var(--muted-foreground);
+}
+
+.pane-worktree-btn {
+  opacity: 0;
+  pointer-events: none;
+  font-size: 0.68rem;
+  padding: 0 0.45rem;
+  min-height: 1.45rem;
+}
+
+.pane-card:hover .pane-worktree-btn,
+.pane-card:focus-within .pane-worktree-btn {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .terminal-shell {
@@ -1061,7 +695,7 @@ input[type="checkbox"] {
 .terminal-body {
   min-height: 0;
   height: 100%;
-  background: color-mix(in oklab, var(--bg-root) 84%, black);
+  background: var(--background);
 }
 
 .terminal-body .xterm,
@@ -1071,56 +705,40 @@ input[type="checkbox"] {
 }
 
 .zoom-grid {
-  padding: var(--space-2);
   height: 100%;
-}
-
-.section-head {
-  padding: var(--head-padding);
-  border-bottom: 1px solid var(--line-hairline);
-}
-
-.section-head h2 {
-  margin: 0;
-  font-size: 1.02rem;
-}
-
-.section-head p {
-  margin: 4px 0 0;
-  color: var(--text-dim);
-  font-size: 0.78rem;
+  padding: var(--space-2);
 }
 
 .empty-state-wrap {
   display: grid;
   place-items: center;
-  text-align: center;
   gap: var(--space-2);
+  text-align: center;
   padding: min(9vh, 64px) var(--space-3);
 }
 
 .empty-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--line-quiet);
-  background:
-    radial-gradient(circle at 30% 24%, color-mix(in oklab, var(--accent) 24%, transparent), transparent 74%),
-    color-mix(in oklab, var(--surface-2) 82%, transparent);
+  width: 56px;
+  height: 56px;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
   display: grid;
   place-items: center;
-  color: var(--accent-strong);
-  font-size: 1.4rem;
+  color: var(--primary);
+  background: var(--muted);
+  font-size: 1.25rem;
 }
 
 .empty-state-wrap h3 {
   margin: 0;
+  font-size: 1rem;
 }
 
 .empty-state-wrap p {
   margin: 0;
-  color: var(--text-dim);
-  max-width: 440px;
+  max-width: 460px;
+  color: var(--muted-foreground);
+  font-size: 0.83rem;
 }
 
 .settings-shell {
@@ -1132,32 +750,27 @@ input[type="checkbox"] {
 }
 
 .settings-block {
-  border: 1px solid var(--line-quiet);
-  border-radius: var(--radius-md);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--surface-2) 80%, transparent),
-      color-mix(in oklab, var(--surface-1) 88%, transparent)
-    );
-  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  padding: var(--space-2);
   display: grid;
   gap: var(--space-2);
 }
 
 .settings-block > h3 {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: 0.84rem;
 }
 
 .settings-toggle-list {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .settings-agent-row {
   display: grid;
-  gap: 6px;
+  gap: 0.35rem;
 }
 
 .settings-inline-actions {
@@ -1177,27 +790,31 @@ input[type="checkbox"] {
 
 .worktree-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
+  justify-content: space-between;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .worktree-toolbar-actions {
   display: flex;
+  align-items: center;
   gap: var(--space-1);
   flex-wrap: wrap;
 }
 
-.worktree-message {
+.worktree-message,
+.worktree-error {
   margin: 0;
-  color: var(--text-dim);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
+}
+
+.worktree-message {
+  color: var(--muted-foreground);
 }
 
 .worktree-error {
-  margin: 0;
-  color: var(--danger);
-  font-size: 0.78rem;
+  color: var(--destructive);
 }
 
 .worktree-create-grid {
@@ -1213,40 +830,34 @@ input[type="checkbox"] {
 .worktree-row {
   display: grid;
   gap: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
   padding: var(--space-2);
-  border: 1px solid var(--line-hairline);
 }
 
 .worktree-meta {
   display: grid;
-  gap: 4px;
+  gap: 0.2rem;
 }
 
 .worktree-meta small {
-  color: var(--text-dim);
   font-size: 0.73rem;
+  color: var(--muted-foreground);
   word-break: break-all;
 }
 
-.worktree-tags {
+.worktree-tags,
+.worktree-row-actions,
+.worktree-remove-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
-}
-
-.worktree-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+  gap: 0.35rem;
 }
 
 .worktree-remove-confirm {
   display: grid;
-  gap: var(--space-1);
-}
-
-.worktree-remove-actions {
-  display: flex;
   gap: var(--space-1);
 }
 
@@ -1256,45 +867,50 @@ input[type="checkbox"] {
 }
 
 .update-feedback.error {
-  color: var(--danger);
+  color: var(--destructive);
 }
 
 .theme-grid {
   display: grid;
   gap: var(--space-2);
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .theme-card {
+  min-height: 78px;
   text-align: left;
-  border-radius: var(--radius-card);
-  padding: var(--space-2);
   display: grid;
-  gap: 4px;
+  align-content: start;
+  gap: 0.25rem;
+}
+
+.theme-card.active {
+  background: color-mix(in oklab, var(--primary) 18%, var(--secondary)) !important;
+  border-color: color-mix(in oklab, var(--primary) 50%, var(--border)) !important;
 }
 
 .theme-card-name {
-  font-size: 0.86rem;
+  font-size: 0.82rem;
   font-weight: 700;
 }
 
 .theme-card-description {
-  color: var(--text-dim);
   font-size: 0.72rem;
-  line-height: 1.35;
+  color: var(--muted-foreground);
+  line-height: 1.3;
 }
 
 .theme-card-swatches {
   display: inline-flex;
-  gap: 4px;
-  margin-top: 2px;
+  gap: 0.2rem;
+  margin-top: 0.15rem;
 }
 
 .theme-card-swatches span {
-  width: 13px;
-  height: 13px;
+  width: 11px;
+  height: 11px;
   border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid color-mix(in oklab, var(--foreground) 18%, transparent);
 }
 
 .shortcuts-shell {
@@ -1303,16 +919,16 @@ input[type="checkbox"] {
 }
 
 .shortcuts-group {
-  border: 1px solid var(--line-quiet);
-  border-radius: var(--radius-card);
-  background: color-mix(in oklab, var(--surface-1) 90%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
 }
 
 .shortcuts-group h3 {
   margin: 0;
   padding: var(--space-2);
-  font-size: 0.82rem;
-  border-bottom: 1px solid var(--line-hairline);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
 }
 
 .shortcut-list {
@@ -1320,13 +936,13 @@ input[type="checkbox"] {
 }
 
 .shortcut-row {
-  padding: var(--space-2);
-  border-bottom: 1px solid var(--line-hairline);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-1);
-  font-size: 0.8rem;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
 }
 
 .shortcut-row:last-child {
@@ -1334,57 +950,21 @@ input[type="checkbox"] {
 }
 
 .shortcut-row kbd {
-  border: 1px solid var(--line-quiet);
-  border-radius: var(--radius-xs);
-  padding: 2px 6px;
-  font-size: 0.72rem;
-  color: var(--text-main);
-  background: color-mix(in oklab, var(--surface-2) 82%, transparent);
-}
-
-.workspace-modal-overlay,
-.palette-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--overlay);
-  backdrop-filter: blur(11px);
-}
-
-.workspace-modal-overlay {
-  z-index: 20;
-}
-
-.palette-overlay {
-  z-index: 30;
-  display: grid;
-  place-items: start center;
-  padding: 90px 16px 16px;
-  background: var(--overlay-strong);
-}
-
-.palette-modal,
-.workspace-modal {
-  border: 1px solid var(--line-quiet);
-  border-radius: var(--radius-panel);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--surface-floating) 86%, transparent),
-      color-mix(in oklab, var(--surface-1) 95%, #05070e)
-    );
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklab, var(--line-hairline) 48%, transparent),
-    var(--shadow-pop);
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.68rem;
+  color: var(--foreground);
+  background: var(--muted);
 }
 
 .palette-modal {
-  width: min(760px, 100%);
-  max-height: min(76vh, 720px);
+  width: min(760px, calc(100% - 1.5rem));
+  max-height: min(78vh, 760px);
   overflow: auto;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
   gap: var(--space-2);
-  padding: var(--space-3);
 }
 
 .palette-head {
@@ -1396,38 +976,31 @@ input[type="checkbox"] {
 
 .palette-head h2 {
   margin: 0;
-  font-size: 0.96rem;
-}
-
-.palette-head span {
-  font-size: 0.72rem;
-  color: var(--text-dim);
+  font-size: 0.92rem;
 }
 
 .palette-input {
-  font-size: 0.84rem;
+  font-size: 0.82rem;
 }
 
 .palette-list {
   overflow: auto;
   display: grid;
   align-content: start;
-  gap: var(--space-1);
-}
-
-.palette-group-title {
-  margin: 8px 4px 2px;
-  color: var(--text-muted);
-  font-size: 0.68rem;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  gap: 0.25rem;
 }
 
 .palette-item {
+  min-height: 2.15rem;
   text-align: left;
-  padding: var(--space-2);
   display: grid;
-  gap: 3px;
+  align-content: start;
+  gap: 0.1rem;
+}
+
+.palette-item.active {
+  background: color-mix(in oklab, var(--primary) 18%, var(--secondary));
+  border-color: color-mix(in oklab, var(--primary) 48%, var(--border));
 }
 
 .palette-item:disabled {
@@ -1435,73 +1008,50 @@ input[type="checkbox"] {
 }
 
 .palette-item small {
-  color: var(--text-dim);
+  color: var(--muted-foreground);
 }
 
 .palette-empty {
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius-card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
   padding: var(--space-2);
-  color: var(--text-dim);
-  font-size: 0.78rem;
+  color: var(--muted-foreground);
+  font-size: 0.76rem;
 }
 
 .palette-footer {
-  border-top: 1px solid var(--line-hairline);
+  border-top: 1px solid var(--border);
   padding-top: var(--space-2);
   display: flex;
-  gap: var(--space-2);
+  align-items: center;
   flex-wrap: wrap;
-  color: var(--text-muted);
+  gap: var(--space-2);
+  color: var(--muted-foreground);
   font-size: 0.7rem;
 }
 
 .workspace-modal {
-  width: min(700px, calc(100% - 32px));
-  margin: 48px auto;
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3);
-}
-
-.pane-modal-overlay {
-  z-index: 24;
+  width: min(700px, calc(100% - 1.5rem));
 }
 
 .pane-worktree-modal {
-  width: min(760px, calc(100% - 32px));
+  width: min(760px, calc(100% - 1.5rem));
 }
 
 .workspace-modal-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.workspace-modal-head h2 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.modal-close {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border-radius: 10px;
-  border: 1px solid var(--line-quiet);
-  background: color-mix(in oklab, var(--surface-2) 82%, transparent);
-  color: var(--text-dim);
-  display: grid;
-  place-items: center;
+  gap: var(--space-1);
 }
 
 .workspace-modal-section {
-  border: 1px solid var(--line-quiet);
-  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
   padding: var(--space-2);
   display: grid;
   gap: var(--space-2);
-  background: color-mix(in oklab, var(--surface-2) 72%, transparent);
 }
 
 .workspace-modal-section h3 {
@@ -1516,10 +1066,15 @@ input[type="checkbox"] {
 }
 
 .layout-card {
-  min-height: 38px;
+  min-height: var(--control-height);
   display: grid;
   place-items: center;
   font-weight: 700;
+}
+
+.layout-card.active {
+  background: color-mix(in oklab, var(--primary) 18%, var(--secondary));
+  border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
 }
 
 .directory-row {
@@ -1530,20 +1085,17 @@ input[type="checkbox"] {
 
 .workspace-modal-error {
   margin: 0;
-  color: var(--danger);
-  font-size: 0.78rem;
+  color: var(--destructive);
+  font-size: 0.74rem;
 }
 
 .expand-toggle {
   width: 100%;
-  text-align: left;
-  display: flex;
   justify-content: space-between;
-  align-items: center;
 }
 
 .expand-toggle small {
-  color: var(--text-muted);
+  color: var(--muted-foreground);
   font-size: 0.68rem;
 }
 
@@ -1559,9 +1111,9 @@ input[type="checkbox"] {
 }
 
 .agent-row {
-  border: 1px solid var(--line-quiet);
-  border-radius: var(--radius-card);
-  background: color-mix(in oklab, var(--surface-1) 86%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
   padding: var(--space-1) var(--space-2);
   display: flex;
   align-items: center;
@@ -1572,31 +1124,30 @@ input[type="checkbox"] {
 .agent-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  color: var(--text-main);
-  font-size: 0.82rem;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--foreground);
 }
 
 .count-stepper {
+  min-width: 86px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-width: 84px;
   justify-content: flex-end;
+  gap: 0.45rem;
 }
 
 .stepper-btn {
   width: 24px;
+  min-width: 24px;
   height: 24px;
   padding: 0;
-  display: grid;
-  place-items: center;
 }
 
 .agent-caption {
   margin: 0;
   font-size: 0.72rem;
-  color: var(--text-dim);
+  color: var(--muted-foreground);
 }
 
 .workspace-modal-actions {
@@ -1615,59 +1166,216 @@ input[type="checkbox"] {
 .pane-worktree-option {
   text-align: left;
   display: grid;
-  gap: 2px;
-  padding: var(--space-2);
+  gap: 0.1rem;
 }
 
 .pane-worktree-option small {
-  color: var(--text-dim);
+  color: var(--muted-foreground);
 }
 
 .pane-worktree-option.active {
-  background: color-mix(in oklab, var(--accent) 24%, var(--surface-2));
-  color: var(--text-main);
+  background: color-mix(in oklab, var(--primary) 18%, var(--secondary));
+  border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
 }
 
-input[type="range"] {
-  accent-color: var(--accent);
+.git-shell {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  align-content: start;
+}
+
+.git-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.git-toolbar-meta,
+.git-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.git-layout {
+  display: grid;
+  grid-template-columns: minmax(170px, 220px) minmax(260px, 1fr) minmax(300px, 1.1fr);
+  gap: var(--space-2);
+  min-height: 440px;
+}
+
+.git-pane {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.git-pane.is-focused {
+  border-color: color-mix(in oklab, var(--primary) 48%, var(--border));
+}
+
+.git-pane-tabs {
+  padding: var(--space-1);
+  gap: var(--space-1);
+}
+
+.git-tab-btn {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--foreground);
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+}
+
+.git-tab-btn small {
+  color: var(--muted-foreground);
+  font-size: 0.62rem;
+}
+
+.git-tab-btn.active {
+  border-color: color-mix(in oklab, var(--primary) 48%, var(--border));
+  background: color-mix(in oklab, var(--primary) 14%, var(--secondary));
+}
+
+.git-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-list-head small {
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+}
+
+.git-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  overflow: auto;
+  padding: var(--space-1);
+}
+
+.git-row {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  color: var(--foreground);
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem;
+}
+
+.git-row.active {
+  border-color: color-mix(in oklab, var(--primary) 48%, var(--border));
+  background: color-mix(in oklab, var(--primary) 14%, var(--secondary));
+}
+
+.git-row-title {
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.git-row-subtitle {
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+}
+
+.git-row-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.git-pane-detail {
+  overflow: hidden;
+}
+
+.git-detail-text {
+  margin: 0;
+  padding: 0.75rem;
+  flex: 1;
+  overflow: auto;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.git-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  padding: var(--space-1) 0.75rem 0.75rem;
+}
+
+.git-shortcuts {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-1);
+}
+
+.git-shortcuts small {
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+}
+
+.git-confirm-modal {
+  max-width: 520px;
+}
+
+.startup-crash-card {
+  width: min(760px, calc(100% - 2rem));
+  margin: 0 auto;
 }
 
 @media (max-width: 1080px) {
-  .theme-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .layout-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 920px) {
-  .app-shell {
-    padding: var(--space-1);
+  .app-shell,
+  .app-shell.app-shell-terminal {
+    padding: var(--space-2);
+  }
+
+  .app-layout,
+  .app-main {
+    gap: var(--space-2);
   }
 
   .app-sidebar {
-    top: calc(var(--space-1) + 46px);
-    bottom: var(--space-1);
-    left: var(--space-1);
-  }
-
-  .top-chrome {
-    min-height: 48px;
-  }
-
-  .top-workspace-pill {
-    max-width: 180px;
-  }
-
-  .top-terminal-name {
-    max-width: 180px;
+    left: var(--space-2);
+    top: var(--space-2);
+    bottom: var(--space-2);
   }
 
   .top-chrome-terminal .top-chrome-row {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .top-chrome-terminal .top-chrome-left {
-    width: 100%;
   }
 
   .top-chrome-terminal .top-chrome-controls {
@@ -1680,12 +1388,8 @@ input[type="range"] {
     overflow-x: visible;
   }
 
-  .top-chrome-subtitle {
-    padding-left: calc(32px + var(--space-2));
-  }
-
-  .layout-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .git-layout {
+    grid-template-columns: 1fr;
   }
 
   .agent-panel-toolbar {
@@ -1694,25 +1398,24 @@ input[type="range"] {
 }
 
 @media (max-width: 680px) {
-  .top-chrome-context p {
+  .top-command-btn kbd {
     display: none;
+  }
+
+  .top-terminal-name {
+    max-width: 170px;
   }
 
   .top-workspace-pill {
-    max-width: 122px;
-  }
-
-  .top-command-btn kbd {
-    display: none;
+    max-width: 140px;
   }
 
   .theme-grid {
     grid-template-columns: 1fr;
   }
 
-  .workspace-modal {
-    margin: 14px auto;
-    width: calc(100% - 20px);
+  .layout-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .workspace-modal-actions {
@@ -1727,547 +1430,7 @@ input[type="range"] {
     grid-template-columns: 1fr;
   }
 
-  .palette-overlay {
-    padding-top: 74px;
-  }
-
   .palette-modal {
-    padding: var(--space-2);
-  }
-}
-
-/* Soft UI Minimalism 2.0 Overrides */
-:root {
-  --canvas-base: #0a0a0a;
-  --pane-elev-1: #121212;
-  --pane-elev-2: #161616;
-  --chrome-tint: color-mix(in oklab, var(--canvas-base) 96%, white);
-  --soft-shadow-1: 0 14px 32px rgba(0, 0, 0, 0.28);
-  --soft-shadow-2: 0 20px 46px rgba(0, 0, 0, 0.34);
-  --space-structural: 24px;
-  --line-soft: transparent;
-  --line-strong: transparent;
-  --line-hairline: transparent;
-  --line-quiet: transparent;
-}
-
-:root[data-theme="apple-dark"] {
-  --canvas-base: #0a0a0a;
-  --pane-elev-1: #121212;
-  --pane-elev-2: #171717;
-}
-
-:root[data-theme="apple-light"] {
-  --canvas-base: #edf2fb;
-  --pane-elev-1: color-mix(in oklab, var(--canvas-base) 98%, white);
-  --pane-elev-2: color-mix(in oklab, var(--canvas-base) 96%, white);
-}
-
-:root[data-theme="graphite"] {
-  --canvas-base: #111417;
-  --pane-elev-1: color-mix(in oklab, var(--canvas-base) 98%, white);
-  --pane-elev-2: color-mix(in oklab, var(--canvas-base) 96%, white);
-}
-
-:root[data-theme="midnight"] {
-  --canvas-base: #040914;
-  --pane-elev-1: color-mix(in oklab, var(--canvas-base) 98%, white);
-  --pane-elev-2: color-mix(in oklab, var(--canvas-base) 96%, white);
-}
-
-:root[data-theme="solarized"] {
-  --canvas-base: #00232c;
-  --pane-elev-1: color-mix(in oklab, var(--canvas-base) 98%, white);
-  --pane-elev-2: color-mix(in oklab, var(--canvas-base) 96%, white);
-}
-
-:root[data-theme="nord"] {
-  --canvas-base: #272d3a;
-  --pane-elev-1: color-mix(in oklab, var(--canvas-base) 98%, white);
-  --pane-elev-2: color-mix(in oklab, var(--canvas-base) 96%, white);
-}
-
-:root {
-  --bg-root: var(--canvas-base);
-  --bg-subtle: var(--canvas-base);
-  --surface-1: var(--pane-elev-1);
-  --surface-2: var(--pane-elev-2);
-  --surface-3: color-mix(in oklab, var(--pane-elev-2) 96%, white);
-  --surface-floating: var(--pane-elev-1);
-  --surface-glass: var(--chrome-tint);
-  --surface-raised: var(--pane-elev-2);
-  --shadow-soft: var(--soft-shadow-1);
-  --shadow-float: var(--soft-shadow-2);
-  --shadow-pop: 0 24px 52px rgba(0, 0, 0, 0.38);
-  --overlay: color-mix(in oklab, var(--canvas-base) 46%, black);
-  --overlay-strong: color-mix(in oklab, var(--canvas-base) 36%, black);
-}
-
-html,
-body,
-#root,
-.app-shell,
-.app-layout,
-.app-main {
-  background: var(--canvas-base);
-}
-
-.app-shell,
-.app-shell.app-shell-terminal {
-  padding: var(--space-structural);
-}
-
-.app-layout,
-.app-main,
-.app-shell.app-shell-terminal .app-layout,
-.app-shell.app-shell-terminal .app-main.app-main-terminal {
-  gap: var(--space-structural);
-}
-
-.app-shell.app-shell-terminal .top-chrome {
-  padding: 0;
-}
-
-.app-sidebar,
-.top-chrome,
-.section-surface,
-.pane-card,
-.settings-block,
-.shortcuts-group,
-.agent-row,
-.workspace-modal-section,
-.palette-empty,
-.workspace-modal,
-.palette-modal,
-.sidebar-workspace-row {
-  border: 0;
-  box-shadow: var(--soft-shadow-1);
-}
-
-.app-sidebar,
-.section-surface,
-.pane-card,
-.settings-block,
-.shortcuts-group,
-.agent-row,
-.workspace-modal-section,
-.workspace-modal,
-.palette-modal,
-.sidebar-workspace-row {
-  background: var(--pane-elev-1);
-}
-
-.app-sidebar {
-  border-radius: 16px;
-  padding: 16px;
-  gap: 12px;
-}
-
-.sidebar-footer {
-  border-top: 0;
-  padding-top: 12px;
-}
-
-.top-chrome {
-  min-height: 50px;
-  border: 0;
-  border-radius: 14px;
-  box-shadow: none;
-  background: var(--chrome-tint);
-  padding: 10px 12px;
-  row-gap: 8px;
-}
-
-.top-chrome-subtitle {
-  padding-left: calc(32px + var(--space-2));
-}
-
-.top-workspace-pill,
-.top-command-btn kbd,
-.sidebar-workspace-count,
-.sidebar-section-item small,
-.shortcut-row kbd,
-.sidebar-item-icon,
-.sidebar-brand-dot {
-  border: 0;
-  background: color-mix(in oklab, var(--pane-elev-2) 86%, transparent);
-}
-
-.section-surface {
-  border-radius: 18px;
-  overflow: hidden;
-}
-
-.terminal-surface {
-  background: var(--pane-elev-1);
-}
-
-.section-head {
-  border-bottom: 0;
-  padding: 18px 20px 0;
-}
-
-.grid-shell {
-  background: var(--pane-elev-1);
-  padding: 20px;
-}
-
-.zoom-grid {
-  padding: 20px;
-}
-
-.pane-card {
-  border-radius: 0;
-  overflow: hidden;
-  background: var(--pane-elev-2);
-  box-shadow: var(--soft-shadow-1);
-}
-
-.pane-header {
-  min-height: 34px;
-  padding: 6px 8px;
-  border-bottom: 0;
-  background: color-mix(in oklab, var(--pane-elev-2) 92%, var(--canvas-base));
-}
-
-.terminal-body {
-  background: color-mix(in oklab, var(--canvas-base) 90%, black);
-}
-
-.layout .react-grid-item.react-grid-placeholder {
-  border: 0;
-  border-radius: 0;
-  background: color-mix(in oklab, var(--accent) 20%, var(--pane-elev-2));
-}
-
-.layout .react-resizable-handle::after {
-  border-color: color-mix(in oklab, var(--text-main) 22%, transparent);
-}
-
-.mobile-nav-toggle,
-.top-command-btn,
-.sidebar-close-btn,
-.workspace-add,
-.sidebar-workspace-close,
-.sidebar-section-item,
-.subtle-btn,
-.toolbar-btn,
-.primary-btn,
-.layout-mode-btn,
-.layout-card,
-.palette-item,
-.expand-toggle,
-.stepper-btn,
-.theme-card,
-.agent-panel-toolbar .toolbar-btn {
-  border: 0;
-  box-shadow: none;
-  background: transparent;
-}
-
-.layout-mode-toggle,
-.density-toggle {
-  border: 0;
-  border-radius: 11px;
-  background: color-mix(in oklab, var(--pane-elev-2) 88%, transparent);
-  box-shadow: inset 0 0 0 1px transparent;
-}
-
-.layout-mode-btn {
-  border: 0;
-  border-radius: 9px;
-}
-
-.layout-mode-btn.active,
-.layout-card.active,
-.palette-item.active,
-.theme-card.active,
-.sidebar-section-item.active,
-.sidebar-workspace-row.active {
-  background: color-mix(in oklab, var(--accent) 18%, var(--pane-elev-2));
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
-}
-
-.workspace-add:hover,
-.subtle-btn:hover,
-.toolbar-btn:hover,
-.primary-btn:hover,
-.layout-mode-btn:hover,
-.layout-card:hover,
-.expand-toggle:hover,
-.stepper-btn:hover,
-.theme-card:hover,
-.palette-item:hover,
-.sidebar-workspace-row:hover,
-.sidebar-workspace-close:hover,
-.top-command-btn:hover,
-.mobile-nav-toggle:hover,
-.sidebar-close-btn:hover,
-.sidebar-section-item:hover {
-  border-color: transparent;
-  background: color-mix(in oklab, var(--pane-elev-2) 90%, white);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
-}
-
-.sidebar-section-item.locked:hover {
-  background: transparent;
-  box-shadow: none;
-}
-
-.primary-btn {
-  color: var(--accent-ink);
-  background: linear-gradient(180deg, var(--accent), color-mix(in oklab, var(--accent) 60%, #051633));
-  box-shadow: 0 12px 28px color-mix(in oklab, var(--accent) 30%, black);
-}
-
-.top-command-btn kbd {
-  color: var(--text-dim);
-}
-
-button:focus-visible,
-input:focus-visible,
-.palette-item:focus-visible,
-.theme-card:focus-visible,
-.layout-card:focus-visible,
-.sidebar-section-item:focus-visible,
-.sidebar-workspace-btn:focus-visible,
-.mobile-nav-toggle:focus-visible,
-.top-command-btn:focus-visible {
-  outline: 0;
-  box-shadow:
-    0 0 0 2px color-mix(in oklab, var(--accent) 52%, transparent),
-    0 10px 24px rgba(0, 0, 0, 0.24);
-}
-
-.text-input {
-  border: 0;
-  background: color-mix(in oklab, var(--pane-elev-2) 92%, transparent);
-  box-shadow: inset 0 0 0 1px transparent;
-}
-
-.text-input:focus-visible {
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklab, var(--accent) 36%, transparent),
-    0 10px 24px rgba(0, 0, 0, 0.22);
-}
-
-.palette-overlay,
-.workspace-modal-overlay {
-  backdrop-filter: blur(10px);
-}
-
-.palette-modal,
-.workspace-modal {
-  border-radius: 16px;
-}
-
-.settings-shell,
-.shortcuts-shell,
-.agent-panel,
-.agent-list {
-  gap: 16px;
-}
-
-@media (max-width: 920px) {
-  .app-shell,
-  .app-shell.app-shell-terminal {
-    padding: 16px;
-  }
-
-  .app-layout,
-  .app-main,
-  .app-shell.app-shell-terminal .app-layout,
-  .app-shell.app-shell-terminal .app-main.app-main-terminal {
-    gap: 16px;
-  }
-
-  .app-sidebar {
-    top: 16px;
-    bottom: 16px;
-    left: 16px;
-  }
-
-  .top-chrome-terminal .top-chrome-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .top-chrome-terminal .top-chrome-controls {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .top-chrome-terminal .terminal-controls {
-    flex-wrap: wrap;
-    overflow-x: visible;
-  }
-}
-
-.git-shell {
-  gap: 14px;
-}
-
-.git-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.git-toolbar-meta,
-.git-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.git-layout {
-  display: grid;
-  grid-template-columns: minmax(170px, 220px) minmax(280px, 1fr) minmax(300px, 1.1fr);
-  gap: 10px;
-  min-height: 440px;
-}
-
-.git-pane {
-  border: 0;
-  background: color-mix(in oklab, var(--pane-elev-1) 92%, transparent);
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--line-soft) 55%, transparent);
-}
-
-.git-pane.is-focused {
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent);
-}
-
-.git-pane-tabs {
-  padding: 6px;
-  gap: 6px;
-}
-
-.git-tab-btn {
-  width: 100%;
-  text-align: left;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border: 0;
-  background: transparent;
-  color: var(--text-main);
-  padding: 8px 10px;
-  box-shadow: inset 0 0 0 1px transparent;
-}
-
-.git-tab-btn small {
-  color: var(--text-dim);
-  font-size: 10px;
-}
-
-.git-tab-btn.active {
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 52%, transparent);
-  background: color-mix(in oklab, var(--accent) 15%, var(--pane-elev-2));
-}
-
-.git-list-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 0;
-  box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--line-soft) 60%, transparent);
-}
-
-.git-list-head small {
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
-.git-list-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow: auto;
-  padding: 8px;
-}
-
-.git-row {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: var(--text-main);
-  text-align: left;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  box-shadow: inset 0 0 0 1px transparent;
-}
-
-.git-row.active {
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 52%, transparent);
-  background: color-mix(in oklab, var(--accent) 15%, var(--pane-elev-2));
-}
-
-.git-row-title {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.git-row-subtitle {
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
-.git-row-badges {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.git-pane-detail {
-  overflow: hidden;
-}
-
-.git-detail-text {
-  margin: 0;
-  padding: 12px;
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow: auto;
-  flex: 1;
-}
-
-.git-detail-actions {
-  display: flex;
-  gap: 8px;
-  padding: 8px 12px 12px;
-  flex-wrap: wrap;
-}
-
-.git-shortcuts {
-  border: 0;
-  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--line-soft) 60%, transparent);
-  padding-top: 8px;
-}
-
-.git-shortcuts small {
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
-.git-confirm-modal {
-  max-width: 520px;
-}
-
-@media (max-width: 920px) {
-  .git-layout {
-    grid-template-columns: 1fr;
+    width: calc(100% - 1rem);
   }
 }

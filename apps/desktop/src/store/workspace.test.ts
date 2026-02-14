@@ -140,7 +140,7 @@ function resetStore(overrides: Partial<SessionState> = {}): void {
     theme: DEFAULT_THEME_ID,
     reduceMotion: false,
     highContrastAssist: false,
-    density: "comfortable",
+    density: "compact",
   };
   const agentStartupDefaults = overrides.agentStartupDefaults ?? {
     claude: "claude",
@@ -343,7 +343,7 @@ describe("workspace store", () => {
       themeId: DEFAULT_THEME_ID,
       reduceMotion: false,
       highContrastAssist: false,
-      density: "comfortable",
+      density: "compact",
       agentStartupDefaults: {
         claude: "claude",
         codex: "codex",
@@ -366,7 +366,7 @@ describe("workspace store", () => {
     expect(state.themeId).toBe("apple-dark");
     expect(state.reduceMotion).toBe(false);
     expect(state.highContrastAssist).toBe(false);
-    expect(state.density).toBe("comfortable");
+    expect(state.density).toBe("compact");
     expect(state.discordPresenceEnabled).toBe(false);
   });
 
@@ -412,7 +412,7 @@ describe("workspace store", () => {
   });
 
   it("persists ui preferences in serialized session state", async () => {
-    useWorkspaceStore.getState().setTheme("nord");
+    useWorkspaceStore.getState().setTheme("apple-light");
     useWorkspaceStore.getState().setReduceMotion(true);
     useWorkspaceStore.getState().setHighContrastAssist(true);
     useWorkspaceStore.getState().setDensity("compact");
@@ -421,7 +421,7 @@ describe("workspace store", () => {
     expect(persistence.saveSessionState).toHaveBeenLastCalledWith(
       expect.objectContaining({
         uiPreferences: {
-          theme: "nord",
+          theme: "apple-light",
           reduceMotion: true,
           highContrastAssist: true,
           density: "compact",

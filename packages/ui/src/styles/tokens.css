@@ -1,0 +1,120 @@
+:root {
+  color-scheme: dark;
+
+  --background: #0b1220;
+  --foreground: #e6ecf8;
+  --card: #111a2b;
+  --card-foreground: #e6ecf8;
+  --popover: #111a2b;
+  --popover-foreground: #e6ecf8;
+
+  --primary: #3b82f6;
+  --primary-foreground: #f8fbff;
+  --secondary: #1a2538;
+  --secondary-foreground: #dce6f7;
+  --muted: #172132;
+  --muted-foreground: #94a3b8;
+  --accent: #1f293b;
+  --accent-foreground: #f1f5f9;
+  --destructive: #dc2626;
+  --destructive-foreground: #fef2f2;
+
+  --border: #2a3750;
+  --input: #334155;
+  --ring: #60a5fa;
+
+  --radius: 0.5rem;
+  --radius-sm: 0.375rem;
+  --radius-lg: 0.625rem;
+
+  --space-1: 0.375rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --control-height: 2rem;
+
+  --bg-root: var(--background);
+  --surface-1: var(--card);
+  --surface-2: var(--secondary);
+  --surface-3: var(--accent);
+  --text-main: var(--foreground);
+  --text-dim: var(--muted-foreground);
+  --line-soft: var(--border);
+  --line-strong: var(--input);
+  --line-focus: var(--ring);
+}
+
+:root[data-theme="apple-dark"] {
+  color-scheme: dark;
+
+  --background: #0b1220;
+  --foreground: #e6ecf8;
+  --card: #111a2b;
+  --card-foreground: #e6ecf8;
+  --popover: #111a2b;
+  --popover-foreground: #e6ecf8;
+
+  --primary: #3b82f6;
+  --primary-foreground: #f8fbff;
+  --secondary: #1a2538;
+  --secondary-foreground: #dce6f7;
+  --muted: #172132;
+  --muted-foreground: #94a3b8;
+  --accent: #1f293b;
+  --accent-foreground: #f1f5f9;
+  --destructive: #dc2626;
+  --destructive-foreground: #fef2f2;
+
+  --border: #2a3750;
+  --input: #334155;
+  --ring: #60a5fa;
+}
+
+:root[data-theme="apple-light"] {
+  color-scheme: light;
+
+  --background: #f8fafc;
+  --foreground: #1e293b;
+  --card: #ffffff;
+  --card-foreground: #1e293b;
+  --popover: #ffffff;
+  --popover-foreground: #1e293b;
+
+  --primary: #2563eb;
+  --primary-foreground: #eff6ff;
+  --secondary: #eef2f7;
+  --secondary-foreground: #334155;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #e2e8f0;
+  --accent-foreground: #0f172a;
+  --destructive: #dc2626;
+  --destructive-foreground: #fef2f2;
+
+  --border: #d5deea;
+  --input: #c3cedd;
+  --ring: #3b82f6;
+}
+
+:root[data-density="comfortable"] {
+  --space-1: 0.5rem;
+  --space-2: 0.75rem;
+  --space-3: 1rem;
+  --space-4: 1.25rem;
+  --control-height: 2.25rem;
+}
+
+:root.high-contrast {
+  --border: color-mix(in oklab, var(--border) 72%, var(--foreground));
+  --input: color-mix(in oklab, var(--input) 72%, var(--foreground));
+  --muted-foreground: color-mix(in oklab, var(--muted-foreground) 70%, var(--foreground));
+}
+
+:root.reduce-motion *,
+:root.reduce-motion *::before,
+:root.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import "xterm/css/xterm.css";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
+import "@supervibing/ui/styles.css";
 import "./styles.css";
 import App from "./App";
 import { StartupErrorBoundary } from "./components/StartupErrorBoundary";
