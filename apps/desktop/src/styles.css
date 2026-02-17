@@ -634,8 +634,27 @@ button:disabled {
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 28%, transparent);
 }
 
-.pane-card.is-zoomed {
-  height: 100%;
+.pane-grid-fit.is-zoomed .layout {
+  position: relative;
+  overflow: hidden;
+}
+
+.pane-grid-fit.is-zoomed .pane-card.is-zoom-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.pane-grid-fit.is-zoomed .pane-card.is-zoom-target {
+  z-index: 3;
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  transform: none !important;
 }
 
 .pane-header {
@@ -702,11 +721,6 @@ button:disabled {
 .terminal-body .xterm-viewport,
 .terminal-body .xterm-screen {
   height: 100%;
-}
-
-.zoom-grid {
-  height: 100%;
-  padding: var(--space-2);
 }
 
 .empty-state-wrap {

@@ -54,6 +54,8 @@ export function PaneGrid({
 }: PaneGridProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
+  const isZoomed = zoomedPaneId !== null;
+  const allowFreeformInteractions = layoutMode === "freeform" && !isZoomed;
 
   useEffect(() => {
     if (!containerRef.current || typeof ResizeObserver === "undefined") {
@@ -87,52 +89,8 @@ export function PaneGrid({
     return Math.max(MIN_ROW_HEIGHT, Math.floor(available / rowCount));
   }, [containerHeight, rowCount]);
 
-  if (zoomedPaneId) {
-    const paneMeta = paneMetaById[zoomedPaneId];
-    return (
-      <div className="zoom-grid">
-        <div className={`pane-card is-zoomed ${focusedPaneId === zoomedPaneId ? "is-focused" : ""}`}>
-          <div
-            className={`pane-header ${layoutMode === "freeform" ? "is-draggable" : ""}`}
-            data-testid={`pane-handle-${zoomedPaneId}`}
-            onDoubleClick={() => onToggleZoom(zoomedPaneId)}
-            onMouseDown={() => onPaneFocus(zoomedPaneId)}
-          >
-                  <div className="pane-header-main">
-                    <strong>{paneMeta?.title ?? zoomedPaneId}</strong>
-                    <Badge>{formatWorktreeLabel(paneMeta?.worktreePath ?? "")}</Badge>
-                  </div>
-                  {onRequestPaneWorktreeChange ? (
-                    <Button
-                      type="button"
-                      variant="subtle"
-                      className="subtle-btn pane-worktree-btn"
-                      data-testid={`pane-worktree-btn-${zoomedPaneId}`}
-                      onMouseDown={(event) => event.stopPropagation()}
-                onDoubleClick={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onRequestPaneWorktreeChange(zoomedPaneId);
-                      }}
-                    >
-                      Worktree
-                    </Button>
-                  ) : null}
-                </div>
-          <TerminalPane
-            workspaceId={workspaceId}
-            paneId={zoomedPaneId}
-            isActive={isActive}
-            shouldGrabFocus={isActive && focusRequestPaneId === zoomedPaneId}
-            onFocusPane={onPaneFocus}
-          />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="pane-grid-fit" ref={containerRef}>
+    <div className={`pane-grid-fit ${isZoomed ? "is-zoomed" : ""}`} ref={containerRef}>
       <FluidGridLayout
         className="layout"
         layout={layouts}
@@ -140,55 +98,61 @@ export function PaneGrid({
         rowHeight={rowHeight}
         margin={GRID_MARGIN}
         containerPadding={GRID_CONTAINER_PADDING}
-        onLayoutChange={layoutMode === "freeform" ? onLayoutsChange : undefined}
-        draggableHandle={layoutMode === "freeform" ? ".pane-header.is-draggable" : undefined}
-        isDraggable={layoutMode === "freeform"}
-        isResizable={layoutMode === "freeform"}
-        resizeHandles={layoutMode === "freeform" ? ["se"] : []}
+        onLayoutChange={allowFreeformInteractions ? onLayoutsChange : undefined}
+        draggableHandle={allowFreeformInteractions ? ".pane-header.is-draggable" : undefined}
+        isDraggable={allowFreeformInteractions}
+        isResizable={allowFreeformInteractions}
+        resizeHandles={allowFreeformInteractions ? ["se"] : []}
       >
-        {paneIds.map((paneId) => (
-          <div key={paneId} className={`pane-card ${focusedPaneId === paneId ? "is-focused" : ""}`}>
-            {(() => {
-              const paneMeta = paneMetaById[paneId];
-              return (
-                <div
-                  className={`pane-header ${layoutMode === "freeform" ? "is-draggable" : ""}`}
-                  data-testid={`pane-handle-${paneId}`}
-                  onDoubleClick={() => onToggleZoom(paneId)}
-                  onMouseDown={() => onPaneFocus(paneId)}
-                >
-                  <div className="pane-header-main">
-                    <strong>{paneMeta?.title ?? paneId}</strong>
-                    <Badge>{formatWorktreeLabel(paneMeta?.worktreePath ?? "")}</Badge>
-                  </div>
-                  {onRequestPaneWorktreeChange ? (
-                    <Button
-                      type="button"
-                      variant="subtle"
-                      className="subtle-btn pane-worktree-btn"
-                      data-testid={`pane-worktree-btn-${paneId}`}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onDoubleClick={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onRequestPaneWorktreeChange(paneId);
-                      }}
-                    >
-                      Worktree
-                    </Button>
-                  ) : null}
+        {paneIds.map((paneId) => {
+          const paneMeta = paneMetaById[paneId];
+          const hiddenByZoom = isZoomed && paneId !== zoomedPaneId;
+          const paneClassName = [
+            "pane-card",
+            focusedPaneId === paneId ? "is-focused" : "",
+            isZoomed && paneId === zoomedPaneId ? "is-zoom-target" : "",
+            hiddenByZoom ? "is-zoom-hidden" : "",
+          ].filter(Boolean).join(" ");
+
+          return (
+            <div key={paneId} className={paneClassName}>
+              <div
+                className={`pane-header ${allowFreeformInteractions ? "is-draggable" : ""}`}
+                data-testid={`pane-handle-${paneId}`}
+                onDoubleClick={() => onToggleZoom(paneId)}
+                onMouseDown={() => onPaneFocus(paneId)}
+              >
+                <div className="pane-header-main">
+                  <strong>{paneMeta?.title ?? paneId}</strong>
+                  <Badge>{formatWorktreeLabel(paneMeta?.worktreePath ?? "")}</Badge>
                 </div>
-              );
-            })()}
-            <TerminalPane
-              workspaceId={workspaceId}
-              paneId={paneId}
-              isActive={isActive}
-              shouldGrabFocus={isActive && focusRequestPaneId === paneId}
-              onFocusPane={onPaneFocus}
-            />
-          </div>
-        ))}
+                {onRequestPaneWorktreeChange ? (
+                  <Button
+                    type="button"
+                    variant="subtle"
+                    className="subtle-btn pane-worktree-btn"
+                    data-testid={`pane-worktree-btn-${paneId}`}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRequestPaneWorktreeChange(paneId);
+                    }}
+                  >
+                    Worktree
+                  </Button>
+                ) : null}
+              </div>
+              <TerminalPane
+                workspaceId={workspaceId}
+                paneId={paneId}
+                isActive={isActive && !hiddenByZoom}
+                shouldGrabFocus={isActive && !hiddenByZoom && focusRequestPaneId === paneId}
+                onFocusPane={onPaneFocus}
+              />
+            </div>
+          );
+        })}
       </FluidGridLayout>
     </div>
   );

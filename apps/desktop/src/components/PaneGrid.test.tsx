@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { PaneGrid } from "./PaneGrid";
+
+const { paneMountSpy, paneUnmountSpy } = vi.hoisted(() => ({
+  paneMountSpy: vi.fn(),
+  paneUnmountSpy: vi.fn(),
+}));
 
 const paneMetaById = {
   "pane-1": {
@@ -54,11 +59,22 @@ vi.mock("react-grid-layout", () => {
   };
 });
 
-vi.mock("./TerminalPane", () => ({
-  TerminalPane: ({ paneId, shouldGrabFocus }: { paneId: string; shouldGrabFocus?: boolean }) => (
-    <div data-testid={`terminal-${paneId}`} data-should-focus={String(Boolean(shouldGrabFocus))} />
-  ),
-}));
+vi.mock("./TerminalPane", async () => {
+  const React = await vi.importActual<typeof import("react")>("react");
+
+  return {
+    TerminalPane: ({ paneId, shouldGrabFocus }: { paneId: string; shouldGrabFocus?: boolean }) => {
+      React.useEffect(() => {
+        paneMountSpy(paneId);
+        return () => {
+          paneUnmountSpy(paneId);
+        };
+      }, [paneId]);
+
+      return <div data-testid={`terminal-${paneId}`} data-should-focus={String(Boolean(shouldGrabFocus))} />;
+    },
+  };
+});
 
 describe("PaneGrid", () => {
   const layouts = [
@@ -66,7 +82,11 @@ describe("PaneGrid", () => {
     { i: "pane-2", x: 3, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
   ];
 
-  it("renders zoomed pane view and toggles zoom on handle double-click", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("keeps all terminal panes mounted in zoom mode and toggles zoom on handle double-click", () => {
     const onLayoutsChange = vi.fn();
     const onToggleZoom = vi.fn();
 
@@ -87,11 +107,78 @@ describe("PaneGrid", () => {
       />,
     );
 
+    expect(screen.getByTestId("terminal-pane-1")).toBeInTheDocument();
     expect(screen.getByTestId("terminal-pane-2")).toBeInTheDocument();
-    expect(screen.queryByTestId("terminal-pane-1")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pane-handle-pane-1").closest(".pane-card")).toHaveClass("is-zoom-hidden");
+    expect(screen.getByTestId("pane-handle-pane-2").closest(".pane-card")).toHaveClass("is-zoom-target");
 
     fireEvent.doubleClick(screen.getByTestId("pane-handle-pane-2"));
     expect(onToggleZoom).toHaveBeenCalledWith("pane-2");
+  });
+
+  it("keeps terminal instances mounted while toggling zoom on and off", () => {
+    const onLayoutsChange = vi.fn();
+    const onToggleZoom = vi.fn();
+
+    const { rerender } = render(
+      <PaneGrid
+        workspaceId="workspace-1"
+        isActive
+        paneIds={["pane-1", "pane-2"]}
+        paneMetaById={paneMetaById}
+        layouts={layouts}
+        layoutMode="tiling"
+        zoomedPaneId={null}
+        focusedPaneId="pane-1"
+        focusRequestPaneId="pane-1"
+        onLayoutsChange={onLayoutsChange}
+        onToggleZoom={onToggleZoom}
+        onPaneFocus={vi.fn()}
+      />,
+    );
+
+    expect(paneMountSpy).toHaveBeenCalledTimes(2);
+    expect(paneUnmountSpy).not.toHaveBeenCalled();
+
+    rerender(
+      <PaneGrid
+        workspaceId="workspace-1"
+        isActive
+        paneIds={["pane-1", "pane-2"]}
+        paneMetaById={paneMetaById}
+        layouts={layouts}
+        layoutMode="tiling"
+        zoomedPaneId="pane-2"
+        focusedPaneId="pane-2"
+        focusRequestPaneId="pane-2"
+        onLayoutsChange={onLayoutsChange}
+        onToggleZoom={onToggleZoom}
+        onPaneFocus={vi.fn()}
+      />,
+    );
+
+    expect(paneMountSpy).toHaveBeenCalledTimes(2);
+    expect(paneUnmountSpy).not.toHaveBeenCalled();
+
+    rerender(
+      <PaneGrid
+        workspaceId="workspace-1"
+        isActive
+        paneIds={["pane-1", "pane-2"]}
+        paneMetaById={paneMetaById}
+        layouts={layouts}
+        layoutMode="tiling"
+        zoomedPaneId={null}
+        focusedPaneId="pane-1"
+        focusRequestPaneId="pane-1"
+        onLayoutsChange={onLayoutsChange}
+        onToggleZoom={onToggleZoom}
+        onPaneFocus={vi.fn()}
+      />,
+    );
+
+    expect(paneMountSpy).toHaveBeenCalledTimes(2);
+    expect(paneUnmountSpy).not.toHaveBeenCalled();
   });
 
   it("renders normal grid and emits layout updates", () => {
@@ -147,6 +234,33 @@ describe("PaneGrid", () => {
 
     expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-draggable", "false");
     expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-resizable", "false");
+  });
+
+  it("disables freeform drag, resize, and layout changes while zoomed", () => {
+    const onLayoutsChange = vi.fn();
+
+    render(
+      <PaneGrid
+        workspaceId="workspace-1"
+        isActive
+        paneIds={["pane-1", "pane-2"]}
+        paneMetaById={paneMetaById}
+        layouts={layouts}
+        layoutMode="freeform"
+        zoomedPaneId="pane-1"
+        focusedPaneId="pane-1"
+        focusRequestPaneId="pane-1"
+        onLayoutsChange={onLayoutsChange}
+        onToggleZoom={vi.fn()}
+        onPaneFocus={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-draggable", "false");
+    expect(screen.getByTestId("mock-grid")).toHaveAttribute("data-resizable", "false");
+
+    fireEvent.click(screen.getByTestId("mock-grid"));
+    expect(onLayoutsChange).not.toHaveBeenCalled();
   });
 
   it("emits pane worktree change request from header action", () => {
