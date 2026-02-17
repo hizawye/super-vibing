@@ -7,6 +7,13 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-17] - Zoom Rendering as Visual State to Preserve Pane History
+**Context:** Zooming a pane mounted a zoom-only tree and unmounted non-zoom `TerminalPane` instances, which disposed xterm and cleared scrollback/history when unzooming.
+**Decision:** Keep all `TerminalPane` components mounted at all times in `PaneGrid` and implement zoom as a visual/layout state (`is-zoom-target` / `is-zoom-hidden`) instead of conditional tree replacement.
+**Rationale:** Preserves terminal process/UI buffer continuity across zoom toggles without changing backend pane lifecycle semantics.
+**Consequences:** Zoom mode now disables freeform drag/resize/layout updates while active and relies on CSS positioning/hiding; regression tests now assert no terminal unmounts during zoom transitions.
+**Alternatives Considered:** Keeping a separate zoom render branch and attempting to reconstruct terminal state after unmount.
+
 ## [2026-02-14] - Compact shadcn UI Baseline (Dark/Light Only)
 **Context:** UI migration to shared shadcn primitives was functionally complete, but styling still depended on a large legacy stylesheet and a soft-ui override block that conflicted with compact, modern shadcn defaults.
 **Decision:** Standardize on a compact token-driven shadcn baseline:

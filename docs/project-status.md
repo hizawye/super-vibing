@@ -1,8 +1,25 @@
 # Project Status
 
-- Last Updated: 2026-02-14 (release-v0.1.21-tag)
+- Last Updated: 2026-02-17 (pane-zoom-history-fix)
 
 - Current progress:
+  - Fixed terminal history clearing when toggling pane zoom on/off:
+    - refactored `apps/desktop/src/components/PaneGrid.tsx` to keep all `TerminalPane` instances mounted in one stable render path,
+    - converted zoom behavior to CSS/view-state (`is-zoom-target` and `is-zoom-hidden`) instead of rendering a zoom-only subtree,
+    - disabled freeform drag/resize/layout-change callbacks while zoomed so zoom remains a visual mode and does not mutate layouts.
+  - Added zoom persistence regression coverage:
+    - `apps/desktop/src/components/PaneGrid.test.tsx` now verifies all terminal panes remain mounted in zoom mode and across zoom toggle transitions,
+    - added assertions that zoomed freeform mode suppresses drag/resize/layout mutations.
+  - Verification:
+    - `pnpm install` ✅ (restored workspace package links for `@supervibing/ui` resolution in local env)
+    - `pnpm --filter @supervibing/desktop test -- run src/components/PaneGrid.test.tsx src/App.terminal-persistence.test.tsx` ✅ (18/18 files, 123/123 tests)
+    - `pnpm --filter @supervibing/desktop typecheck` ✅
+  - Blockers/Bugs:
+    - No functional blockers identified for zoom-history persistence.
+  - Next immediate starting point:
+    - manual UX validation in desktop runtime: zoom/unzoom across 2+ active panes while producing output in background panes to confirm scrollback remains intact visually and behaviorally.
+
+  - Historical progress:
   - Released version bump to 0.1.21:
     - updated release manifests to 0.1.21,
     - created and pushed tag `v0.1.21` to `origin`.

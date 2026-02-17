@@ -30,6 +30,9 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 ## UI model
 - Grid engine: `react-grid-layout`, supporting 1..16 panes.
 - Zoom mode: pane-level maximize/restore on double-click.
+  - zoom is implemented as a visual/layout state while all pane terminal components remain mounted,
+  - non-zoom panes are hidden (not unmounted) during zoom to preserve xterm scrollback/session continuity,
+  - freeform drag/resize/layout writes are disabled while zoom is active.
 - Terminal rendering: Xterm.js + fit addon per pane component.
 - Keyboard model:
   - global app shortcuts remain available (`Ctrl/Cmd+N`, `Ctrl/Cmd+P`, `Escape`),

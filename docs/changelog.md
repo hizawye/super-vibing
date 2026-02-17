@@ -1,5 +1,18 @@
 # Changelog
 
+## [2026-02-17] - Pane Zoom History Persistence
+### Fixed
+- Fixed pane history/scrollback clearing after zoom toggle by keeping all `TerminalPane` instances mounted in `PaneGrid`.
+- Reworked zoom handling into a visual state (`is-zoom-target` / `is-zoom-hidden`) instead of rendering a zoom-only subtree.
+
+### Changed
+- Zoom mode now disables freeform drag/resize/layout mutations while active, preserving layout integrity and pane runtime continuity.
+
+### Verification
+- `pnpm install`
+- `pnpm --filter @supervibing/desktop test -- run src/components/PaneGrid.test.tsx src/App.terminal-persistence.test.tsx`
+- `pnpm --filter @supervibing/desktop typecheck`
+
 ## [2026-02-14] - shadcn Compact Refresh (Dark/Light + Token-Native Styling)
 ### Changed
 - Converted shared `@supervibing/ui` primitives to token-native shadcn styling and removed primitive reliance on desktop legacy class skins.
