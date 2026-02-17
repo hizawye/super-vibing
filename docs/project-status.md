@@ -1,8 +1,22 @@
 # Project Status
 
-- Last Updated: 2026-02-17 (pane-zoom-history-fix)
+- Last Updated: 2026-02-17 (release-v0.1.23-recovery)
 
 - Current progress:
+  - Recovered failed `Release` workflow caused by tag/version mismatch on `v0.1.22`:
+    - bumped release manifests to `0.1.23` (`package.json`, `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`),
+    - committed and pushed `main` (`0a58a02`),
+    - created and pushed tag `v0.1.23`.
+  - Verification:
+    - `pnpm run release:prepare -- 0.1.23` ✅
+    - GitHub Actions `CI` run `22111678902` ✅
+    - GitHub Actions `Release` run `22111681951` ✅
+  - Blockers/Bugs:
+    - Historical failed run for tag `v0.1.22` remains visible in Actions history by design.
+  - Next immediate starting point:
+    - continue normal feature work from `main`; use guarded release flow (`pnpm run release:prepare -- X.Y.Z` then tag) for the next cut.
+
+  - Historical progress:
   - Fixed terminal history clearing when toggling pane zoom on/off:
     - refactored `apps/desktop/src/components/PaneGrid.tsx` to keep all `TerminalPane` instances mounted in one stable render path,
     - converted zoom behavior to CSS/view-state (`is-zoom-target` and `is-zoom-hidden`) instead of rendering a zoom-only subtree,
@@ -14,12 +28,6 @@
     - `pnpm install` ✅ (restored workspace package links for `@supervibing/ui` resolution in local env)
     - `pnpm --filter @supervibing/desktop test -- run src/components/PaneGrid.test.tsx src/App.terminal-persistence.test.tsx` ✅ (18/18 files, 123/123 tests)
     - `pnpm --filter @supervibing/desktop typecheck` ✅
-  - Blockers/Bugs:
-    - No functional blockers identified for zoom-history persistence.
-  - Next immediate starting point:
-    - manual UX validation in desktop runtime: zoom/unzoom across 2+ active panes while producing output in background panes to confirm scrollback remains intact visually and behaviorally.
-
-  - Historical progress:
   - Released version bump to 0.1.21:
     - updated release manifests to 0.1.21,
     - created and pushed tag `v0.1.21` to `origin`.

@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026-02-17] - Release Workflow Recovery (`v0.1.23`)
+### Fixed
+- Fixed failed release parity state after `v0.1.22` by shipping a new parity-aligned release version `0.1.23`.
+
+### Changed
+- Updated release manifests to `0.1.23` in:
+  - `package.json`
+  - `apps/desktop/package.json`
+  - `apps/desktop/src-tauri/tauri.conf.json`
+- Published annotated tag `v0.1.23` from parity commit `0a58a02`.
+
+### Verification
+- `pnpm run release:prepare -- 0.1.23`
+- GitHub Actions `CI` run `22111678902` (success)
+- GitHub Actions `Release` run `22111681951` (success)
+
 ## [2026-02-17] - Pane Zoom History Persistence
 ### Fixed
 - Fixed pane history/scrollback clearing after zoom toggle by keeping all `TerminalPane` instances mounted in `PaneGrid`.

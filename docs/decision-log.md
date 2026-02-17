@@ -7,6 +7,16 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-17] - Immutable Release Recovery for Failed `v0.1.22`
+**Context:** `Release` run `22083576122` failed because tag `v0.1.22` was pushed while app manifests still reported `0.1.21`, tripping the version parity gate.
+**Decision:** Keep tag history immutable and recover by shipping a new release version instead of rewriting `v0.1.22`:
+- bump manifests to `0.1.23`,
+- push release-parity commit to `main`,
+- publish new tag `v0.1.23`.
+**Rationale:** Avoids tag rewrite side effects while preserving deterministic release history and existing CI parity guard behavior.
+**Consequences:** The failed `v0.1.22` run remains in Actions history; release pipeline health is restored by successful `v0.1.23` CI/Release runs.
+**Alternatives Considered:** Force-updating `v0.1.22` to a new commit and re-running release from a rewritten tag.
+
 ## [2026-02-17] - Zoom Rendering as Visual State to Preserve Pane History
 **Context:** Zooming a pane mounted a zoom-only tree and unmounted non-zoom `TerminalPane` instances, which disposed xterm and cleared scrollback/history when unzooming.
 **Decision:** Keep all `TerminalPane` components mounted at all times in `PaneGrid` and implement zoom as a visual/layout state (`is-zoom-target` / `is-zoom-hidden`) instead of conditional tree replacement.
