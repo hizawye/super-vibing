@@ -160,4 +160,14 @@ describe("CommandPalette", () => {
     expect(openWorktreeManager).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("opens kanban board from palette action", async () => {
+    const user = userEvent.setup();
+    render(<CommandPalette open onClose={onClose} onOpenWorkspaceModal={onOpenWorkspaceModal} />);
+
+    await user.click(screen.getByText("Open kanban board"));
+
+    expect(setActiveSection).toHaveBeenCalledWith("kanban");
+    expect(onClose).toHaveBeenCalled();
+  });
 });

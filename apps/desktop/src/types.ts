@@ -24,6 +24,68 @@ export interface AgentAllocation {
   count: number;
 }
 
+export type KanbanTaskStatus = "todo" | "in_progress" | "review" | "done";
+export type KanbanRunStatus = "running" | "succeeded" | "failed" | "canceled";
+export type KanbanRunCompletionStatus = Exclude<KanbanRunStatus, "running">;
+
+export interface KanbanPreRunConfig {
+  createBranch: boolean;
+  branchName: string;
+  baseRef?: string;
+  createWorktree: boolean;
+  openAfterCreate: boolean;
+}
+
+export interface KanbanTask {
+  id: string;
+  title: string;
+  description: string;
+  workspaceId: string;
+  paneId: string;
+  command: string;
+  status: KanbanTaskStatus;
+  preRun?: KanbanPreRunConfig | null;
+  lastRunId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  doneAt?: string | null;
+}
+
+export interface KanbanTaskRun {
+  id: string;
+  taskId: string;
+  workspaceId: string;
+  paneId: string;
+  command: string;
+  status: KanbanRunStatus;
+  startedAt: string;
+  finishedAt?: string | null;
+  error?: string | null;
+  createdBranch?: string | null;
+  createdWorktreePath?: string | null;
+}
+
+export interface KanbanRunLogChunk {
+  sequence: number;
+  runId: string;
+  paneId: string;
+  timestamp: string;
+  chunk: string;
+}
+
+export interface KanbanRunLogsResponse {
+  runId: string;
+  nextCursor: number;
+  done: boolean;
+  chunks: KanbanRunLogChunk[];
+}
+
+export interface KanbanSessionState {
+  tasks: KanbanTask[];
+  runs: KanbanTaskRun[];
+  runLogs: Record<string, string>;
+}
+
 export type AppSection = "terminal" | "git" | "worktrees" | "kanban" | "agents" | "prompts" | "settings";
 export type LayoutMode = "tiling" | "freeform";
 export type ThemeId = "apple-dark" | "apple-light";
@@ -75,6 +137,7 @@ export interface SessionState {
   uiPreferences: UiPreferences;
   agentStartupDefaults?: AgentStartupDefaults;
   discordPresenceEnabled?: boolean;
+  kanban?: KanbanSessionState;
 }
 
 export interface LegacySessionState {
@@ -404,6 +467,33 @@ export interface AutomationReportRequest {
   ok: boolean;
   result?: unknown;
   error?: string;
+}
+
+export interface SyncKanbanStateRequest {
+  tasks: KanbanTask[];
+  runs: KanbanTaskRun[];
+}
+
+export interface KanbanStartRunRequest {
+  taskId: string;
+}
+
+export interface KanbanCompleteRunRequest {
+  runId: string;
+  status: KanbanRunCompletionStatus;
+  error?: string;
+}
+
+export interface KanbanRunLogsRequest {
+  runId: string;
+  cursor?: number;
+  limit?: number;
+}
+
+export interface KanbanStateSnapshot {
+  tasks: KanbanTask[];
+  runs: KanbanTaskRun[];
+  activeRunByPaneId: Record<string, string>;
 }
 
 export type FrontendAutomationRequest =

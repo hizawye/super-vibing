@@ -14,12 +14,14 @@
   - Radix UI primitives (`@radix-ui/react-*`) for dialog/tabs/checkbox/switch/scroll-area/separator foundations
   - Xterm.js + `@xterm/addon-fit`
   - `react-grid-layout` (+ `react-resizable`) for pane manager
+  - browser E2E runtime shim for Tauri command simulation (`apps/desktop/src/lib/tauri-e2e.ts`)
 - State:
   - Zustand
 - Testing:
   - Vitest
   - Testing Library (`@testing-library/react`, `@testing-library/user-event`, `@testing-library/jest-dom`)
   - jsdom
+  - Playwright (`@playwright/test`) for browser E2E
   - Rust unit tests via Cargo
 - CI/CD:
   - GitHub Actions (`.github/workflows/ci.yml`)

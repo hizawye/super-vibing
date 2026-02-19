@@ -1,5 +1,29 @@
 # Changelog
 
+## [2026-02-19] - Playwright E2E Harness + Browser Tauri Shim
+### Added
+- Added Playwright test infrastructure:
+  - `playwright.config.ts`,
+  - `tests/e2e/section-routing.spec.ts`,
+  - `tests/e2e/kanban-lifecycle.spec.ts`,
+  - root scripts: `test:e2e`, `test:e2e:headed`.
+- Added frontend E2E command/runtime shim at `apps/desktop/src/lib/tauri-e2e.ts` to simulate Tauri command behavior in browser-only runs.
+- Added CI `e2e` job to `.github/workflows/ci.yml` with Playwright browser install and failure artifact upload.
+
+### Changed
+- Updated `apps/desktop/src/lib/tauri.ts` to route command APIs through E2E shim when `VITE_E2E=1`.
+- Updated `apps/desktop/src/lib/persistence.ts` with in-memory persistence mode for browser E2E runtime.
+- Added Playwright report/test output ignores in `.gitignore`.
+
+### Fixed
+- Fixed deep-link startup route drift where bootstrap could overwrite `/kanban` or `/worktrees` back to `/terminal` by reapplying location sync after initialization in `apps/desktop/src/App.tsx`.
+- Hardened `automation:request` event binding for non-Tauri browser runtime so E2E mode does not fail on missing event bridge.
+
+### Verification
+- `pnpm --filter @supervibing/desktop typecheck`
+- `pnpm --filter @supervibing/desktop test:ci`
+- `pnpm test:e2e`
+
 ## [2026-02-17] - Release Workflow Recovery (`v0.1.23`)
 ### Fixed
 - Fixed failed release parity state after `v0.1.22` by shipping a new parity-aligned release version `0.1.23`.

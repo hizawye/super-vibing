@@ -181,6 +181,16 @@ export function CommandPalette({ open, onClose, onOpenWorkspaceModal }: CommandP
         },
       },
       {
+        id: "action-open-kanban",
+        section: "Kanban",
+        label: "Open kanban board",
+        description: "Track and run pane-bound tasks",
+        keywords: "kanban tasks board runs logs",
+        run: async () => {
+          setActiveSection("kanban");
+        },
+      },
+      {
         id: "action-refresh-worktrees",
         section: "Worktrees",
         label: "Refresh worktrees",

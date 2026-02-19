@@ -7,11 +7,16 @@
     "dev": "pnpm --filter @supervibing/desktop dev",
     "build": "pnpm --filter @supervibing/desktop build",
     "test": "pnpm --filter @supervibing/desktop test:ci",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
     "tauri:dev": "pnpm --filter @supervibing/desktop tauri dev",
     "tauri:debug": "RUST_LOG=tauri=debug,tauri_runtime=debug,tauri_plugin=debug RUST_BACKTRACE=1 pnpm --filter @supervibing/desktop tauri dev",
     "tauri:build": "pnpm --filter @supervibing/desktop tauri build",
     "release:prepare": "bash ./scripts/prepare-release-version.sh",
     "release:tag": "bash ./scripts/create-release-tag.sh",
     "release:verify": "bash ./scripts/verify-release-version.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
   }
 }

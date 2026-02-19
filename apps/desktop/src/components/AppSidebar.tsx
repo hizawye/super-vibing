@@ -32,7 +32,7 @@ const PRIMARY_SECTIONS: SectionItem[] = [
   { id: "terminal", label: "Terminal", icon: ">_" },
   { id: "git", label: "Git", icon: "GT" },
   { id: "worktrees", label: "Worktrees", icon: "WT" },
-  { id: "kanban", label: "Kanban", icon: "KB", locked: true, hint: "PRO" },
+  { id: "kanban", label: "Kanban", icon: "KB" },
   { id: "agents", label: "Agents", icon: "AI", locked: true, hint: "PRO" },
   { id: "prompts", label: "Prompts", icon: "PR", locked: true, hint: "PRO" },
 ];

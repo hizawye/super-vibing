@@ -7,6 +7,24 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-19] - Playwright Browser E2E Harness with Tauri Runtime Simulation
+**Context:** Section deep-link and Kanban lifecycle behavior needed end-to-end regression coverage, but app logic depends on Tauri command/event/store plugins that are unavailable in plain browser CI.
+**Decision:** Add a dedicated browser E2E mode and keep production desktop runtime untouched:
+- route frontend Tauri calls through an E2E shim when `VITE_E2E=1` (`apps/desktop/src/lib/tauri-e2e.ts` + `apps/desktop/src/lib/tauri.ts`),
+- use in-memory persistence in E2E mode (`apps/desktop/src/lib/persistence.ts`),
+- run Playwright tests against Vite app server with `VITE_E2E=1`,
+- add CI `e2e` job with Playwright artifact upload on failure.
+**Rationale:** Enables deterministic browser automation for routing/Kanban flows without booting a desktop shell, while keeping test scope aligned to real UI/store code paths.
+**Consequences:** Frontend runtime now has an explicit dual-path command bridge (`desktop` vs `e2e`) and docs/test infrastructure includes Playwright.
+**Alternatives Considered:** Full Tauri integration tests only, and mocking app state directly at component-test level without browser navigation/history coverage.
+
+## [2026-02-19] - Route Sync Must Re-Assert URL Intent After Bootstrap
+**Context:** On deep links like `/kanban` and `/worktrees`, persisted session bootstrap could overwrite section state back to `/terminal`, causing startup route drift.
+**Decision:** Re-run URL-to-section synchronization when `initialized` changes in `App.tsx` route effect dependencies.
+**Rationale:** Ensures location intent remains authoritative at startup while preserving existing popstate/history synchronization model.
+**Consequences:** Deep-link E2E flows now remain stable across bootstrap timing; section-route browser history tests pass consistently.
+**Alternatives Considered:** Forcing store bootstrap to ignore persisted `activeSection`, and introducing a separate route-first bootstrap gate in store.
+
 ## [2026-02-17] - Immutable Release Recovery for Failed `v0.1.22`
 **Context:** `Release` run `22083576122` failed because tag `v0.1.22` was pushed while app manifests still reported `0.1.21`, tripping the version parity gate.
 **Decision:** Keep tag history immutable and recover by shipping a new release version instead of rewriting `v0.1.22`:
@@ -766,3 +784,25 @@ Root causes were synchronous backend RPC calls in command handling and single-sl
 **Rationale:** Makes UI behavior deterministic and testable, eliminates browser-native prompt/confirm UX mismatches, and aligns fully with shared shadcn-style component architecture.
 **Consequences:** Git actions now require explicit dialog interactions instead of prompt shortcuts; keyboard triggers still open equivalent action flows. Legacy CSS dead selectors were pruned where migration made them unreachable.
 **Alternatives Considered:** Keeping `window.prompt`/`window.confirm` for power-user speed and postponing full control-surface migration.
+
+## [2026-02-18] - Kanban as First-Class Orchestration Runtime
+**Context:** The app needed a practical multitasking surface for multiple projects/worktrees/agents where task state and command execution can be tracked in one place instead of ad hoc pane usage.
+**Decision:** Promote Kanban from placeholder UI to a first-class runtime integrated across frontend store, Tauri backend, and automation bridge:
+- added persisted task/run models and run-log cursors in desktop state with explicit create/move/run/complete actions,
+- implemented backend Kanban state registry (tasks, runs, active run per pane, buffered logs) with dedicated Tauri command surface,
+- wired PTY output into active run logs to stream command output without changing pane execution contracts,
+- exposed automation HTTP endpoints for Kanban state/start/complete/log retrieval so external tooling/agents can orchestrate and monitor progress.
+**Rationale:** Centralizing orchestration state in backend memory plus persisted frontend snapshots enables concurrent multi-workspace execution while keeping UI and automation consumers consistent on the same task/run truth.
+**Consequences:** Kanban is now operational for real command execution and monitoring; next risk surface is integration coverage (manual/e2e) rather than missing core plumbing.
+**Alternatives Considered:** Frontend-only Kanban state with no backend runtime/log bridge, and separate automation-only orchestration service disconnected from desktop session state.
+
+## [2026-02-18] - Section Navigation as URL-Backed Pages
+**Context:** Git, Worktrees, Kanban, Settings, and other sections were rendered as swaps inside the terminal-oriented content shell, which made deep-linking and browser history behavior inconsistent with page-style navigation.
+**Decision:** Move section navigation to canonical URL paths and keep non-terminal sections on their own page surface:
+- added section/path mapping helpers in `apps/desktop/src/lib/section-routes.ts`,
+- updated `apps/desktop/src/App.tsx` to hydrate section state from `window.location.pathname`, normalize unknown paths to `/terminal`, and sync section changes to browser history,
+- rendered non-terminal sections inside a dedicated `.app-page` container while terminal panes remain mounted only for terminal mode persistence,
+- removed sidebar workspace-selection behavior that forced users back to terminal.
+**Rationale:** URL-backed pages make multitasking sections addressable, improve back/forward navigation, and prevent section workflows (Git/Worktrees/Kanban) from feeling like nested terminal subviews.
+**Consequences:** Section transitions now update browser history and support direct section links; terminal pane state remains preserved when leaving terminal view.
+**Alternatives Considered:** Keeping hashless in-memory section state only and continuing to render all sections as terminal-surface conditionals.
