@@ -41,6 +41,9 @@ const DISCORD_PRESENCE_STATE: &str = "Working";
 const DISCORD_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 const DISCORD_HEALTHCHECK_INTERVAL: Duration = Duration::from_secs(30);
 const DISCORD_WORKER_POLL_INTERVAL: Duration = Duration::from_millis(500);
+const KANBAN_LOG_MAX_CHARS: usize = 64 * 1024;
+const KANBAN_RUN_LOG_DEFAULT_LIMIT: usize = 8192;
+const KANBAN_RUN_LOG_MAX_LIMIT: usize = 64 * 1024;
 
 #[derive(Debug)]
 struct HttpError {
@@ -136,6 +139,141 @@ struct AutomationWorkspaceSnapshot {
 #[serde(rename_all = "camelCase")]
 struct SyncAutomationWorkspacesRequest {
     workspaces: Vec<AutomationWorkspaceSnapshot>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum KanbanTaskStatus {
+    Todo,
+    InProgress,
+    Review,
+    Done,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum KanbanRunStatus {
+    Running,
+    Succeeded,
+    Failed,
+    Canceled,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum KanbanRunCompletionStatus {
+    Succeeded,
+    Failed,
+    Canceled,
+}
+
+impl From<KanbanRunCompletionStatus> for KanbanRunStatus {
+    fn from(value: KanbanRunCompletionStatus) -> Self {
+        match value {
+            KanbanRunCompletionStatus::Succeeded => KanbanRunStatus::Succeeded,
+            KanbanRunCompletionStatus::Failed => KanbanRunStatus::Failed,
+            KanbanRunCompletionStatus::Canceled => KanbanRunStatus::Canceled,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct KanbanPreRunConfig {
+    create_branch: bool,
+    branch_name: String,
+    base_ref: Option<String>,
+    create_worktree: bool,
+    open_after_create: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct KanbanTask {
+    id: String,
+    title: String,
+    description: String,
+    workspace_id: String,
+    pane_id: String,
+    command: String,
+    status: KanbanTaskStatus,
+    pre_run: Option<KanbanPreRunConfig>,
+    last_run_id: Option<String>,
+    created_at: String,
+    updated_at: String,
+    done_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct KanbanTaskRun {
+    id: String,
+    task_id: String,
+    workspace_id: String,
+    pane_id: String,
+    command: String,
+    status: KanbanRunStatus,
+    started_at: String,
+    finished_at: Option<String>,
+    error: Option<String>,
+    created_branch: Option<String>,
+    created_worktree_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncKanbanStateRequest {
+    tasks: Vec<KanbanTask>,
+    runs: Vec<KanbanTaskRun>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KanbanStartRunRequest {
+    task_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KanbanCompleteRunRequest {
+    run_id: String,
+    status: KanbanRunCompletionStatus,
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KanbanRunLogsRequest {
+    run_id: String,
+    cursor: Option<usize>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct KanbanRunLogChunk {
+    sequence: usize,
+    run_id: String,
+    pane_id: String,
+    timestamp: String,
+    chunk: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KanbanRunLogsResponse {
+    run_id: String,
+    next_cursor: usize,
+    done: bool,
+    chunks: Vec<KanbanRunLogChunk>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KanbanStateSnapshot {
+    tasks: Vec<KanbanTask>,
+    runs: Vec<KanbanTaskRun>,
+    active_run_by_pane_id: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -285,6 +423,24 @@ impl AutomationState {
     }
 }
 
+struct KanbanState {
+    tasks: StdRwLock<HashMap<String, KanbanTask>>,
+    runs: StdRwLock<HashMap<String, KanbanTaskRun>>,
+    active_run_by_pane: StdRwLock<HashMap<String, String>>,
+    run_logs: StdRwLock<HashMap<String, String>>,
+}
+
+impl KanbanState {
+    fn new() -> Self {
+        Self {
+            tasks: StdRwLock::new(HashMap::new()),
+            runs: StdRwLock::new(HashMap::new()),
+            active_run_by_pane: StdRwLock::new(HashMap::new()),
+            run_logs: StdRwLock::new(HashMap::new()),
+        }
+    }
+}
+
 struct DiscordPresenceState {
     command_tx: std_mpsc::Sender<DiscordPresenceCommand>,
 }
@@ -298,6 +454,7 @@ impl DiscordPresenceState {
 struct AppState {
     panes: Arc<RwLock<HashMap<String, Arc<PaneRuntime>>>>,
     automation: Arc<AutomationState>,
+    kanban: Arc<KanbanState>,
     discord_presence: Arc<DiscordPresenceState>,
 }
 
@@ -312,6 +469,7 @@ impl AppState {
         let state = Self {
             panes: Arc::new(RwLock::new(HashMap::new())),
             automation: Arc::new(AutomationState::new(queue_tx)),
+            kanban: Arc::new(KanbanState::new()),
             discord_presence: Arc::new(DiscordPresenceState::new(discord_tx)),
         };
 
@@ -967,6 +1125,54 @@ fn now_millis() -> u128 {
         .unwrap_or(0)
 }
 
+fn now_timestamp_string() -> String {
+    now_millis().to_string()
+}
+
+fn normalize_kanban_log_boundary(text: &str, mut index: usize) -> usize {
+    if index >= text.len() {
+        return text.len();
+    }
+    while index > 0 && !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn clamp_kanban_log_text(mut text: String) -> String {
+    if text.len() <= KANBAN_LOG_MAX_CHARS {
+        return text;
+    }
+
+    let start = normalize_kanban_log_boundary(&text, text.len() - KANBAN_LOG_MAX_CHARS);
+    text.drain(..start);
+    text
+}
+
+fn append_kanban_log_for_run(kanban: &Arc<KanbanState>, run_id: &str, chunk: &str) {
+    if chunk.is_empty() {
+        return;
+    }
+
+    if let Ok(mut logs) = kanban.run_logs.write() {
+        let current = logs.get(run_id).cloned().unwrap_or_default();
+        let next = clamp_kanban_log_text(format!("{current}{chunk}"));
+        logs.insert(run_id.to_string(), next);
+    }
+}
+
+fn append_kanban_log_for_pane(kanban: &Arc<KanbanState>, pane_id: &str, chunk: &str) {
+    let run_id = kanban
+        .active_run_by_pane
+        .read()
+        .ok()
+        .and_then(|active| active.get(pane_id).cloned());
+    let Some(run_id) = run_id else {
+        return;
+    };
+    append_kanban_log_for_run(kanban, &run_id, chunk);
+}
+
 fn default_automation_bind() -> String {
     format!("{AUTOMATION_DEFAULT_HOST}:{AUTOMATION_DEFAULT_PORT}")
 }
@@ -1338,7 +1544,323 @@ fn workspace_for_automation(
         .ok_or_else(|| AppError::not_found(format!("workspace `{workspace_id}` is not open")))
 }
 
-fn start_automation_http_server(automation: Arc<AutomationState>) {
+fn sorted_kanban_tasks(tasks: HashMap<String, KanbanTask>) -> Vec<KanbanTask> {
+    let mut values = tasks.into_values().collect::<Vec<_>>();
+    values.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+    values
+}
+
+fn sorted_kanban_runs(runs: HashMap<String, KanbanTaskRun>) -> Vec<KanbanTaskRun> {
+    let mut values = runs.into_values().collect::<Vec<_>>();
+    values.sort_by(|left, right| right.started_at.cmp(&left.started_at));
+    values
+}
+
+fn sync_kanban_state_impl(
+    kanban: &Arc<KanbanState>,
+    request: SyncKanbanStateRequest,
+) -> Result<(), String> {
+    let task_map = request
+        .tasks
+        .into_iter()
+        .map(|task| (task.id.clone(), task))
+        .collect::<HashMap<_, _>>();
+    let run_map = request
+        .runs
+        .into_iter()
+        .map(|run| (run.id.clone(), run))
+        .collect::<HashMap<_, _>>();
+
+    {
+        let mut tasks = kanban
+            .tasks
+            .write()
+            .map_err(|_| AppError::system("kanban task registry lock poisoned").to_string())?;
+        *tasks = task_map;
+    }
+
+    {
+        let mut runs = kanban
+            .runs
+            .write()
+            .map_err(|_| AppError::system("kanban run registry lock poisoned").to_string())?;
+        *runs = run_map.clone();
+    }
+
+    {
+        let mut active = kanban
+            .active_run_by_pane
+            .write()
+            .map_err(|_| AppError::system("kanban active run lock poisoned").to_string())?;
+        active.clear();
+        run_map.values().for_each(|run| {
+            if run.status == KanbanRunStatus::Running {
+                active.insert(run.pane_id.clone(), run.id.clone());
+            }
+        });
+    }
+
+    {
+        let mut logs = kanban
+            .run_logs
+            .write()
+            .map_err(|_| AppError::system("kanban run log lock poisoned").to_string())?;
+        logs.retain(|run_id, _| run_map.contains_key(run_id));
+        run_map.keys().for_each(|run_id| {
+            logs.entry(run_id.clone()).or_insert_with(String::new);
+        });
+    }
+
+    Ok(())
+}
+
+fn kanban_start_run_impl(
+    kanban: &Arc<KanbanState>,
+    request: KanbanStartRunRequest,
+) -> Result<KanbanTaskRun, String> {
+    let task_id = request.task_id.trim();
+    if task_id.is_empty() {
+        return Err(AppError::validation("taskId is required").to_string());
+    }
+
+    let task = {
+        let tasks = kanban
+            .tasks
+            .read()
+            .map_err(|_| AppError::system("kanban task registry lock poisoned").to_string())?;
+        tasks
+            .get(task_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found(format!("kanban task `{task_id}` not found")).to_string())?
+    };
+
+    {
+        let active = kanban
+            .active_run_by_pane
+            .read()
+            .map_err(|_| AppError::system("kanban active run lock poisoned").to_string())?;
+        if let Some(existing) = active.get(&task.pane_id) {
+            return Err(AppError::conflict(format!(
+                "pane `{}` already has active run `{existing}`",
+                task.pane_id
+            ))
+            .to_string());
+        }
+    }
+
+    let started_at = now_timestamp_string();
+    let run = KanbanTaskRun {
+        id: format!("kanban-run-{}", Uuid::new_v4()),
+        task_id: task.id.clone(),
+        workspace_id: task.workspace_id.clone(),
+        pane_id: task.pane_id.clone(),
+        command: task.command.clone(),
+        status: KanbanRunStatus::Running,
+        started_at,
+        finished_at: None,
+        error: None,
+        created_branch: None,
+        created_worktree_path: None,
+    };
+
+    {
+        let mut runs = kanban
+            .runs
+            .write()
+            .map_err(|_| AppError::system("kanban run registry lock poisoned").to_string())?;
+        runs.insert(run.id.clone(), run.clone());
+    }
+    {
+        let mut active = kanban
+            .active_run_by_pane
+            .write()
+            .map_err(|_| AppError::system("kanban active run lock poisoned").to_string())?;
+        active.insert(run.pane_id.clone(), run.id.clone());
+    }
+    {
+        let mut tasks = kanban
+            .tasks
+            .write()
+            .map_err(|_| AppError::system("kanban task registry lock poisoned").to_string())?;
+        if let Some(task_entry) = tasks.get_mut(&task.id) {
+            task_entry.status = KanbanTaskStatus::InProgress;
+            task_entry.last_run_id = Some(run.id.clone());
+            task_entry.updated_at = now_timestamp_string();
+            task_entry.done_at = None;
+        }
+    }
+    {
+        let mut logs = kanban
+            .run_logs
+            .write()
+            .map_err(|_| AppError::system("kanban run log lock poisoned").to_string())?;
+        logs.entry(run.id.clone()).or_insert_with(String::new);
+    }
+
+    Ok(run)
+}
+
+fn kanban_complete_run_impl(
+    kanban: &Arc<KanbanState>,
+    request: KanbanCompleteRunRequest,
+) -> Result<KanbanTaskRun, String> {
+    let run_id = request.run_id.trim();
+    if run_id.is_empty() {
+        return Err(AppError::validation("runId is required").to_string());
+    }
+
+    let mut run = {
+        let mut runs = kanban
+            .runs
+            .write()
+            .map_err(|_| AppError::system("kanban run registry lock poisoned").to_string())?;
+        let entry = runs
+            .get_mut(run_id)
+            .ok_or_else(|| AppError::not_found(format!("kanban run `{run_id}` not found")).to_string())?;
+        entry.status = request.status.into();
+        entry.finished_at = Some(now_timestamp_string());
+        entry.error = request.error;
+        entry.clone()
+    };
+
+    {
+        let mut active = kanban
+            .active_run_by_pane
+            .write()
+            .map_err(|_| AppError::system("kanban active run lock poisoned").to_string())?;
+        if active.get(&run.pane_id).map(String::as_str) == Some(run.id.as_str()) {
+            active.remove(&run.pane_id);
+        }
+    }
+    {
+        let mut tasks = kanban
+            .tasks
+            .write()
+            .map_err(|_| AppError::system("kanban task registry lock poisoned").to_string())?;
+        if let Some(task) = tasks.get_mut(&run.task_id) {
+            task.status = KanbanTaskStatus::Review;
+            task.updated_at = now_timestamp_string();
+        }
+    }
+
+    // Refresh snapshot from registry in case the run was mutated by concurrent sync.
+    run = {
+        let runs = kanban
+            .runs
+            .read()
+            .map_err(|_| AppError::system("kanban run registry lock poisoned").to_string())?;
+        runs.get(run_id).cloned().ok_or_else(|| {
+            AppError::not_found(format!("kanban run `{run_id}` not found after completion"))
+                .to_string()
+        })?
+    };
+
+    Ok(run)
+}
+
+fn kanban_run_logs_impl(
+    kanban: &Arc<KanbanState>,
+    request: KanbanRunLogsRequest,
+) -> Result<KanbanRunLogsResponse, String> {
+    let run_id = request.run_id.trim();
+    if run_id.is_empty() {
+        return Err(AppError::validation("runId is required").to_string());
+    }
+
+    let run = {
+        let runs = kanban
+            .runs
+            .read()
+            .map_err(|_| AppError::system("kanban run registry lock poisoned").to_string())?;
+        runs
+            .get(run_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found(format!("kanban run `{run_id}` not found")).to_string())?
+    };
+
+    let text = {
+        let logs = kanban
+            .run_logs
+            .read()
+            .map_err(|_| AppError::system("kanban run log lock poisoned").to_string())?;
+        logs.get(run_id).cloned().unwrap_or_default()
+    };
+
+    let requested_cursor = request.cursor.unwrap_or(0).min(text.len());
+    let cursor = normalize_kanban_log_boundary(&text, requested_cursor);
+    let limit = request
+        .limit
+        .unwrap_or(KANBAN_RUN_LOG_DEFAULT_LIMIT)
+        .clamp(1, KANBAN_RUN_LOG_MAX_LIMIT);
+    let requested_end = cursor.saturating_add(limit).min(text.len());
+    let end = normalize_kanban_log_boundary(&text, requested_end);
+    let chunk_text = if end > cursor {
+        text[cursor..end].to_string()
+    } else {
+        String::new()
+    };
+
+    let chunks = if chunk_text.is_empty() {
+        Vec::new()
+    } else {
+        vec![KanbanRunLogChunk {
+            sequence: cursor,
+            run_id: run.id.clone(),
+            pane_id: run.pane_id.clone(),
+            timestamp: now_timestamp_string(),
+            chunk: chunk_text,
+        }]
+    };
+
+    Ok(KanbanRunLogsResponse {
+        run_id: run.id,
+        next_cursor: end,
+        done: run.status != KanbanRunStatus::Running && end >= text.len(),
+        chunks,
+    })
+}
+
+fn kanban_state_snapshot_impl(kanban: &Arc<KanbanState>) -> Result<KanbanStateSnapshot, String> {
+    let tasks = kanban
+        .tasks
+        .read()
+        .map_err(|_| AppError::system("kanban task registry lock poisoned").to_string())?
+        .clone();
+    let runs = kanban
+        .runs
+        .read()
+        .map_err(|_| AppError::system("kanban run registry lock poisoned").to_string())?
+        .clone();
+    let active_run_by_pane_id = kanban
+        .active_run_by_pane
+        .read()
+        .map_err(|_| AppError::system("kanban active run lock poisoned").to_string())?
+        .clone();
+
+    Ok(KanbanStateSnapshot {
+        tasks: sorted_kanban_tasks(tasks),
+        runs: sorted_kanban_runs(runs),
+        active_run_by_pane_id,
+    })
+}
+
+fn split_http_path_query(path: &str) -> (&str, HashMap<String, String>) {
+    let Some((path_only, raw_query)) = path.split_once('?') else {
+        return (path, HashMap::new());
+    };
+
+    let mut query = HashMap::new();
+    raw_query
+        .split('&')
+        .filter(|item| !item.trim().is_empty())
+        .for_each(|pair| {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            query.insert(key.to_string(), value.to_string());
+        });
+    (path_only, query)
+}
+
+fn start_automation_http_server(automation: Arc<AutomationState>, kanban: Arc<KanbanState>) {
     thread::spawn(move || {
         let (host, preferred_port) = configured_automation_bind();
         let preferred_bind = format!("{host}:{preferred_port}");
@@ -1365,7 +1887,7 @@ fn start_automation_http_server(automation: Arc<AutomationState>) {
             let Ok(stream) = stream else {
                 continue;
             };
-            if let Err(err) = handle_automation_http_connection(stream, &automation) {
+            if let Err(err) = handle_automation_http_connection(stream, &automation, &kanban) {
                 eprintln!("automation bridge request error: {err}");
             }
         }
@@ -1375,6 +1897,7 @@ fn start_automation_http_server(automation: Arc<AutomationState>) {
 fn handle_automation_http_connection(
     mut stream: TcpStream,
     automation: &Arc<AutomationState>,
+    kanban: &Arc<KanbanState>,
 ) -> Result<(), String> {
     stream
         .set_read_timeout(Some(Duration::from_millis(1500)))
@@ -1437,7 +1960,8 @@ fn handle_automation_http_connection(
         );
     }
     let method = parts[0];
-    let path = parts[1];
+    let raw_path = parts[1];
+    let (path, query_params) = split_http_path_query(raw_path);
 
     let headers = lines
         .filter_map(|line| line.split_once(':'))
@@ -1510,6 +2034,54 @@ fn handle_automation_http_connection(
                 &serde_json::json!({ "workspaces": workspaces }),
             )
         }
+        ("GET", "/v1/kanban") => match kanban_state_snapshot_impl(kanban) {
+            Ok(snapshot) => write_http_json(&mut stream, 200, &serde_json::json!(snapshot)),
+            Err(error) => write_http_json(
+                &mut stream,
+                500,
+                &serde_json::json!({ "error": error }),
+            ),
+        },
+        ("POST", "/v1/kanban/start-run") => {
+            let request: KanbanStartRunRequest = match serde_json::from_slice(&body) {
+                Ok(request) => request,
+                Err(err) => {
+                    return write_http_json(
+                        &mut stream,
+                        400,
+                        &serde_json::json!({ "error": format!("invalid kanban start payload: {err}") }),
+                    )
+                }
+            };
+            match kanban_start_run_impl(kanban, request) {
+                Ok(run) => write_http_json(&mut stream, 200, &serde_json::json!(run)),
+                Err(error) => write_http_json(
+                    &mut stream,
+                    400,
+                    &serde_json::json!({ "error": error }),
+                ),
+            }
+        }
+        ("POST", "/v1/kanban/complete-run") => {
+            let request: KanbanCompleteRunRequest = match serde_json::from_slice(&body) {
+                Ok(request) => request,
+                Err(err) => {
+                    return write_http_json(
+                        &mut stream,
+                        400,
+                        &serde_json::json!({ "error": format!("invalid kanban complete payload: {err}") }),
+                    )
+                }
+            };
+            match kanban_complete_run_impl(kanban, request) {
+                Ok(run) => write_http_json(&mut stream, 200, &serde_json::json!(run)),
+                Err(error) => write_http_json(
+                    &mut stream,
+                    400,
+                    &serde_json::json!({ "error": error }),
+                ),
+            }
+        }
         ("POST", "/v1/commands") => {
             let request: ExternalCommandRequest = match serde_json::from_slice(&body) {
                 Ok(request) => request,
@@ -1534,6 +2106,43 @@ fn handle_automation_http_connection(
                     &mut stream,
                     error.status_code,
                     &serde_json::json!({ "error": error.message }),
+                ),
+            }
+        }
+        _ if method == "GET"
+            && path.starts_with("/v1/kanban/runs/")
+            && path.ends_with("/logs") =>
+        {
+            let run_id = path
+                .trim_start_matches("/v1/kanban/runs/")
+                .trim_end_matches("/logs")
+                .trim_end_matches('/');
+            if run_id.trim().is_empty() {
+                return write_http_json(
+                    &mut stream,
+                    400,
+                    &serde_json::json!({ "error": "run id is required" }),
+                );
+            }
+            let cursor = query_params
+                .get("cursor")
+                .and_then(|value| value.parse::<usize>().ok());
+            let limit = query_params
+                .get("limit")
+                .and_then(|value| value.parse::<usize>().ok());
+            match kanban_run_logs_impl(
+                kanban,
+                KanbanRunLogsRequest {
+                    run_id: run_id.to_string(),
+                    cursor,
+                    limit,
+                },
+            ) {
+                Ok(logs) => write_http_json(&mut stream, 200, &serde_json::json!(logs)),
+                Err(error) => write_http_json(
+                    &mut stream,
+                    404,
+                    &serde_json::json!({ "error": error }),
                 ),
             }
         }
@@ -2129,6 +2738,7 @@ async fn spawn_pane(
     }
 
     let pane_registry = Arc::clone(&state.panes);
+    let kanban_state_for_task = Arc::clone(&state.kanban);
     let pane_id_for_task = pane_id.clone();
     let reader_thread = std::thread::Builder::new()
         .name(format!("pane-reader-{pane_id_for_task}"))
@@ -2147,6 +2757,7 @@ async fn spawn_pane(
                     }
                     Ok(bytes_read) => {
                         let chunk = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+                        append_kanban_log_for_pane(&kanban_state_for_task, &pane_id_for_task, &chunk);
                         if output
                             .send(PtyEvent {
                                 pane_id: pane_id_for_task.clone(),
@@ -2171,9 +2782,13 @@ async fn spawn_pane(
 
             let cleanup_registry = Arc::clone(&pane_registry);
             let cleanup_pane_id = pane_id_for_task.clone();
+            let cleanup_kanban = Arc::clone(&kanban_state_for_task);
             tauri::async_runtime::spawn(async move {
                 let mut panes = cleanup_registry.write().await;
                 panes.remove(&cleanup_pane_id);
+                if let Ok(mut active) = cleanup_kanban.active_run_by_pane.write() {
+                    active.remove(&cleanup_pane_id);
+                }
             });
         });
 
@@ -2397,6 +3012,43 @@ fn sync_automation_workspaces(
         registry.insert(workspace.workspace_id.clone(), workspace);
     });
     Ok(())
+}
+
+#[tauri::command]
+fn sync_kanban_state(
+    state: State<'_, AppState>,
+    request: SyncKanbanStateRequest,
+) -> Result<(), String> {
+    sync_kanban_state_impl(&state.kanban, request)
+}
+
+#[tauri::command]
+fn kanban_start_run(
+    state: State<'_, AppState>,
+    request: KanbanStartRunRequest,
+) -> Result<KanbanTaskRun, String> {
+    kanban_start_run_impl(&state.kanban, request)
+}
+
+#[tauri::command]
+fn kanban_complete_run(
+    state: State<'_, AppState>,
+    request: KanbanCompleteRunRequest,
+) -> Result<KanbanTaskRun, String> {
+    kanban_complete_run_impl(&state.kanban, request)
+}
+
+#[tauri::command]
+fn kanban_run_logs(
+    state: State<'_, AppState>,
+    request: KanbanRunLogsRequest,
+) -> Result<KanbanRunLogsResponse, String> {
+    kanban_run_logs_impl(&state.kanban, request)
+}
+
+#[tauri::command]
+fn kanban_state_snapshot(state: State<'_, AppState>) -> Result<KanbanStateSnapshot, String> {
+    kanban_state_snapshot_impl(&state.kanban)
 }
 
 #[tauri::command]
@@ -4048,6 +4700,7 @@ pub fn run() {
     let (app_state, queue_receiver, discord_presence_receiver) = AppState::new();
     let pane_registry = Arc::clone(&app_state.panes);
     let automation_state = Arc::clone(&app_state.automation);
+    let kanban_state = Arc::clone(&app_state.kanban);
     let queue_receiver = Arc::new(StdMutex::new(Some(queue_receiver)));
     let discord_presence_receiver = Arc::new(StdMutex::new(Some(discord_presence_receiver)));
 
@@ -4060,6 +4713,7 @@ pub fn run() {
         .setup({
             let pane_registry = Arc::clone(&pane_registry);
             let automation_state = Arc::clone(&automation_state);
+            let kanban_state = Arc::clone(&kanban_state);
             let queue_receiver = Arc::clone(&queue_receiver);
             let discord_presence_receiver = Arc::clone(&discord_presence_receiver);
             move |app| {
@@ -4078,7 +4732,10 @@ pub fn run() {
                         start_discord_presence_worker(receiver);
                     }
                 }
-                start_automation_http_server(Arc::clone(&automation_state));
+                start_automation_http_server(
+                    Arc::clone(&automation_state),
+                    Arc::clone(&kanban_state),
+                );
                 Ok(())
             }
         })
@@ -4096,6 +4753,11 @@ pub fn run() {
             restart_app,
             set_discord_presence_enabled,
             sync_automation_workspaces,
+            sync_kanban_state,
+            kanban_start_run,
+            kanban_complete_run,
+            kanban_run_logs,
+            kanban_state_snapshot,
             automation_report,
             resolve_repo_context,
             git_status,

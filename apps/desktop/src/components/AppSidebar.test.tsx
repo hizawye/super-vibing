@@ -33,7 +33,7 @@ describe("AppSidebar", () => {
       />,
     );
 
-    const lockedItem = screen.getByRole("button", { name: /Kanban/i });
+    const lockedItem = screen.getByRole("button", { name: /Agents/i });
     expect(lockedItem).toHaveAttribute("aria-disabled", "true");
 
     await user.click(lockedItem);
@@ -65,6 +65,9 @@ describe("AppSidebar", () => {
 
     await user.click(screen.getByRole("button", { name: "Worktrees" }));
     expect(onSelectSection).toHaveBeenCalledWith("worktrees");
+
+    await user.click(screen.getByRole("button", { name: "Kanban" }));
+    expect(onSelectSection).toHaveBeenCalledWith("kanban");
 
     await user.click(screen.getByRole("button", { name: /new workspace/i }));
     expect(onCreateWorkspace).toHaveBeenCalled();

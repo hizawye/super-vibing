@@ -1,11 +1,30 @@
 import * as React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import App from "./App";
 
-const { paneMountSpy, paneUnmountSpy, mockStoreState, useWorkspaceStoreMock } = vi.hoisted(() => {
+const { paneMountSpy, paneUnmountSpy, defaultWorkspaces, mockStoreState, useWorkspaceStoreMock } = vi.hoisted(() => {
   const paneMountSpy = vi.fn();
   const paneUnmountSpy = vi.fn();
+  const defaultWorkspaces = [
+    {
+      id: "workspace-1",
+      name: "Workspace 1",
+      repoRoot: "/repo",
+      branch: "main",
+      worktreePath: "/repo",
+      layoutMode: "tiling",
+      paneCount: 1,
+      paneOrder: ["pane-1"],
+      panes: {},
+      layouts: [],
+      zoomedPaneId: null,
+      agentAllocation: [],
+      createdAt: "2026-02-13T00:00:00.000Z",
+      updatedAt: "2026-02-13T00:00:00.000Z",
+    },
+  ];
 
   const mockStoreState = {
     initialized: true,
@@ -25,24 +44,7 @@ const { paneMountSpy, paneUnmountSpy, mockStoreState, useWorkspaceStoreMock } = 
       cursor: "cursor-agent",
       opencode: "opencode",
     },
-    workspaces: [
-      {
-        id: "workspace-1",
-        name: "Workspace 1",
-        repoRoot: "/repo",
-        branch: "main",
-        worktreePath: "/repo",
-        layoutMode: "tiling",
-        paneCount: 1,
-        paneOrder: ["pane-1"],
-        panes: {},
-        layouts: [],
-        zoomedPaneId: null,
-        agentAllocation: [],
-        createdAt: "2026-02-13T00:00:00.000Z",
-        updatedAt: "2026-02-13T00:00:00.000Z",
-      },
-    ],
+    workspaces: defaultWorkspaces.map((workspace) => ({ ...workspace })),
     focusedPaneByWorkspace: {
       "workspace-1": "pane-1",
     },
@@ -114,6 +116,7 @@ const { paneMountSpy, paneUnmountSpy, mockStoreState, useWorkspaceStoreMock } = 
   return {
     paneMountSpy,
     paneUnmountSpy,
+    defaultWorkspaces,
     mockStoreState,
     useWorkspaceStoreMock,
   };
@@ -165,6 +168,8 @@ describe("App terminal persistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStoreState.activeSection = "terminal";
+    mockStoreState.workspaces = defaultWorkspaces.map((workspace) => ({ ...workspace }));
+    window.history.replaceState(null, "", "/terminal");
   });
 
   it("keeps pane grids mounted while visiting settings", () => {
@@ -194,5 +199,53 @@ describe("App terminal persistence", () => {
     expect(finalPaneGrid).toHaveAttribute("data-active", "true");
     expect(paneUnmountSpy).not.toHaveBeenCalled();
     expect(container.querySelector(".terminal-surface")).not.toHaveAttribute("hidden");
+  });
+
+  it("hydrates section from URL path on initial render", () => {
+    window.history.replaceState(null, "", "/kanban");
+    render(<App />);
+
+    expect(mockStoreState.setActiveSection).toHaveBeenCalledWith("kanban");
+  });
+
+  it("normalizes unknown URL paths to /terminal", () => {
+    window.history.replaceState(null, "", "/unknown-section");
+    render(<App />);
+
+    expect(window.location.pathname).toBe("/terminal");
+  });
+
+  it("updates section from popstate navigation", () => {
+    render(<App />);
+    expect(mockStoreState.setActiveSection).not.toHaveBeenCalled();
+
+    window.history.pushState(null, "", "/git");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+
+    expect(mockStoreState.setActiveSection).toHaveBeenCalledWith("git");
+  });
+
+  it("keeps current section when switching workspaces from sidebar", async () => {
+    const user = userEvent.setup();
+    mockStoreState.activeSection = "git";
+    window.history.replaceState(null, "", "/git");
+    mockStoreState.workspaces = [
+      mockStoreState.workspaces[0],
+      {
+        ...mockStoreState.workspaces[0],
+        id: "workspace-2",
+        name: "Workspace 2",
+        branch: "feature/two",
+        worktreePath: "/repo/.worktrees/workspace-2",
+      },
+    ];
+
+    render(<App />);
+    mockStoreState.setActiveSection.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Workspace 2 1" }));
+
+    expect(mockStoreState.setActiveWorkspace).toHaveBeenCalledWith("workspace-2");
+    expect(mockStoreState.setActiveSection).not.toHaveBeenCalledWith("terminal");
   });
 });

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Layout } from "react-grid-layout";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -19,6 +19,7 @@ import { useShallow } from "zustand/react/shallow";
 import { AppSidebar, type WorkspaceNavView } from "./components/AppSidebar";
 import { EmptyStatePage } from "./components/EmptyStatePage";
 import { GitSection } from "./components/GitSection";
+import { KanbanSection } from "./components/KanbanSection";
 import { PaneGrid } from "./components/PaneGrid";
 import { StartupCrashScreen } from "./components/StartupCrashScreen";
 import { TopChrome } from "./components/TopChrome";
@@ -34,6 +35,7 @@ import {
   updatesSupported,
   type PendingAppUpdate,
 } from "./lib/updater";
+import { normalizeSectionPath, pathToSection, sectionToPath } from "./lib/section-routes";
 import { reportAutomationResult } from "./lib/tauri";
 import {
   getAgentDefaults,
@@ -120,7 +122,7 @@ interface ActiveWorkspaceView {
 interface TerminalWorkspaceView extends ActiveWorkspaceView {}
 
 const WORKSPACE_NAV_KEY_SEPARATOR = "\u0001";
-const LOCKED_SECTIONS: AppSection[] = ["kanban", "agents", "prompts"];
+const LOCKED_SECTIONS: AppSection[] = ["agents", "prompts"];
 const TERMINAL_SHORTCUT_SCOPE_SELECTOR = "[data-terminal-pane=\"true\"]";
 const AGENT_PROFILE_OPTIONS = getAgentProfileOptions();
 type UpdateStatus = "idle" | "checking" | "available" | "installing" | "installed" | "upToDate" | "error";
@@ -1046,6 +1048,10 @@ function App() {
     [agentStartupDefaults],
   );
   const paneCreatorOpen = paneCreatorTarget !== null;
+  const routeSyncRef = useRef({
+    ready: false,
+    skipNextPush: false,
+  });
 
   useEffect(() => {
     void bootstrap();
@@ -1058,6 +1064,56 @@ function App() {
     root.classList.toggle("reduce-motion", reduceMotion);
     root.classList.toggle("high-contrast", highContrastAssist);
   }, [density, highContrastAssist, reduceMotion, themeId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncSectionFromLocation = (): void => {
+      const sectionFromPath = pathToSection(window.location.pathname);
+      const nextSection = sectionFromPath ?? "terminal";
+      const normalizedPath = sectionToPath(nextSection);
+
+      if (sectionFromPath === null || window.location.pathname !== normalizedPath) {
+        window.history.replaceState(window.history.state, "", normalizedPath);
+      }
+
+      if (nextSection !== useWorkspaceStore.getState().activeSection) {
+        routeSyncRef.current.skipNextPush = true;
+        setActiveSection(nextSection);
+      }
+    };
+
+    syncSectionFromLocation();
+    routeSyncRef.current.ready = true;
+
+    const handlePopState = () => {
+      syncSectionFromLocation();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      routeSyncRef.current.ready = false;
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [initialized, setActiveSection]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !routeSyncRef.current.ready) {
+      return;
+    }
+
+    if (routeSyncRef.current.skipNextPush) {
+      routeSyncRef.current.skipNextPush = false;
+      return;
+    }
+
+    const targetPath = sectionToPath(activeSection);
+    if (normalizeSectionPath(window.location.pathname) !== targetPath) {
+      window.history.pushState(window.history.state, "", targetPath);
+    }
+  }, [activeSection]);
 
   const openPaneCreator = useCallback((paneId?: string) => {
     if (!activeWorkspace) {
@@ -1152,47 +1208,62 @@ function App() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let active = true;
 
-    void listen<FrontendAutomationRequest>("automation:request", async (event) => {
-      const payload = event.payload;
-
+    const bindAutomationEvents = async () => {
       try {
-        if (payload.action === "create_panes") {
-          await setActiveWorkspace(payload.workspaceId);
-          await setActiveWorkspacePaneCount(payload.paneCount);
-          await reportAutomationResult({
-            jobId: payload.jobId,
-            ok: true,
-            result: {
-              workspaceId: payload.workspaceId,
-              paneCount: payload.paneCount,
-            },
-          });
+        const cleanup = await listen<FrontendAutomationRequest>("automation:request", async (event) => {
+          const payload = event.payload;
+
+          try {
+            if (payload.action === "create_panes") {
+              await setActiveWorkspace(payload.workspaceId);
+              await setActiveWorkspacePaneCount(payload.paneCount);
+              await reportAutomationResult({
+                jobId: payload.jobId,
+                ok: true,
+                result: {
+                  workspaceId: payload.workspaceId,
+                  paneCount: payload.paneCount,
+                },
+              });
+              return;
+            }
+
+            if (payload.action === "import_worktree") {
+              await importWorktreeAsWorkspace(payload.worktreePath);
+              await reportAutomationResult({
+                jobId: payload.jobId,
+                ok: true,
+                result: {
+                  worktreePath: payload.worktreePath,
+                },
+              });
+            }
+          } catch (error) {
+            await reportAutomationResult({
+              jobId: payload.jobId,
+              ok: false,
+              error: String(error),
+            });
+          }
+        });
+
+        if (!active) {
+          cleanup();
           return;
         }
 
-        if (payload.action === "import_worktree") {
-          await importWorktreeAsWorkspace(payload.worktreePath);
-          await reportAutomationResult({
-            jobId: payload.jobId,
-            ok: true,
-            result: {
-              worktreePath: payload.worktreePath,
-            },
-          });
-        }
-      } catch (error) {
-        await reportAutomationResult({
-          jobId: payload.jobId,
-          ok: false,
-          error: String(error),
-        });
+        unlisten = cleanup;
+      } catch {
+        // Running in a plain web environment (for example Playwright E2E) has no Tauri event bridge.
       }
-    }).then((cleanup) => {
-      unlisten = cleanup;
-    });
+    };
+
+    void bindAutomationEvents();
 
     return () => {
+      active = false;
       unlisten?.();
     };
   }, [
@@ -1414,7 +1485,6 @@ function App() {
             setSidebarOpen(false);
           }}
           onSelectWorkspace={(workspaceId) => {
-            setActiveSection("terminal");
             void setActiveWorkspace(workspaceId);
             setSidebarOpen(false);
           }}
@@ -1486,7 +1556,7 @@ function App() {
             </section>
           ) : null}
 
-          {activeSection === "terminal" && !activeWorkspace ? (
+          {isTerminalSection && !activeWorkspace ? (
             <EmptyStatePage
               title="No workspaces"
               subtitle="Create your first workspace to start multiplexing agent terminals."
@@ -1495,82 +1565,87 @@ function App() {
             />
           ) : null}
 
-          {activeSection === "kanban" ? (
-            <EmptyStatePage
-              title="Kanban Board"
-              subtitle="Track branch tasks through todo, in-progress, review, and done stages."
-              actionLabel="New Task"
-            />
-          ) : null}
-
-          {activeSection === "agents" ? (
-            <EmptyStatePage
-              title="Agents"
-              subtitle="No agents configured yet. Define agent defaults in workspace creation."
-              actionLabel="Create Agent"
-            />
-          ) : null}
-
-          {activeSection === "prompts" ? (
-            <EmptyStatePage
-              title="Prompts"
-              subtitle="Store reusable prompt templates and route them to selected panes."
-              actionLabel="New Prompt"
-            />
-          ) : null}
-
-          {activeSection === "git" ? (
-            <GitSection
-              active={activeSection === "git"}
-              repoRoot={activeWorkspaceRuntime?.repoRoot ?? null}
-              branch={activeWorkspace?.branch ?? null}
-              worktreePath={activeWorkspace?.worktreePath ?? null}
-              worktreeEntries={worktreeManager.entries}
-              onRefreshWorktrees={refreshWorktrees}
-              onImportWorktree={importWorktreeAsWorkspace}
-              onOpenWorktreeManager={() => {
-                void openWorktreeManager();
-              }}
-            />
-          ) : null}
-
-          {activeSection === "worktrees" ? (
-            <WorktreeManagerSection
-              repoRoot={worktreeManager.repoRoot}
-              loading={worktreeManager.loading}
-              error={worktreeManager.error}
-              entries={worktreeManager.entries}
-              lastLoadedAt={worktreeManager.lastLoadedAt}
-              lastActionMessage={worktreeManager.lastActionMessage}
-              onRefresh={refreshWorktrees}
-              onCreate={createManagedWorktree}
-              onImport={importWorktreeAsWorkspace}
-              onRemove={removeManagedWorktree}
-              onPrune={pruneManagedWorktrees}
-              isWorktreeOpen={(worktreePath) =>
-                openWorktreePathKeys.has(
-                  worktreePath.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase(),
-                )
-              }
-            />
-          ) : null}
-
-          {activeSection === "settings" ? (
-            <SettingsSection
-              themeId={themeId}
-              reduceMotion={reduceMotion}
-              highContrastAssist={highContrastAssist}
-              density={density}
-              agentStartupDefaults={agentStartupDefaults}
-              discordPresenceEnabled={discordPresenceEnabled}
-              onThemeChange={setTheme}
-              onReduceMotionChange={setReduceMotion}
-              onHighContrastAssistChange={setHighContrastAssist}
-              onDensityChange={setDensity}
-              onDiscordPresenceEnabledChange={setDiscordPresenceEnabled}
-              onAgentStartupDefaultChange={setAgentStartupDefault}
-              onResetAgentStartupDefaults={resetAgentStartupDefaults}
-            />
+          {!isTerminalSection ? (
+            <section className="app-page" data-section-page={activeSection}>
+              {(() => {
+                switch (activeSection) {
+                  case "kanban":
+                    return <KanbanSection />;
+                  case "agents":
+                    return (
+                      <EmptyStatePage
+                        title="Agents"
+                        subtitle="No agents configured yet. Define agent defaults in workspace creation."
+                        actionLabel="Create Agent"
+                      />
+                    );
+                  case "prompts":
+                    return (
+                      <EmptyStatePage
+                        title="Prompts"
+                        subtitle="Store reusable prompt templates and route them to selected panes."
+                        actionLabel="New Prompt"
+                      />
+                    );
+                  case "git":
+                    return (
+                      <GitSection
+                        active
+                        repoRoot={activeWorkspaceRuntime?.repoRoot ?? null}
+                        branch={activeWorkspace?.branch ?? null}
+                        worktreePath={activeWorkspace?.worktreePath ?? null}
+                        worktreeEntries={worktreeManager.entries}
+                        onRefreshWorktrees={refreshWorktrees}
+                        onImportWorktree={importWorktreeAsWorkspace}
+                        onOpenWorktreeManager={() => {
+                          void openWorktreeManager();
+                        }}
+                      />
+                    );
+                  case "worktrees":
+                    return (
+                      <WorktreeManagerSection
+                        repoRoot={worktreeManager.repoRoot}
+                        loading={worktreeManager.loading}
+                        error={worktreeManager.error}
+                        entries={worktreeManager.entries}
+                        lastLoadedAt={worktreeManager.lastLoadedAt}
+                        lastActionMessage={worktreeManager.lastActionMessage}
+                        onRefresh={refreshWorktrees}
+                        onCreate={createManagedWorktree}
+                        onImport={importWorktreeAsWorkspace}
+                        onRemove={removeManagedWorktree}
+                        onPrune={pruneManagedWorktrees}
+                        isWorktreeOpen={(worktreePath) =>
+                          openWorktreePathKeys.has(
+                            worktreePath.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase(),
+                          )
+                        }
+                      />
+                    );
+                  case "settings":
+                    return (
+                      <SettingsSection
+                        themeId={themeId}
+                        reduceMotion={reduceMotion}
+                        highContrastAssist={highContrastAssist}
+                        density={density}
+                        agentStartupDefaults={agentStartupDefaults}
+                        discordPresenceEnabled={discordPresenceEnabled}
+                        onThemeChange={setTheme}
+                        onReduceMotionChange={setReduceMotion}
+                        onHighContrastAssistChange={setHighContrastAssist}
+                        onDensityChange={setDensity}
+                        onDiscordPresenceEnabledChange={setDiscordPresenceEnabled}
+                        onAgentStartupDefaultChange={setAgentStartupDefault}
+                        onResetAgentStartupDefaults={resetAgentStartupDefaults}
+                      />
+                    );
+                  default:
+                    return null;
+                }
+              })()}
+            </section>
           ) : null}
         </div>
       </div>

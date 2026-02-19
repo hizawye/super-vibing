@@ -2,8 +2,10 @@ import { create } from "zustand";
 import type { Layout } from "react-grid-layout";
 import { findDirectionalPaneTarget, type PaneMoveDirection } from "../lib/pane-focus";
 import {
+  completeKanbanRun as completeKanbanRunApi,
   createWorktree as createWorktreeApi,
   closePane,
+  getKanbanRunLogs as getKanbanRunLogsApi,
   getCurrentBranch,
   getDefaultCwd,
   listWorktrees,
@@ -13,7 +15,9 @@ import {
   resumePane,
   runGlobalCommand,
   setDiscordPresenceEnabled as setDiscordPresenceEnabledApi,
+  startKanbanRun as startKanbanRunApi,
   syncAutomationWorkspaces,
+  syncKanbanState as syncKanbanStateApi,
   spawnPane,
   suspendPane,
   writePaneInput,
@@ -35,6 +39,11 @@ import type {
   AppSection,
   Blueprint,
   DensityMode,
+  KanbanRunCompletionStatus,
+  KanbanSessionState,
+  KanbanTask,
+  KanbanTaskRun,
+  KanbanTaskStatus,
   LayoutMode,
   LegacySessionState,
   PaneCommandResult,
@@ -95,6 +104,24 @@ interface PaneWorktreeCreateInput {
   baseRef?: string;
 }
 
+interface CreateKanbanTaskInput {
+  title: string;
+  description?: string;
+  workspaceId: string;
+  paneId: string;
+  command: string;
+  preRun?: KanbanTask["preRun"];
+}
+
+interface UpdateKanbanTaskInput {
+  title?: string;
+  description?: string;
+  command?: string;
+  workspaceId?: string;
+  paneId?: string;
+  preRun?: KanbanTask["preRun"];
+}
+
 interface WorkspaceStore {
   initialized: boolean;
   bootstrapping: boolean;
@@ -117,6 +144,10 @@ interface WorkspaceStore {
   snapshots: Snapshot[];
   blueprints: Blueprint[];
   worktreeManager: WorktreeManagerState;
+  kanbanTasks: KanbanTask[];
+  kanbanRuns: KanbanTaskRun[];
+  kanbanRunLogs: Record<string, string>;
+  kanbanRunLogCursor: Record<string, number>;
 
   bootstrap: () => Promise<void>;
   clearStartupError: () => void;
@@ -172,6 +203,17 @@ interface WorkspaceStore {
   importWorktreeAsWorkspace: (worktreePath: string) => Promise<void>;
   removeManagedWorktree: (input: ManagedWorktreeRemoveInput) => Promise<void>;
   pruneManagedWorktrees: (dryRun: boolean) => Promise<void>;
+  createKanbanTask: (input: CreateKanbanTaskInput) => Promise<KanbanTask>;
+  updateKanbanTask: (taskId: string, input: UpdateKanbanTaskInput) => Promise<void>;
+  moveKanbanTask: (taskId: string, status: KanbanTaskStatus) => Promise<void>;
+  startKanbanTaskRun: (taskId: string) => Promise<KanbanTaskRun>;
+  markKanbanTaskDone: (taskId: string) => Promise<void>;
+  completeKanbanRun: (
+    runId: string,
+    status: KanbanRunCompletionStatus,
+    options?: { error?: string },
+  ) => Promise<void>;
+  refreshKanbanRunLogs: (runId: string) => Promise<void>;
   persistSession: () => Promise<void>;
 }
 
@@ -187,6 +229,9 @@ const AGENT_BOOT_PARALLELISM = 3;
 const AGENT_BOOT_STAGGER_MS = 150;
 const AGENT_BOOT_RETRY_LIMIT = 1;
 const AGENT_BOOT_RETRY_BACKOFF_MS = 300;
+const KANBAN_LOG_POLL_INTERVAL_MS = 1200;
+const KANBAN_LOG_POLL_LIMIT = 8192;
+const KANBAN_LOG_MAX_CHARS = 64 * 1024;
 
 const AGENT_PROFILE_CONFIG: Array<{ profile: AgentProfileKey; label: string; command: string }> = [
   { profile: "claude", label: "Claude", command: "claude" },
@@ -294,6 +339,90 @@ function defaultWorktreeManagerState(): WorktreeManagerState {
   };
 }
 
+function defaultKanbanState(): KanbanSessionState {
+  return {
+    tasks: [],
+    runs: [],
+    runLogs: {},
+  };
+}
+
+function clampKanbanRunLogs(logs: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(logs).map(([runId, text]) => [
+      runId,
+      typeof text === "string" && text.length > KANBAN_LOG_MAX_CHARS
+        ? text.slice(-KANBAN_LOG_MAX_CHARS)
+        : typeof text === "string"
+          ? text
+          : "",
+    ]),
+  );
+}
+
+function sanitizeKanbanSession(session?: KanbanSessionState | null): KanbanSessionState {
+  if (!session) {
+    return defaultKanbanState();
+  }
+
+  const tasks = Array.isArray(session.tasks)
+    ? session.tasks
+      .filter((task): task is KanbanTask => Boolean(task && typeof task.id === "string"))
+      .map((task) => ({
+        ...task,
+        title: typeof task.title === "string" ? task.title : "Untitled task",
+        description: typeof task.description === "string" ? task.description : "",
+        workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : "",
+        paneId: typeof task.paneId === "string" ? task.paneId : "",
+        command: typeof task.command === "string" ? task.command : "",
+        status:
+          task.status === "todo"
+          || task.status === "in_progress"
+          || task.status === "review"
+          || task.status === "done"
+            ? task.status
+            : "todo",
+        preRun: task.preRun ?? null,
+        lastRunId: task.lastRunId ?? null,
+        createdAt: typeof task.createdAt === "string" ? task.createdAt : new Date().toISOString(),
+        updatedAt: typeof task.updatedAt === "string" ? task.updatedAt : new Date().toISOString(),
+        doneAt: task.doneAt ?? null,
+      }))
+    : [];
+
+  const runs = Array.isArray(session.runs)
+    ? session.runs
+      .filter((run): run is KanbanTaskRun => Boolean(run && typeof run.id === "string"))
+      .map((run) => ({
+        ...run,
+        status:
+          run.status === "running"
+          || run.status === "succeeded"
+          || run.status === "failed"
+          || run.status === "canceled"
+            ? run.status
+            : "failed",
+        startedAt: typeof run.startedAt === "string" ? run.startedAt : new Date().toISOString(),
+        finishedAt: run.finishedAt ?? null,
+        error: run.error ?? null,
+        createdBranch: run.createdBranch ?? null,
+        createdWorktreePath: run.createdWorktreePath ?? null,
+      }))
+    : [];
+
+  return {
+    tasks,
+    runs,
+    runLogs: clampKanbanRunLogs(session.runLogs ?? {}),
+  };
+}
+
+function buildKanbanLogCursor(runLogs: Record<string, string>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(runLogs).map(([runId, value]) => [runId, value.length]),
+  );
+}
+
 function normalizePathKey(path: string): string {
   return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
@@ -313,6 +442,18 @@ function buildAutomationWorkspaceSnapshots(workspaces: WorkspaceRuntime[]): Auto
   }));
 }
 
+function buildKanbanRunMap(runs: KanbanTaskRun[]): Record<string, KanbanTaskRun> {
+  return Object.fromEntries(runs.map((run) => [run.id, run]));
+}
+
+function appendKanbanLogChunk(current: string, chunk: string): string {
+  const next = `${current}${chunk}`;
+  if (next.length <= KANBAN_LOG_MAX_CHARS) {
+    return next;
+  }
+  return next.slice(-KANBAN_LOG_MAX_CHARS);
+}
+
 async function syncAutomationRegistry(getState: () => WorkspaceStore): Promise<void> {
   const state = getState();
   await syncAutomationWorkspaces(buildAutomationWorkspaceSnapshots(state.workspaces));
@@ -321,6 +462,20 @@ async function syncAutomationRegistry(getState: () => WorkspaceStore): Promise<v
 function enqueueAutomationSync(getState: () => WorkspaceStore): void {
   void syncAutomationRegistry(getState).catch(() => {
     // best effort sync to backend automation bridge
+  });
+}
+
+async function syncKanbanRegistry(getState: () => WorkspaceStore): Promise<void> {
+  const state = getState();
+  await syncKanbanStateApi({
+    tasks: state.kanbanTasks,
+    runs: state.kanbanRuns,
+  });
+}
+
+function enqueueKanbanSync(getState: () => WorkspaceStore): void {
+  void syncKanbanRegistry(getState).catch(() => {
+    // best effort sync to backend kanban mirror
   });
 }
 
@@ -358,6 +513,7 @@ const paneInputFlushes = new Map<string, Promise<void>>();
 const paneTerminalReadyWaiters = new Map<string, Set<() => void>>();
 const workspaceBootInFlight = new Map<string, Promise<void>>();
 const workspaceBootControllers = new Map<string, WorkspaceBootController>();
+const kanbanRunLogPollTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const spawnSlotWaiters: Array<() => void> = [];
 let activeSpawnSlots = 0;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -503,6 +659,27 @@ function clearSuspendTimer(workspaceId: string): void {
 
 function clearAllSuspendTimers(): void {
   Array.from(workspaceSuspendTimers.keys()).forEach((workspaceId) => clearSuspendTimer(workspaceId));
+}
+
+function clearKanbanRunLogPollTimer(runId: string): void {
+  const timer = kanbanRunLogPollTimers.get(runId);
+  if (!timer) {
+    return;
+  }
+  clearTimeout(timer);
+  kanbanRunLogPollTimers.delete(runId);
+}
+
+function clearAllKanbanRunLogPollTimers(): void {
+  Array.from(kanbanRunLogPollTimers.keys()).forEach((runId) => clearKanbanRunLogPollTimer(runId));
+}
+
+function scheduleKanbanRunLogPoll(getState: () => WorkspaceStore, runId: string, delayMs = KANBAN_LOG_POLL_INTERVAL_MS): void {
+  clearKanbanRunLogPollTimer(runId);
+  const timer = setTimeout(() => {
+    void getState().refreshKanbanRunLogs(runId);
+  }, delayMs);
+  kanbanRunLogPollTimers.set(runId, timer);
 }
 
 function enqueuePersist(getState: () => WorkspaceStore): void {
@@ -1073,6 +1250,11 @@ function serializeSessionState(state: WorkspaceStore): SessionState {
       density: state.density,
     },
     agentStartupDefaults: state.agentStartupDefaults,
+    kanban: {
+      tasks: state.kanbanTasks,
+      runs: state.kanbanRuns,
+      runLogs: clampKanbanRunLogs(state.kanbanRunLogs),
+    },
   };
 }
 
@@ -1119,6 +1301,7 @@ function migrateLegacySession(session: LegacySessionState): SessionState {
     discordPresenceEnabled: false,
     uiPreferences: defaultUiPreferences(),
     agentStartupDefaults,
+    kanban: defaultKanbanState(),
   };
 }
 
@@ -1177,6 +1360,7 @@ function sanitizeSession(session: SessionState): SessionState {
     discordPresenceEnabled: sanitizeDiscordPresenceEnabled(session.discordPresenceEnabled),
     uiPreferences: sanitizeUiPreferences(session.uiPreferences),
     agentStartupDefaults,
+    kanban: sanitizeKanbanSession(session.kanban),
   };
 }
 
@@ -1654,6 +1838,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   snapshots: [],
   blueprints: [],
   worktreeManager: defaultWorktreeManagerState(),
+  kanbanTasks: [],
+  kanbanRuns: [],
+  kanbanRunLogs: {},
+  kanbanRunLogCursor: {},
 
   bootstrap: async () => {
     const current = get();
@@ -1664,6 +1852,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     clearAllPendingPaneInit();
     clearAllSuspendTimers();
     clearAllWorkspaceBoot(set);
+    clearAllKanbanRunLogPollTimers();
     paneTerminalReadyWaiters.clear();
 
     set({
@@ -1706,8 +1895,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           discordPresenceEnabled: false,
           uiPreferences: defaultUiPreferences(),
           agentStartupDefaults,
+          kanban: defaultKanbanState(),
         };
       }
+
+      const kanban = sanitizeKanbanSession(session.kanban);
 
       set({
         activeSection: session.activeSection,
@@ -1726,12 +1918,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         snapshots: persisted.snapshots,
         blueprints: persisted.blueprints,
         worktreeManager: defaultWorktreeManagerState(),
+        kanbanTasks: kanban.tasks,
+        kanbanRuns: kanban.runs,
+        kanbanRunLogs: kanban.runLogs,
+        kanbanRunLogCursor: buildKanbanLogCursor(kanban.runLogs),
         initialized: true,
         bootstrapping: false,
         startupError: null,
       });
       void applyDiscordPresenceEnabled(sanitizeDiscordPresenceEnabled(session.discordPresenceEnabled));
       enqueueAutomationSync(get);
+      enqueueKanbanSync(get);
+
+      kanban.runs
+        .filter((run) => run.status === "running")
+        .forEach((run) => {
+          scheduleKanbanRunLogPoll(get, run.id);
+        });
 
       const activeWorkspace = activeWorkspaceOf(get());
       if (activeWorkspace) {
@@ -1762,6 +1965,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     clearAllPendingPaneInit();
     clearAllSuspendTimers();
     clearAllWorkspaceBoot(set);
+    clearAllKanbanRunLogPollTimers();
     spawnInFlight.clear();
     paneTerminalReadyWaiters.clear();
     paneInputBuffers.clear();
@@ -1792,6 +1996,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       snapshots: [],
       blueprints: [],
       worktreeManager: defaultWorktreeManagerState(),
+      kanbanTasks: [],
+      kanbanRuns: [],
+      kanbanRunLogs: {},
+      kanbanRunLogCursor: {},
     });
 
     await get().bootstrap();
@@ -2884,10 +3092,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     clearAllPendingPaneInit();
     clearAllSuspendTimers();
     clearAllWorkspaceBoot(set);
+    clearAllKanbanRunLogPollTimers();
     state.workspaces.forEach((workspace) => clearWorkspacePaneInputBuffers(workspace.id));
 
     const restored = sanitizeSession(snapshot.state);
     const discordPresenceEnabled = sanitizeDiscordPresenceEnabled(restored.discordPresenceEnabled);
+    const kanban = sanitizeKanbanSession(restored.kanban);
 
     set({
       workspaces: restored.workspaces,
@@ -2904,9 +3114,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       density: restored.uiPreferences.density,
       workspaceBootSessions: {},
       worktreeManager: defaultWorktreeManagerState(),
+      kanbanTasks: kanban.tasks,
+      kanbanRuns: kanban.runs,
+      kanbanRunLogs: kanban.runLogs,
+      kanbanRunLogCursor: buildKanbanLogCursor(kanban.runLogs),
     });
     void applyDiscordPresenceEnabled(discordPresenceEnabled);
     enqueueAutomationSync(get);
+    enqueueKanbanSync(get);
+
+    kanban.runs
+      .filter((run) => run.status === "running")
+      .forEach((run) => {
+        scheduleKanbanRunLogPoll(get, run.id);
+      });
 
     const nextActiveWorkspace = activeWorkspaceOf(get());
     if (nextActiveWorkspace) {
@@ -3179,6 +3400,357 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           : `Pruned ${result.paths.length} paths`,
       },
     }));
+  },
+
+  createKanbanTask: async (input: CreateKanbanTaskInput) => {
+    const title = input.title.trim();
+    if (title.length === 0) {
+      throw new Error("Task title is required.");
+    }
+    const command = input.command.trim();
+    if (command.length === 0) {
+      throw new Error("Task command is required.");
+    }
+
+    const workspaceId = input.workspaceId.trim();
+    const paneId = input.paneId.trim();
+    const workspace = get().workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) {
+      throw new Error("Workspace not found.");
+    }
+    if (!workspace.panes[paneId]) {
+      throw new Error("Pane not found.");
+    }
+
+    const now = new Date().toISOString();
+    const task: KanbanTask = {
+      id: `kanban-task-${crypto.randomUUID()}`,
+      title,
+      description: input.description?.trim() ?? "",
+      workspaceId,
+      paneId,
+      command,
+      status: "todo",
+      preRun: input.preRun ?? null,
+      lastRunId: null,
+      createdAt: now,
+      updatedAt: now,
+      doneAt: null,
+    };
+
+    set((state) => ({
+      kanbanTasks: [task, ...state.kanbanTasks],
+    }));
+    enqueueKanbanSync(get);
+    enqueuePersist(get);
+    return task;
+  },
+
+  updateKanbanTask: async (taskId: string, input: UpdateKanbanTaskInput) => {
+    const task = get().kanbanTasks.find((item) => item.id === taskId);
+    if (!task) {
+      throw new Error("Task not found.");
+    }
+
+    const nextWorkspaceId = input.workspaceId?.trim() ?? task.workspaceId;
+    const nextPaneId = input.paneId?.trim() ?? task.paneId;
+    const workspace = get().workspaces.find((item) => item.id === nextWorkspaceId);
+    if (!workspace) {
+      throw new Error("Workspace not found.");
+    }
+    if (!workspace.panes[nextPaneId]) {
+      throw new Error("Pane not found.");
+    }
+
+    const nextTitle = input.title === undefined ? task.title : input.title.trim();
+    if (nextTitle.length === 0) {
+      throw new Error("Task title is required.");
+    }
+    const nextCommand = input.command === undefined ? task.command : input.command.trim();
+    if (nextCommand.length === 0) {
+      throw new Error("Task command is required.");
+    }
+
+    const nextPreRun = input.preRun === undefined ? (task.preRun ?? null) : input.preRun;
+    const now = new Date().toISOString();
+
+    set((state) => ({
+      kanbanTasks: state.kanbanTasks.map((item) =>
+        item.id === taskId
+          ? {
+            ...item,
+            title: nextTitle,
+            description: input.description === undefined ? item.description : (input.description?.trim() ?? ""),
+            workspaceId: nextWorkspaceId,
+            paneId: nextPaneId,
+            command: nextCommand,
+            preRun: nextPreRun,
+            updatedAt: now,
+          }
+          : item
+      ),
+    }));
+    enqueueKanbanSync(get);
+    enqueuePersist(get);
+  },
+
+  moveKanbanTask: async (taskId: string, status: KanbanTaskStatus) => {
+    const existing = get().kanbanTasks.find((task) => task.id === taskId);
+    if (!existing) {
+      throw new Error("Task not found.");
+    }
+    const now = new Date().toISOString();
+
+    set((state) => ({
+      kanbanTasks: state.kanbanTasks.map((task) =>
+        task.id === taskId
+          ? {
+            ...task,
+            status,
+            updatedAt: now,
+            doneAt: status === "done" ? (task.doneAt ?? now) : null,
+          }
+          : task
+      ),
+    }));
+    enqueueKanbanSync(get);
+    enqueuePersist(get);
+  },
+
+  startKanbanTaskRun: async (taskId: string) => {
+    const state = get();
+    const task = state.kanbanTasks.find((item) => item.id === taskId);
+    if (!task) {
+      throw new Error("Task not found.");
+    }
+
+    const workspace = state.workspaces.find((item) => item.id === task.workspaceId);
+    const pane = workspace?.panes[task.paneId];
+    if (!workspace || !pane) {
+      throw new Error("Task target workspace or pane is unavailable.");
+    }
+
+    const existingRun = state.kanbanRuns.find(
+      (run) => run.status === "running" && (run.taskId === taskId || run.paneId === task.paneId),
+    );
+    if (existingRun) {
+      throw new Error("A run is already active for this task or pane.");
+    }
+
+    let createdBranch: string | null = null;
+    let createdWorktreePath: string | null = null;
+    const preRun = task.preRun ?? null;
+    if (preRun?.createWorktree) {
+      const branchName = preRun.branchName.trim();
+      if (branchName.length === 0) {
+        throw new Error("Branch name is required when creating a worktree.");
+      }
+
+      const entry = await get().createWorktreeForWorkspace(task.workspaceId, {
+        mode: preRun.createBranch ? "newBranch" : "existingBranch",
+        branch: branchName,
+        baseRef: preRun.baseRef?.trim() || undefined,
+      });
+      createdBranch = entry.branch;
+      createdWorktreePath = entry.worktreePath;
+      await get().setPaneWorktree(task.workspaceId, task.paneId, entry.worktreePath, { restartRunning: true });
+      if (preRun.openAfterCreate) {
+        await get().importWorktreeAsWorkspace(entry.worktreePath);
+      }
+    }
+
+    await get().ensurePaneSpawned(task.workspaceId, task.paneId);
+
+    if (preRun?.createBranch && !preRun.createWorktree) {
+      const branchName = preRun.branchName.trim();
+      if (branchName.length === 0) {
+        throw new Error("Branch name is required when pre-run branch creation is enabled.");
+      }
+      const branchCommand = preRun.baseRef?.trim()
+        ? `git checkout -B ${branchName} ${preRun.baseRef.trim()}`
+        : `git checkout -B ${branchName}`;
+      await writePaneInput({
+        paneId: toRuntimePaneId(task.workspaceId, task.paneId),
+        data: branchCommand,
+        execute: true,
+      });
+      createdBranch = branchName;
+    }
+
+    let run = await startKanbanRunApi({ taskId });
+    if (createdBranch || createdWorktreePath) {
+      run = {
+        ...run,
+        createdBranch: createdBranch ?? run.createdBranch ?? null,
+        createdWorktreePath: createdWorktreePath ?? run.createdWorktreePath ?? null,
+      };
+    }
+
+    try {
+      await writePaneInput({
+        paneId: toRuntimePaneId(task.workspaceId, task.paneId),
+        data: task.command,
+        execute: true,
+      });
+    } catch (error) {
+      const failedAt = new Date().toISOString();
+      try {
+        run = await completeKanbanRunApi({
+          runId: run.id,
+          status: "failed",
+          error: String(error),
+        });
+      } catch {
+        run = {
+          ...run,
+          status: "failed",
+          finishedAt: failedAt,
+          error: String(error),
+        };
+      }
+    }
+
+    const now = new Date().toISOString();
+    set((current) => {
+      const runMap = buildKanbanRunMap(current.kanbanRuns);
+      runMap[run.id] = run;
+
+      const nextRuns = Object.values(runMap).sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+      const nextLogs = current.kanbanRunLogs[run.id]
+        ? current.kanbanRunLogs
+        : {
+          ...current.kanbanRunLogs,
+          [run.id]: "",
+        };
+
+      return {
+        kanbanTasks: current.kanbanTasks.map((item) =>
+          item.id === taskId
+            ? {
+              ...item,
+              status: run.status === "running" ? "in_progress" : "review",
+              lastRunId: run.id,
+              doneAt: null,
+              updatedAt: now,
+            }
+            : item
+        ),
+        kanbanRuns: nextRuns,
+        kanbanRunLogs: nextLogs,
+        kanbanRunLogCursor: {
+          ...current.kanbanRunLogCursor,
+          [run.id]: current.kanbanRunLogCursor[run.id] ?? nextLogs[run.id].length,
+        },
+      };
+    });
+
+    if (run.status === "running") {
+      scheduleKanbanRunLogPoll(get, run.id, 80);
+    } else {
+      clearKanbanRunLogPollTimer(run.id);
+      void get().refreshKanbanRunLogs(run.id);
+    }
+
+    enqueueKanbanSync(get);
+    enqueuePersist(get);
+    return run;
+  },
+
+  markKanbanTaskDone: async (taskId: string) => {
+    await get().moveKanbanTask(taskId, "done");
+  },
+
+  completeKanbanRun: async (
+    runId: string,
+    status: KanbanRunCompletionStatus,
+    options?: { error?: string },
+  ) => {
+    const run = await completeKanbanRunApi({
+      runId,
+      status,
+      error: options?.error,
+    });
+
+    clearKanbanRunLogPollTimer(runId);
+    const now = new Date().toISOString();
+    set((state) => {
+      const runMap = buildKanbanRunMap(state.kanbanRuns);
+      runMap[runId] = run;
+      const nextRuns = Object.values(runMap).sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+      const nextTaskStatus: KanbanTaskStatus = status === "succeeded" ? "review" : "todo";
+
+      return {
+        kanbanRuns: nextRuns,
+        kanbanTasks: state.kanbanTasks.map((task) =>
+          task.id === run.taskId && task.status === "in_progress"
+            ? {
+              ...task,
+              status: nextTaskStatus,
+              updatedAt: now,
+            }
+            : task
+        ),
+      };
+    });
+
+    enqueueKanbanSync(get);
+    enqueuePersist(get);
+    await get().refreshKanbanRunLogs(runId);
+  },
+
+  refreshKanbanRunLogs: async (runId: string) => {
+    const run = get().kanbanRuns.find((item) => item.id === runId);
+    if (!run) {
+      clearKanbanRunLogPollTimer(runId);
+      return;
+    }
+
+    const cursor = get().kanbanRunLogCursor[runId] ?? 0;
+    try {
+      const response = await getKanbanRunLogsApi({
+        runId,
+        cursor,
+        limit: KANBAN_LOG_POLL_LIMIT,
+      });
+
+      set((state) => {
+        if (!state.kanbanRuns.some((item) => item.id === runId)) {
+          return {};
+        }
+
+        let nextLog = state.kanbanRunLogs[runId] ?? "";
+        response.chunks.forEach((chunk) => {
+          if (chunk.chunk.length > 0) {
+            nextLog = appendKanbanLogChunk(nextLog, chunk.chunk);
+          }
+        });
+
+        return {
+          kanbanRunLogs: {
+            ...state.kanbanRunLogs,
+            [runId]: nextLog,
+          },
+          kanbanRunLogCursor: {
+            ...state.kanbanRunLogCursor,
+            [runId]: Math.max(response.nextCursor, nextLog.length),
+          },
+        };
+      });
+
+      const latestRun = get().kanbanRuns.find((item) => item.id === runId);
+      if (latestRun?.status === "running" && !response.done) {
+        scheduleKanbanRunLogPoll(get, runId);
+      } else {
+        clearKanbanRunLogPollTimer(runId);
+      }
+    } catch {
+      const latestRun = get().kanbanRuns.find((item) => item.id === runId);
+      if (latestRun?.status === "running") {
+        scheduleKanbanRunLogPoll(get, runId);
+      } else {
+        clearKanbanRunLogPollTimer(runId);
+      }
+    }
   },
 
   persistSession: async () => {
