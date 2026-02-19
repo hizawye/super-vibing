@@ -1,8 +1,62 @@
 # Project Status
 
-- Last Updated: 2026-02-17 (release-v0.1.23-recovery)
+- Last Updated: 2026-02-19 (playwright-e2e-harness)
 
 - Current progress:
+  - Implemented browser E2E runtime support for desktop app flows without Tauri host dependencies:
+    - wired `apps/desktop/src/lib/tauri.ts` to route commands through `apps/desktop/src/lib/tauri-e2e.ts` when `VITE_E2E=1`,
+    - added in-memory command/state simulation for pane/worktree/git/kanban APIs used by the frontend store,
+    - added in-memory persistence fallback in `apps/desktop/src/lib/persistence.ts` for E2E mode.
+  - Hardened browser-mode app startup and routing:
+    - made `automation:request` event binding resilient when Tauri event bridge is unavailable,
+    - fixed section deep-link startup race by re-syncing location-driven section state after bootstrap completion in `apps/desktop/src/App.tsx`.
+  - Added Playwright E2E harness and specs:
+    - added root Playwright config in `playwright.config.ts` with `VITE_E2E=1` web server startup,
+    - added `tests/e2e/section-routing.spec.ts` for section route/sidebar/history behavior,
+    - added `tests/e2e/kanban-lifecycle.spec.ts` for create/run/complete/done lifecycle validation,
+    - added root scripts `test:e2e` and `test:e2e:headed`.
+  - Integrated E2E checks in CI:
+    - added `e2e` job in `.github/workflows/ci.yml`,
+    - installs Chromium via Playwright and uploads `playwright-report` / `test-results` artifacts on failure.
+  - Verification:
+    - `pnpm --filter @supervibing/desktop typecheck` ✅
+    - `pnpm --filter @supervibing/desktop test:ci` ✅
+    - `pnpm test:e2e` ✅
+  - Blockers/Bugs:
+    - no functional blockers found in this pass.
+  - Next immediate starting point:
+    - extend E2E scenarios to cover Kanban pre-run branch/worktree creation and Git section interactions against mocked backend state.
+
+  - Historical progress:
+  - Split app navigation sections into first-class page routes instead of terminal-only embedding:
+    - added section route mapper helpers in `apps/desktop/src/lib/section-routes.ts` with canonical paths (`/terminal`, `/git`, `/worktrees`, `/kanban`, `/agents`, `/prompts`, `/settings`),
+    - wired `App.tsx` to hydrate section state from URL on load/popstate and push browser history on section changes,
+    - moved non-terminal section rendering behind a dedicated page wrapper (`.app-page`) while keeping terminal grids mounted only as terminal surface state,
+    - removed forced `terminal` redirect on sidebar workspace switch so workspace changes do not collapse page routing context.
+  - Added route/page regression coverage:
+    - new `apps/desktop/src/lib/section-routes.test.ts` for section/path normalization and fallback behavior,
+    - expanded `apps/desktop/src/App.terminal-persistence.test.tsx` for URL hydration, popstate updates, unknown-path normalization, and workspace switch behavior.
+  - Implemented first-class Kanban orchestration across desktop frontend/store/backend:
+    - unlocked Kanban in sidebar/app routing and replaced placeholder view with `KanbanSection`,
+    - implemented task create/update/move/run/done flows with persisted state sync and run-log polling in `apps/desktop/src/store/workspace.ts`,
+    - added pre-run branch/worktree automation hooks for task runs (create/rebind/import worktree, optional checkout branch before command execution),
+    - added backend Kanban runtime state + Tauri commands + automation HTTP endpoints in `apps/desktop/src-tauri/src/lib.rs`,
+    - wired PTY output capture into active Kanban runs for incremental log streaming.
+  - Added Kanban UI and UX/test coverage:
+    - added `apps/desktop/src/components/KanbanSection.tsx` (task form, column board, run controls, log preview),
+    - added Kanban style system in `apps/desktop/src/styles.css` with responsive board/card layout,
+    - updated `apps/desktop/src/components/AppSidebar.test.tsx` and `apps/desktop/src/components/CommandPalette.test.tsx` for unlocked Kanban navigation/actions.
+  - Verification:
+    - `pnpm --filter @supervibing/desktop typecheck` ✅
+    - `pnpm --filter @supervibing/desktop test -- run src/lib/section-routes.test.ts src/App.terminal-persistence.test.tsx src/components/AppSidebar.test.tsx src/components/CommandPalette.test.tsx` ✅
+    - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - Blockers/Bugs:
+    - no functional blockers found in this pass.
+  - Next immediate starting point:
+    - run in-app manual validation for Kanban pre-run worktree/branch flows and live run-log streaming on real pane commands,
+    - add end-to-end tests for section deep-link + back/forward navigation alongside Kanban run lifecycle once app-level automation test harness is available.
+
+  - Historical progress:
   - Recovered failed `Release` workflow caused by tag/version mismatch on `v0.1.22`:
     - bumped release manifests to `0.1.23` (`package.json`, `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`),
     - committed and pushed `main` (`0a58a02`),
