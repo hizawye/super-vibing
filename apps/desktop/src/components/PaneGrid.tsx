@@ -130,7 +130,7 @@ export function PaneGrid({
                   <Button
                     type="button"
                     variant="subtle"
-                    className="subtle-btn pane-worktree-btn"
+                    className="pane-worktree-btn"
                     data-testid={`pane-worktree-btn-${paneId}`}
                     onMouseDown={(event) => event.stopPropagation()}
                     onDoubleClick={(event) => event.stopPropagation()}

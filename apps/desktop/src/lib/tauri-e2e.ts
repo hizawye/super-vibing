@@ -1,7 +1,6 @@
 import type {
   AutomationWorkspaceSnapshot,
   GitBranchInfo,
-  GitCommandResponse,
   GitDiffResponse,
   GitHubIssueSummary,
   GitHubPrSummary,
@@ -48,30 +47,194 @@ interface E2eState {
   worktreeCounter: number;
 }
 
-const MAIN_REPO_ROOT = "/repo";
-const MAIN_WORKTREE_PATH = "/repo";
+const E2E_DEFAULT_CWD = "/tmp/super-vibing-e2e";
+const MAIN_REPO_ROOT = `${E2E_DEFAULT_CWD}/repo`;
+const MAIN_WORKTREE_PATH = MAIN_REPO_ROOT;
+const FEATURE_WORKTREE_PATH = `${MAIN_REPO_ROOT}/worktrees/feature-visual-regression`;
+const FIX_WORKTREE_PATH = `${MAIN_REPO_ROOT}/worktrees/fix-ci-annotations`;
+const PRUNABLE_WORKTREE_PATH = `${MAIN_REPO_ROOT}/worktrees/wip-prune-me`;
 const MAX_KANBAN_LOG_CHARS = 64 * 1024;
 
-const state: E2eState = createDefaultState();
-
-function createDefaultState(): E2eState {
-  const mainWorktree: WorktreeEntry = {
+const INITIAL_WORKTREES: WorktreeEntry[] = [
+  {
     id: "wt-main",
     repoRoot: MAIN_REPO_ROOT,
     branch: "main",
     worktreePath: MAIN_WORKTREE_PATH,
-    head: "e2e-head",
+    head: "9f3b1f2",
     isMainWorktree: true,
     isDetached: false,
     isLocked: false,
     isPrunable: false,
     isDirty: false,
-  };
+  },
+  {
+    id: "wt-feature",
+    repoRoot: MAIN_REPO_ROOT,
+    branch: "feature/visual-regression",
+    worktreePath: FEATURE_WORKTREE_PATH,
+    head: "20bfad1",
+    isMainWorktree: false,
+    isDetached: false,
+    isLocked: false,
+    isPrunable: false,
+    isDirty: true,
+  },
+  {
+    id: "wt-fix",
+    repoRoot: MAIN_REPO_ROOT,
+    branch: "fix/ci-annotations",
+    worktreePath: FIX_WORKTREE_PATH,
+    head: "bcde901",
+    isMainWorktree: false,
+    isDetached: false,
+    isLocked: true,
+    lockReason: "rebasing",
+    isPrunable: false,
+    isDirty: false,
+  },
+  {
+    id: "wt-prunable",
+    repoRoot: MAIN_REPO_ROOT,
+    branch: "wip/prune-me",
+    worktreePath: PRUNABLE_WORKTREE_PATH,
+    head: "7ac13ef",
+    isMainWorktree: false,
+    isDetached: false,
+    isLocked: false,
+    isPrunable: true,
+    pruneReason: "no branch",
+    isDirty: false,
+  },
+];
+
+const E2E_GIT_STATUS_FILES: GitStatusSnapshot["files"] = [
+  { path: "apps/desktop/src/lib/tauri.ts", code: "M", staged: true, unstaged: false, untracked: false },
+  { path: "tests/visual/shell-regression.spec.ts", code: "A", staged: true, unstaged: false, untracked: false },
+  { path: "docs/project-status.md", code: "M", staged: false, unstaged: true, untracked: false },
+  { path: "apps/desktop/src/styles.css", code: "M", staged: false, unstaged: true, untracked: false },
+  { path: "tests/visual/theme-regression.spec.ts-snapshots", code: "??", staged: false, unstaged: false, untracked: true },
+];
+
+const E2E_GIT_BRANCHES: GitBranchInfo[] = [
+  {
+    name: "main",
+    isCurrent: true,
+    upstream: "origin/main",
+    commit: "9f3b1f2",
+    subject: "feat(ui): stabilize compact shadcn baseline",
+  },
+  {
+    name: "feature/visual-regression",
+    isCurrent: false,
+    upstream: "origin/feature/visual-regression",
+    commit: "20bfad1",
+    subject: "test(visual): add settings screenshots",
+  },
+  {
+    name: "fix/ci-annotations",
+    isCurrent: false,
+    upstream: "origin/fix/ci-annotations",
+    commit: "bcde901",
+    subject: "ci: upload playwright report on failure",
+  },
+];
+
+const E2E_GITHUB_PRS: GitHubPrSummary[] = [
+  {
+    number: 418,
+    title: "Add deterministic shell visual snapshots",
+    state: "OPEN",
+    headRefName: "feature/visual-regression",
+    baseRefName: "main",
+    isDraft: false,
+    updatedAt: "2026-02-19T11:40:00Z",
+    url: "https://example.com/super-vibing/pull/418",
+    author: { login: "nagara" },
+  },
+  {
+    number: 417,
+    title: "Harden E2E runtime fallback paths",
+    state: "OPEN",
+    headRefName: "fix/ci-annotations",
+    baseRefName: "main",
+    isDraft: true,
+    updatedAt: "2026-02-19T10:12:00Z",
+    url: "https://example.com/super-vibing/pull/417",
+    author: { login: "buildbot" },
+  },
+];
+
+const E2E_GITHUB_ISSUES: GitHubIssueSummary[] = [
+  {
+    number: 291,
+    title: "Terminal pane header overflows at narrow widths",
+    state: "OPEN",
+    updatedAt: "2026-02-19T09:22:00Z",
+    url: "https://example.com/super-vibing/issues/291",
+    author: { login: "qa-team" },
+    labels: [{ name: "ui" }, { name: "accessibility" }],
+    assignees: [{ login: "nagara" }],
+  },
+  {
+    number: 288,
+    title: "Worktree sync should retry once on transient git errors",
+    state: "OPEN",
+    updatedAt: "2026-02-18T19:05:00Z",
+    url: "https://example.com/super-vibing/issues/288",
+    author: { login: "ops" },
+    labels: [{ name: "reliability" }],
+    assignees: [],
+  },
+];
+
+const E2E_GITHUB_WORKFLOWS: GitHubWorkflowSummary[] = [
+  { id: 1001, name: "CI", state: "active", path: ".github/workflows/ci.yml" },
+  { id: 1002, name: "Release", state: "active", path: ".github/workflows/release.yml" },
+];
+
+const E2E_GITHUB_RUNS: GitHubRunSummary[] = [
+  {
+    databaseId: 55102,
+    workflowName: "CI",
+    displayTitle: "test: visual baselines",
+    status: "completed",
+    conclusion: "success",
+    event: "push",
+    headBranch: "feature/visual-regression",
+    headSha: "20bfad1",
+    number: 812,
+    createdAt: "2026-02-19T11:00:00Z",
+    updatedAt: "2026-02-19T11:05:00Z",
+    url: "https://example.com/super-vibing/actions/runs/55102",
+  },
+  {
+    databaseId: 55101,
+    workflowName: "Release",
+    displayTitle: "release v0.1.23",
+    status: "completed",
+    conclusion: "success",
+    event: "workflow_dispatch",
+    headBranch: "main",
+    headSha: "9f3b1f2",
+    number: 244,
+    createdAt: "2026-02-19T07:15:00Z",
+    updatedAt: "2026-02-19T07:21:00Z",
+    url: "https://example.com/super-vibing/actions/runs/55101",
+  },
+];
+
+const state: E2eState = createDefaultState();
+
+function createDefaultState(): E2eState {
+  const worktrees = INITIAL_WORKTREES.map((entry) => ({ ...entry }));
+  const worktreePairs = worktrees.map((entry) => [normalizePath(entry.worktreePath), entry] as const);
+  const branchPairs = worktrees.map((entry) => [normalizePath(entry.worktreePath), entry.branch] as const);
 
   return {
     panes: new Map(),
-    worktrees: new Map([[normalizePath(mainWorktree.worktreePath), mainWorktree]]),
-    branchByPath: new Map([[normalizePath(MAIN_WORKTREE_PATH), "main"]]),
+    worktrees: new Map(worktreePairs),
+    branchByPath: new Map(branchPairs),
     automationWorkspaces: [],
     kanban: {
       tasks: new Map(),
@@ -81,7 +244,7 @@ function createDefaultState(): E2eState {
       sequenceByRunId: {},
     },
     runCounter: 0,
-    worktreeCounter: 1,
+    worktreeCounter: worktrees.length + 1,
   };
 }
 
@@ -199,21 +362,17 @@ function runById(runId: string): KanbanTaskRun {
   return run;
 }
 
-function defaultGitCommandResponse(output = "ok"): GitCommandResponse {
-  return { output };
-}
-
 function defaultGitStatus(repoRoot: string): GitStatusSnapshot {
   return {
     repoRoot,
-    branch: resolveBranch(repoRoot),
+    branch: resolveBranch(MAIN_WORKTREE_PATH),
     upstream: "origin/main",
-    ahead: 0,
+    ahead: 2,
     behind: 0,
-    stagedCount: 0,
-    unstagedCount: 0,
-    untrackedCount: 0,
-    files: [],
+    stagedCount: 2,
+    unstagedCount: 2,
+    untrackedCount: 1,
+    files: E2E_GIT_STATUS_FILES.map((file) => ({ ...file })),
   };
 }
 
@@ -225,6 +384,7 @@ export async function e2eSpawnPane(
   request: SpawnPaneRequest,
   emitPaneEvent: (event: PaneEvent) => void,
 ): Promise<SpawnPaneResponse> {
+  const existed = state.panes.has(request.paneId);
   const pane = ensurePaneRuntime(request);
 
   if (request.initCommand && request.initCommand.trim().length > 0) {
@@ -232,6 +392,13 @@ export async function e2eSpawnPane(
       paneId: request.paneId,
       kind: "output",
       payload: `$ ${request.initCommand.trim()}\n`,
+    });
+  }
+  if (!existed) {
+    emitPaneEvent({
+      paneId: request.paneId,
+      kind: "output",
+      payload: ["super-vibing e2e terminal", `cwd: ${pane.cwd}`, "$ "].join("\r\n"),
     });
   }
 
@@ -244,7 +411,7 @@ export async function e2eSpawnPane(
 
 export function e2ePickDirectory(defaultPath?: string): string {
   const normalized = defaultPath?.trim();
-  return normalized && normalized.length > 0 ? normalized : MAIN_WORKTREE_PATH;
+  return normalized && normalized.length > 0 ? normalized : E2E_DEFAULT_CWD;
 }
 
 export async function e2eInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -252,7 +419,7 @@ export async function e2eInvoke<T>(command: string, args?: Record<string, unknow
 
   switch (command) {
     case "get_default_cwd":
-      return MAIN_WORKTREE_PATH as T;
+      return E2E_DEFAULT_CWD as T;
 
     case "get_current_branch":
       return resolveBranch(String(request.cwd ?? MAIN_WORKTREE_PATH)) as T;
@@ -309,7 +476,7 @@ export async function e2eInvoke<T>(command: string, args?: Record<string, unknow
     case "create_worktree": {
       const branch = String(request.branch ?? "feature-e2e");
       const segment = safeBranchSegment(branch);
-      const worktreePath = `${MAIN_REPO_ROOT}/.worktrees/${segment}`;
+      const worktreePath = `${MAIN_REPO_ROOT}/worktrees/${segment}`;
       const entry: WorktreeEntry = {
         id: `wt-${state.worktreeCounter++}`,
         repoRoot: MAIN_REPO_ROOT,
@@ -346,10 +513,22 @@ export async function e2eInvoke<T>(command: string, args?: Record<string, unknow
     }
 
     case "prune_worktrees": {
+      const pruneTargets = Array.from(state.worktrees.values()).filter((entry) => entry.isPrunable);
+      if (!Boolean(request.dryRun)) {
+        for (const target of pruneTargets) {
+          const normalized = normalizePath(target.worktreePath);
+          state.worktrees.delete(normalized);
+          state.branchByPath.delete(normalized);
+        }
+      }
       const response: PruneWorktreesResponse = {
         dryRun: Boolean(request.dryRun),
-        paths: [],
-        output: "",
+        paths: pruneTargets.map((entry) => entry.worktreePath),
+        output: pruneTargets.length === 0
+          ? "No prunable worktrees found."
+          : Boolean(request.dryRun)
+            ? `Would prune ${pruneTargets.map((entry) => entry.worktreePath).join(", ")}`
+            : `Pruned ${pruneTargets.map((entry) => entry.worktreePath).join(", ")}`,
       };
       return response as T;
     }
@@ -482,71 +661,157 @@ export async function e2eInvoke<T>(command: string, args?: Record<string, unknow
       return {
         path: String(request.path ?? ""),
         staged: Boolean(request.staged),
-        patch: "",
+        patch: [
+          `diff --git a/${String(request.path ?? "")} b/${String(request.path ?? "")}`,
+          `--- a/${String(request.path ?? "")}`,
+          `+++ b/${String(request.path ?? "")}`,
+          "@@ -1,3 +1,5 @@",
+          " import { defineConfig } from \"@playwright/test\";",
+          "+const visualMode = \"compact\";",
+          "+// e2e mock patch preview",
+        ].join("\n"),
       } as GitDiffResponse as T;
 
     case "git_stage_paths":
+      return {
+        output: `staged ${Array.isArray(request.paths) ? request.paths.map(String).join(", ") || "selection" : "selection"}`,
+      } as T;
+
     case "git_unstage_paths":
+      return {
+        output: `unstaged ${Array.isArray(request.paths) ? request.paths.map(String).join(", ") || "selection" : "selection"}`,
+      } as T;
+
     case "git_discard_paths":
+      return {
+        output: `discarded ${Array.isArray(request.paths) ? request.paths.map(String).join(", ") || "selection" : "selection"}${Boolean(request.force) ? " (forced)" : ""}`,
+      } as T;
+
     case "git_commit":
+      return {
+        output: `committed in ${String(request.repoRoot ?? MAIN_REPO_ROOT)}: ${String(request.message ?? "")}`,
+      } as T;
+
     case "git_fetch":
+      return {
+        output: `fetched origin for ${String(request.repoRoot ?? MAIN_REPO_ROOT)}`,
+      } as T;
+
     case "git_pull":
+      return {
+        output: `already up to date for ${String(request.repoRoot ?? MAIN_REPO_ROOT)}`,
+      } as T;
+
     case "git_push":
+      return {
+        output: `pushed main -> origin/main (${String(request.repoRoot ?? MAIN_REPO_ROOT)})`,
+      } as T;
+
     case "git_checkout_branch":
+      return {
+        output: `switched to branch ${String(request.branch ?? "main")}`,
+      } as T;
+
     case "git_create_branch":
+      return {
+        output: `created branch ${String(request.branch ?? "feature/e2e")}${Boolean(request.checkout) ? " and checked out" : ""}`,
+      } as T;
+
     case "git_delete_branch":
+      return {
+        output: `deleted branch ${String(request.branch ?? "feature/e2e")}${Boolean(request.force) ? " (forced)" : ""}`,
+      } as T;
+
     case "gh_pr_checkout":
+      return {
+        output: `checked out PR #${String(request.number ?? "")}`,
+      } as T;
+
     case "gh_pr_comment":
+      return {
+        output: `commented on PR #${String(request.number ?? "")}`,
+      } as T;
+
     case "gh_pr_merge_squash":
+      return {
+        output: `squash-merged PR #${String(request.number ?? "")}${Boolean(request.deleteBranch) ? " and deleted branch" : ""}`,
+      } as T;
+
     case "gh_issue_comment":
+      return {
+        output: `commented on issue #${String(request.number ?? "")}`,
+      } as T;
+
     case "gh_issue_edit_labels":
+      return {
+        output: `updated labels on issue #${String(request.number ?? "")}`,
+      } as T;
+
     case "gh_issue_edit_assignees":
+      return {
+        output: `updated assignees on issue #${String(request.number ?? "")}`,
+      } as T;
+
     case "gh_run_rerun_failed":
+      return {
+        output: `reran failed jobs for run ${String(request.runId ?? "")}`,
+      } as T;
+
     case "gh_run_cancel":
-      return defaultGitCommandResponse() as T;
+      return {
+        output: `canceled run ${String(request.runId ?? "")}`,
+      } as T;
 
     case "git_list_branches": {
-      const repoRoot = String(request.repoRoot ?? MAIN_REPO_ROOT);
-      const branch = resolveBranch(repoRoot);
-      const branches: GitBranchInfo[] = [
-        {
-          name: branch,
-          isCurrent: true,
-          upstream: `origin/${branch}`,
-          commit: "e2e-commit",
-          subject: "E2E branch",
-        },
-        {
-          name: "main",
-          isCurrent: branch === "main",
-          upstream: "origin/main",
-          commit: "e2e-main",
-          subject: "Main branch",
-        },
-      ];
+      const currentBranch = resolveBranch(String(request.repoRoot ?? MAIN_WORKTREE_PATH));
+      const branches = E2E_GIT_BRANCHES.map((branch) => ({
+        ...branch,
+        isCurrent: branch.name === currentBranch,
+      }));
       return branches as T;
     }
 
     case "gh_list_prs":
-      return [] as GitHubPrSummary[] as T;
+      return E2E_GITHUB_PRS.slice(0, Number(request.limit ?? E2E_GITHUB_PRS.length)) as T;
 
     case "gh_pr_detail":
-      return {} as T;
+      return {
+        number: Number(request.number ?? 0),
+        title: `PR #${Number(request.number ?? 0)} detail`,
+        checks: [
+          { name: "typecheck", status: "success" },
+          { name: "unit", status: "success" },
+          { name: "visual", status: "success" },
+        ],
+        filesChanged: 7,
+      } as T;
 
     case "gh_list_issues":
-      return [] as GitHubIssueSummary[] as T;
+      return E2E_GITHUB_ISSUES.slice(0, Number(request.limit ?? E2E_GITHUB_ISSUES.length)) as T;
 
     case "gh_issue_detail":
-      return {} as T;
+      return {
+        number: Number(request.number ?? 0),
+        title: `Issue #${Number(request.number ?? 0)} detail`,
+        state: "OPEN",
+        body: "Synthetic issue body for visual-regression browser mode.",
+      } as T;
 
     case "gh_list_workflows":
-      return [] as GitHubWorkflowSummary[] as T;
+      return E2E_GITHUB_WORKFLOWS.slice(0, Number(request.limit ?? E2E_GITHUB_WORKFLOWS.length)) as T;
 
     case "gh_list_runs":
-      return [] as GitHubRunSummary[] as T;
+      return E2E_GITHUB_RUNS.slice(0, Number(request.limit ?? E2E_GITHUB_RUNS.length)) as T;
 
     case "gh_run_detail":
-      return {} as T;
+      return {
+        databaseId: Number(request.runId ?? 0),
+        jobs: [
+          { name: "frontend", conclusion: "success" },
+          { name: "rust", conclusion: "success" },
+          { name: "visual", conclusion: "success" },
+        ],
+      } as T;
 
     default:
       throw new Error(`unsupported e2e tauri command '${command}'`);

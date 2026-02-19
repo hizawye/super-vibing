@@ -5,7 +5,7 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 ## Runtime split
 - Rust backend (`apps/desktop/src-tauri/src/lib.rs`) owns PTY lifecycle, pane I/O, and git worktree automation.
 - React frontend (`apps/desktop/src`) owns pane layout/rendering, command UX, and persistence orchestration.
-- Browser E2E runtime (`VITE_E2E=1`) uses frontend-only in-memory command simulation (`apps/desktop/src/lib/tauri-e2e.ts`) so Playwright can exercise app flows without Tauri host APIs.
+- Browser E2E runtime (`VITE_E2E=1`) uses frontend-only command simulation (`apps/desktop/src/lib/tauri-e2e.ts`) with deterministic fixture payloads for E2E + visual Playwright runs without Tauri host APIs.
 
 ## PTY bridge
 - `spawn_pane` opens native PTY via `portable-pty`.
@@ -113,7 +113,7 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
   - quick-launch blueprints.
   - global agent startup defaults.
 - Store reset path uses plugin-store `reset()` + `save()` to recover from corrupt startup state.
-- In browser E2E mode, persistence is replaced with an in-memory payload store to keep tests hermetic and independent from host plugin availability.
+- In browser E2E mode, persistence uses localStorage (`super-vibing:e2e-payload`) so Playwright specs can seed deterministic startup session state.
 
 ## Startup resilience
 - App root is wrapped in a render error boundary (`StartupErrorBoundary`) and logs startup failures to console (`[startup]` prefix).
@@ -133,8 +133,9 @@ SuperVibing is a desktop workspace orchestrator built with Tauri v2.
 ## Validation and CI
 - Frontend test harness: Vitest + Testing Library + jsdom (`apps/desktop/vitest.config.ts`).
 - Browser E2E harness: Playwright (`playwright.config.ts`) with section-routing and Kanban-lifecycle specs under `tests/e2e`.
+- Visual regression harness: Playwright (`playwright.visual.config.ts`) with shell + theme baselines under `tests/visual`.
 - Rust unit tests validate parser/sanitizer/cwd helpers.
-- CI (`.github/workflows/ci.yml`) runs frontend typecheck/tests/build, Playwright E2E, and rust check/tests on push/PR.
+- CI (`.github/workflows/ci.yml`) runs frontend typecheck/tests/build, Playwright E2E, Playwright visual snapshots, and rust check/tests on push/PR.
 - Release workflow (`.github/workflows/release.yml`) enforces strict tag/version parity before publish.
 - Release parity gate validates all version sources (`package.json`, `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`) and fails fast on drift.
 - Release preparation is codified through pnpm scripts:

@@ -7,6 +7,16 @@
 - 2026-02-10: Chose Tauri plugin-store JSON persistence for session snapshots and quick-launch blueprints.
 - 2026-02-10: Captured "last command" at frontend Enter-submit boundary rather than shell-history scraping.
 
+## [2026-02-19] - Unify Playwright E2E + Visual Pipelines Without Dropping Kanban Runtime Coverage
+**Context:** Rebase introduced divergence between upstream browser E2E harness (Kanban-aware `tauri-e2e` runtime, E2E CI job, E2E Playwright config) and visual-baseline changes (deterministic shell/git/worktree fixtures and visual snapshots).
+**Decision:** Preserve upstream runtime API surface and layer visual fixture behavior into `apps/desktop/src/lib/tauri-e2e.ts` instead of replacing `tauri.ts`:
+- keep E2E and visual test suites on separate configs (`playwright.config.ts` and `playwright.visual.config.ts`),
+- keep both CI jobs (`e2e`, `visual`) with isolated artifact names,
+- keep browser persistence fallback localStorage-backed (`super-vibing:e2e-payload`) so visual specs can seed deterministic app state.
+**Rationale:** Maintains Kanban/browser-E2E behavior coverage while enabling stable, high-signal shell visual regression snapshots.
+**Consequences:** Browser runtime fixture data now intentionally includes synthetic git/GitHub/worktree payloads and terminal output for deterministic screenshots.
+**Alternatives Considered:** Replacing `tauri-e2e` by inlining E2E behavior in `tauri.ts`, and collapsing all Playwright specs into a single config.
+
 ## [2026-02-19] - Playwright Browser E2E Harness with Tauri Runtime Simulation
 **Context:** Section deep-link and Kanban lifecycle behavior needed end-to-end regression coverage, but app logic depends on Tauri command/event/store plugins that are unavailable in plain browser CI.
 **Decision:** Add a dedicated browser E2E mode and keep production desktop runtime untouched:

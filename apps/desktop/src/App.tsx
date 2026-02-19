@@ -125,6 +125,7 @@ const WORKSPACE_NAV_KEY_SEPARATOR = "\u0001";
 const LOCKED_SECTIONS: AppSection[] = ["agents", "prompts"];
 const TERMINAL_SHORTCUT_SCOPE_SELECTOR = "[data-terminal-pane=\"true\"]";
 const AGENT_PROFILE_OPTIONS = getAgentProfileOptions();
+const AUTOMATION_EVENTS_ENABLED = import.meta.env.VITE_E2E !== "1";
 type UpdateStatus = "idle" | "checking" | "available" | "installing" | "installed" | "upToDate" | "error";
 type WorkspaceStoreState = ReturnType<typeof useWorkspaceStore.getState>;
 
@@ -779,7 +780,7 @@ export function SettingsSection({
             ))}
           </div>
           <div className="settings-inline-actions">
-            <Button type="button" variant="subtle" className="subtle-btn" onClick={onResetAgentStartupDefaults}>
+            <Button type="button" variant="subtle" onClick={onResetAgentStartupDefaults}>
               Reset defaults
             </Button>
           </div>
@@ -793,7 +794,6 @@ export function SettingsSection({
             <Button
               type="button"
               variant="subtle"
-              className="subtle-btn"
               onClick={() => {
                 void handleCheckForUpdates();
               }}
@@ -807,7 +807,6 @@ export function SettingsSection({
                 <Button
                   type="button"
                   variant="primary"
-                  className="primary-btn"
                   onClick={() => {
                     void handleInstallUpdate();
                   }}
@@ -817,7 +816,6 @@ export function SettingsSection({
                 <Button
                   type="button"
                   variant="subtle"
-                  className="subtle-btn"
                   onClick={() => {
                     void handleDismissUpdate();
                   }}
@@ -831,7 +829,6 @@ export function SettingsSection({
               <Button
                 type="button"
                 variant="primary"
-                className="primary-btn"
                 onClick={() => {
                   void handleRestartNow();
                 }}
@@ -1207,6 +1204,10 @@ function App() {
   ]);
 
   useEffect(() => {
+    if (!AUTOMATION_EVENTS_ENABLED) {
+      return;
+    }
+
     let unlisten: (() => void) | undefined;
     let active = true;
 
@@ -1351,7 +1352,7 @@ function App() {
           <Button
             type="button"
             variant="subtle"
-            className="subtle-btn pane-stepper-btn"
+            className="pane-stepper-btn"
             onClick={() => {
               void setActiveWorkspacePaneCount(activeWorkspace.paneCount - 1);
             }}
@@ -1363,7 +1364,7 @@ function App() {
           <Button
             type="button"
             variant="subtle"
-            className="subtle-btn pane-stepper-btn"
+            className="pane-stepper-btn"
             onClick={() => {
               void setActiveWorkspacePaneCount(activeWorkspace.paneCount + 1);
             }}
@@ -1376,7 +1377,6 @@ function App() {
         <Button
           type="button"
           variant="subtle"
-          className="subtle-btn"
           onClick={() => openPaneCreator()}
         >
           New Worktree Pane
@@ -1409,7 +1409,6 @@ function App() {
               <Button
                 type="button"
                 variant="subtle"
-                className="subtle-btn"
                 onClick={() => pauseWorkspaceBoot(activeWorkspace.id)}
               >
                 Pause boot
@@ -1419,7 +1418,6 @@ function App() {
               <Button
                 type="button"
                 variant="subtle"
-                className="subtle-btn"
                 onClick={() => resumeWorkspaceBoot(activeWorkspace.id)}
               >
                 Resume boot

@@ -21,7 +21,7 @@ export function EmptyStatePage({ title, subtitle, actionLabel, onAction }: Empty
         <h3>{title}</h3>
         <p>{subtitle}</p>
         {actionLabel && onAction ? (
-          <Button type="button" variant="primary" className="primary-btn" onClick={onAction}>
+          <Button type="button" variant="primary" onClick={onAction}>
             {actionLabel}
           </Button>
         ) : null}

@@ -1,31 +1,28 @@
 # Project Status
 
-- Last Updated: 2026-02-19 (playwright-e2e-harness)
+- Last Updated: 2026-02-19 (e2e-visual-baselines-merge)
 
 - Current progress:
-  - Implemented browser E2E runtime support for desktop app flows without Tauri host dependencies:
-    - wired `apps/desktop/src/lib/tauri.ts` to route commands through `apps/desktop/src/lib/tauri-e2e.ts` when `VITE_E2E=1`,
-    - added in-memory command/state simulation for pane/worktree/git/kanban APIs used by the frontend store,
-    - added in-memory persistence fallback in `apps/desktop/src/lib/persistence.ts` for E2E mode.
-  - Hardened browser-mode app startup and routing:
-    - made `automation:request` event binding resilient when Tauri event bridge is unavailable,
-    - fixed section deep-link startup race by re-syncing location-driven section state after bootstrap completion in `apps/desktop/src/App.tsx`.
-  - Added Playwright E2E harness and specs:
-    - added root Playwright config in `playwright.config.ts` with `VITE_E2E=1` web server startup,
-    - added `tests/e2e/section-routing.spec.ts` for section route/sidebar/history behavior,
-    - added `tests/e2e/kanban-lifecycle.spec.ts` for create/run/complete/done lifecycle validation,
-    - added root scripts `test:e2e` and `test:e2e:headed`.
-  - Integrated E2E checks in CI:
-    - added `e2e` job in `.github/workflows/ci.yml`,
-    - installs Chromium via Playwright and uploads `playwright-report` / `test-results` artifacts on failure.
+  - Unified browser testing so E2E interaction tests and visual snapshot tests coexist cleanly:
+    - kept `playwright.config.ts` focused on `tests/e2e`,
+    - added `playwright.visual.config.ts` for `tests/visual`,
+    - updated root scripts to run each suite explicitly (`test:e2e*`, `test:visual*`).
+  - Extended browser `VITE_E2E=1` runtime fixtures for visual stability without regressing Kanban/E2E coverage:
+    - preserved full `tauri-e2e` command surface used by workspace/kanban flows,
+    - added deterministic git/worktree/GitHub fixture responses and synthetic pane output for high-signal visual snapshots,
+    - switched browser persistence fallback to localStorage key `super-vibing:e2e-payload` so Playwright seed data can control startup state.
+  - Updated CI to run both suites:
+    - `e2e` job for behavior specs,
+    - `visual` job for screenshot assertions,
+    - separate Playwright artifacts on failure (`playwright-report-e2e`, `playwright-report-visual`).
   - Verification:
     - `pnpm --filter @supervibing/desktop typecheck` ✅
-    - `pnpm --filter @supervibing/desktop test:ci` ✅
     - `pnpm test:e2e` ✅
+    - `pnpm test:visual` ✅
   - Blockers/Bugs:
     - no functional blockers found in this pass.
   - Next immediate starting point:
-    - extend E2E scenarios to cover Kanban pre-run branch/worktree creation and Git section interactions against mocked backend state.
+    - add visual baselines for destructive confirmation surfaces in Git/Worktree flows (commit/discard/delete/prune dialogs) and include masks for volatile timestamps/status badges.
 
   - Historical progress:
   - Split app navigation sections into first-class page routes instead of terminal-only embedding:

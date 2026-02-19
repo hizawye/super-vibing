@@ -154,7 +154,6 @@ export function NewWorkspaceModal({
             <Button
               type="button"
               variant="subtle"
-              className="subtle-btn"
               disabled={pathPickerPending}
               onClick={() => void handleBrowseDirectory()}
             >
@@ -163,7 +162,6 @@ export function NewWorkspaceModal({
             <Button
               type="button"
               variant="subtle"
-              className="subtle-btn"
               onClick={() => {
                 setDirectory(defaultDirectory);
                 if (pathPickerError) {
@@ -193,7 +191,6 @@ export function NewWorkspaceModal({
                 <Button
                   type="button"
                   variant="subtle"
-                  className="subtle-btn"
                   onClick={() => {
                     setAllocation((current) => current.map((item) => ({ ...item, enabled: true })));
                   }}
@@ -203,7 +200,6 @@ export function NewWorkspaceModal({
                 <Button
                   type="button"
                   variant="subtle"
-                  className="subtle-btn"
                   onClick={() => {
                     setAllocation((current) =>
                       current.map((item) => ({
@@ -219,7 +215,6 @@ export function NewWorkspaceModal({
                 <Button
                   type="button"
                   variant="subtle"
-                  className="subtle-btn"
                   onClick={() => {
                     setAllocation((current) => {
                       const total = current.length;
@@ -317,13 +312,12 @@ export function NewWorkspaceModal({
         </div>
 
         <DialogFooter className="workspace-modal-actions">
-          <Button type="button" variant="subtle" className="subtle-btn" onClick={onClose}>
+          <Button type="button" variant="subtle" onClick={onClose}>
             Cancel
           </Button>
           <Button
             type="button"
             variant="primary"
-            className="primary-btn"
             onClick={() => {
               onSubmit({
                 name: name.trim() || "",

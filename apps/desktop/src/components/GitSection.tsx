@@ -1226,19 +1226,19 @@ export function GitSection({
           <Badge>focus {focusZone}</Badge>
         </div>
         <div className="git-toolbar-actions">
-          <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void runFetch()}>
+          <Button type="button" variant="subtle" onClick={() => void runFetch()}>
             Fetch
           </Button>
-          <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void runPull()}>
+          <Button type="button" variant="subtle" onClick={() => void runPull()}>
             Pull
           </Button>
-          <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void runPush()}>
+          <Button type="button" variant="subtle" onClick={() => void runPush()}>
             Push
           </Button>
-          <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void refreshActivePanel()}>
+          <Button type="button" variant="subtle" onClick={() => void refreshActivePanel()}>
             Refresh
           </Button>
-          <Button type="button" variant="subtle" className="subtle-btn" onClick={onOpenWorktreeManager}>
+          <Button type="button" variant="subtle" onClick={onOpenWorktreeManager}>
             Worktree Manager
           </Button>
         </div>
@@ -1307,41 +1307,41 @@ export function GitSection({
           <pre className="git-detail-text">{detailValue}</pre>
           {activePanel === "status" ? (
             <div className="git-detail-actions">
-              <Button type="button" variant="subtle" className="subtle-btn" onClick={openCommitDialog}>
+              <Button type="button" variant="subtle" onClick={openCommitDialog}>
                 Commit…
               </Button>
             </div>
           ) : null}
           {activePanel === "branches" ? (
             <div className="git-detail-actions">
-              <Button type="button" variant="subtle" className="subtle-btn" onClick={quickBranchAction}>
+              <Button type="button" variant="subtle" onClick={quickBranchAction}>
                 Branch actions…
               </Button>
             </div>
           ) : null}
           {activePanel === "prs" ? (
             <div className="git-detail-actions">
-              <Button type="button" variant="subtle" className="subtle-btn" onClick={quickPrAction}>
+              <Button type="button" variant="subtle" onClick={quickPrAction}>
                 PR actions…
               </Button>
             </div>
           ) : null}
           {activePanel === "issues" ? (
             <div className="git-detail-actions">
-              <Button type="button" variant="subtle" className="subtle-btn" onClick={quickIssueAction}>
+              <Button type="button" variant="subtle" onClick={quickIssueAction}>
                 Issue actions…
               </Button>
             </div>
           ) : null}
           {activePanel === "actions" && selectedRun ? (
             <div className="git-detail-actions">
-              <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void openRunDetail(selectedRun.databaseId)}>
+              <Button type="button" variant="subtle" onClick={() => void openRunDetail(selectedRun.databaseId)}>
                 Open
               </Button>
-              <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void rerunSelectedRun()}>
+              <Button type="button" variant="subtle" onClick={() => void rerunSelectedRun()}>
                 Rerun Failed
               </Button>
-              <Button type="button" variant="subtle" className="subtle-btn" onClick={runDestructiveAction}>
+              <Button type="button" variant="subtle" onClick={runDestructiveAction}>
                 Cancel
               </Button>
             </div>
@@ -1373,13 +1373,12 @@ export function GitSection({
             />
           </div>
           <DialogFooter className="workspace-modal-actions">
-            <Button type="button" variant="subtle" className="subtle-btn" onClick={() => setCommitDialogOpen(false)}>
+            <Button type="button" variant="subtle" onClick={() => setCommitDialogOpen(false)}>
               Cancel
             </Button>
             <Button
               type="button"
               variant="primary"
-              className="primary-btn"
               disabled={commitMessageDraft.trim().length === 0 || busyAction}
               onClick={() => {
                 void submitCommit();
@@ -1405,7 +1404,6 @@ export function GitSection({
               <Button
                 type="button"
                 variant="subtle"
-                className="subtle-btn"
                 disabled={!selectedBranch || selectedBranch.isCurrent || busyAction}
                 onClick={() => {
                   void checkoutSelectedBranch();
@@ -1416,7 +1414,6 @@ export function GitSection({
               <Button
                 type="button"
                 variant="subtle"
-                className="subtle-btn"
                 disabled={!selectedBranch || selectedBranch.isCurrent || busyAction}
                 onClick={() => {
                   if (!selectedBranch) {
@@ -1463,13 +1460,12 @@ export function GitSection({
             />
           </div>
           <DialogFooter className="workspace-modal-actions">
-            <Button type="button" variant="subtle" className="subtle-btn" onClick={() => setBranchDialogOpen(false)}>
+            <Button type="button" variant="subtle" onClick={() => setBranchDialogOpen(false)}>
               Close
             </Button>
             <Button
               type="button"
               variant="primary"
-              className="primary-btn"
               disabled={newBranchNameDraft.trim().length === 0 || busyAction}
               onClick={() => {
                 void createBranchFromDialog();
@@ -1495,7 +1491,6 @@ export function GitSection({
               <Button
                 type="button"
                 variant="subtle"
-                className="subtle-btn"
                 disabled={!selectedPr || busyAction}
                 onClick={() => {
                   if (!selectedPr) {
@@ -1510,7 +1505,6 @@ export function GitSection({
               <Button
                 type="button"
                 variant="subtle"
-                className="subtle-btn"
                 disabled={!selectedPr || busyAction}
                 onClick={() => {
                   void checkoutSelectedPr();
@@ -1521,7 +1515,6 @@ export function GitSection({
               <Button
                 type="button"
                 variant="subtle"
-                className="subtle-btn"
                 disabled={!selectedPr || busyAction}
                 onClick={() => {
                   if (!selectedPr) {
@@ -1561,13 +1554,12 @@ export function GitSection({
             />
           </div>
           <DialogFooter className="workspace-modal-actions">
-            <Button type="button" variant="subtle" className="subtle-btn" onClick={() => setPrDialogOpen(false)}>
+            <Button type="button" variant="subtle" onClick={() => setPrDialogOpen(false)}>
               Close
             </Button>
             <Button
               type="button"
               variant="primary"
-              className="primary-btn"
               disabled={!selectedPr || prCommentDraft.trim().length === 0 || busyAction}
               onClick={() => {
                 void commentOnSelectedPr();
@@ -1593,7 +1585,6 @@ export function GitSection({
               <Button
                 type="button"
                 variant="subtle"
-                className="subtle-btn"
                 disabled={!selectedIssue || busyAction}
                 onClick={() => {
                   if (!selectedIssue) {
@@ -1621,7 +1612,6 @@ export function GitSection({
               <Button
                 type="button"
                 variant="primary"
-                className="primary-btn"
                 disabled={!selectedIssue || issueCommentDraft.trim().length === 0 || busyAction}
                 onClick={() => {
                   void commentOnSelectedIssue();
@@ -1650,7 +1640,6 @@ export function GitSection({
               <Button
                 type="button"
                 variant="subtle"
-                className="subtle-btn"
                 disabled={busyAction || (parseCsvList(issueAddLabelsDraft).length === 0 && parseCsvList(issueRemoveLabelsDraft).length === 0)}
                 onClick={() => {
                   void editSelectedIssueLabels();
@@ -1677,13 +1666,12 @@ export function GitSection({
             />
           </div>
           <DialogFooter className="workspace-modal-actions">
-            <Button type="button" variant="subtle" className="subtle-btn" onClick={() => setIssueDialogOpen(false)}>
+            <Button type="button" variant="subtle" onClick={() => setIssueDialogOpen(false)}>
               Close
             </Button>
             <Button
               type="button"
               variant="primary"
-              className="primary-btn"
               disabled={busyAction || (parseCsvList(issueAddAssigneesDraft).length === 0 && parseCsvList(issueRemoveAssigneesDraft).length === 0)}
               onClick={() => {
                 void editSelectedIssueAssignees();

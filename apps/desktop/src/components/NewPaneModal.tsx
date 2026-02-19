@@ -135,7 +135,6 @@ export function NewPaneModal({
               <Button
                 type="button"
                 variant="subtle"
-                className="subtle-btn"
                 onClick={() => {
                   void onRefresh();
                 }}
@@ -193,7 +192,7 @@ export function NewPaneModal({
                       role="option"
                       aria-selected={active}
                       variant="subtle"
-                      className={`subtle-btn pane-worktree-option ${active ? "active" : ""}`}
+                      className={`pane-worktree-option ${active ? "active" : ""}`}
                       onClick={() => setSelectedWorktreePath(entry.worktreePath)}
                     >
                       <span>{entry.branch}</span>
@@ -227,13 +226,12 @@ export function NewPaneModal({
         </div>
 
         <DialogFooter className="workspace-modal-actions">
-          <Button type="button" variant="subtle" className="subtle-btn" onClick={onClose} disabled={working}>
+          <Button type="button" variant="subtle" onClick={onClose} disabled={working}>
             Cancel
           </Button>
           <Button
             type="button"
             variant="primary"
-            className="primary-btn"
             disabled={submitDisabled}
             onClick={() => {
               setActionError(null);

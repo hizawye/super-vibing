@@ -39,12 +39,12 @@ export function StartupCrashScreen({
 
         <div style={{ display: "flex", gap: "10px", marginTop: "16px", flexWrap: "wrap" }}>
         {onRetry ? (
-          <Button type="button" variant="primary" className="primary-btn" onClick={onRetry}>
+          <Button type="button" variant="primary" onClick={onRetry}>
             Retry
           </Button>
         ) : null}
         {onResetLocalData ? (
-          <Button type="button" variant="subtle" className="subtle-btn" onClick={onResetLocalData}>
+          <Button type="button" variant="subtle" onClick={onResetLocalData}>
             Reset local data
           </Button>
         ) : null}
@@ -52,7 +52,6 @@ export function StartupCrashScreen({
           <Button
             type="button"
             variant="subtle"
-            className="subtle-btn"
             onClick={() => setShowDetails((current) => !current)}
             aria-expanded={showDetails}
           >

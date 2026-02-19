@@ -37,10 +37,10 @@ export function GitActionConfirmModal({
           <DialogDescription className="settings-caption">{message}</DialogDescription>
         </div>
         <DialogFooter className="workspace-modal-actions">
-          <Button type="button" variant="subtle" className="subtle-btn" onClick={onCancel} disabled={busy}>
+          <Button type="button" variant="subtle" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" className="primary-btn" onClick={onConfirm} disabled={busy}>
+          <Button type="button" variant="primary" onClick={onConfirm} disabled={busy}>
             {busy ? "Working..." : confirmLabel}
           </Button>
         </DialogFooter>

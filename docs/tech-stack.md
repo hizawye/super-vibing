@@ -21,7 +21,7 @@
   - Vitest
   - Testing Library (`@testing-library/react`, `@testing-library/user-event`, `@testing-library/jest-dom`)
   - jsdom
-  - Playwright (`@playwright/test`) for browser E2E
+  - Playwright (`@playwright/test`) for browser E2E (`playwright.config.ts`) and visual regression snapshots (`playwright.visual.config.ts`)
   - Rust unit tests via Cargo
 - CI/CD:
   - GitHub Actions (`.github/workflows/ci.yml`)

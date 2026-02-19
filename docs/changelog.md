@@ -1,5 +1,26 @@
 # Changelog
 
+## [2026-02-19] - Rebase Merge: E2E + Visual Playwright Cohesion
+### Added
+- Added `playwright.visual.config.ts` for `tests/visual` snapshots without changing existing E2E config behavior.
+- Added deterministic shell fixture responses in `apps/desktop/src/lib/tauri-e2e.ts` for:
+  - worktree manager rows,
+  - git status/branches/diff previews,
+  - GitHub PR/issues/actions panels,
+  - synthetic terminal pane output during browser runtime.
+
+### Changed
+- Updated root Playwright scripts in `package.json` to target explicit configs:
+  - `test:e2e`, `test:e2e:headed` -> `playwright.config.ts`,
+  - `test:visual`, `test:visual:update` -> `playwright.visual.config.ts`.
+- Updated browser persistence fallback in `apps/desktop/src/lib/persistence.ts` to localStorage-backed payload (`super-vibing:e2e-payload`) for deterministic Playwright seeding.
+- Expanded `.github/workflows/ci.yml` to run both `e2e` and `visual` jobs with distinct failure artifacts.
+
+### Verification
+- `pnpm --filter @supervibing/desktop typecheck`
+- `pnpm test:e2e`
+- `pnpm test:visual`
+
 ## [2026-02-19] - Playwright E2E Harness + Browser Tauri Shim
 ### Added
 - Added Playwright test infrastructure:

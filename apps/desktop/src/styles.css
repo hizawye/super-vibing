@@ -537,9 +537,7 @@ button:disabled {
   color: var(--muted-foreground);
 }
 
-.subtle-btn,
-.toolbar-btn,
-.primary-btn {
+.toolbar-btn {
   min-height: var(--control-height);
 }
 

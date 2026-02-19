@@ -79,13 +79,13 @@ export function WorktreeManagerSection({
               {lastLoadedAt ? <small className="settings-caption">Last sync: {new Date(lastLoadedAt).toLocaleString()}</small> : null}
             </div>
             <div className="worktree-toolbar-actions">
-              <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void run("refresh", onRefresh)} disabled={working !== null}>
+              <Button type="button" variant="subtle" onClick={() => void run("refresh", onRefresh)} disabled={working !== null}>
                 Refresh
               </Button>
-              <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void run("prune-dry", async () => onPrune(true))} disabled={working !== null || !repoRoot}>
+              <Button type="button" variant="subtle" onClick={() => void run("prune-dry", async () => onPrune(true))} disabled={working !== null || !repoRoot}>
                 Prune (Dry Run)
               </Button>
-              <Button type="button" variant="subtle" className="subtle-btn" onClick={() => void run("prune", async () => onPrune(false))} disabled={working !== null || !repoRoot}>
+              <Button type="button" variant="subtle" onClick={() => void run("prune", async () => onPrune(false))} disabled={working !== null || !repoRoot}>
                 Prune
               </Button>
             </div>
@@ -150,7 +150,6 @@ export function WorktreeManagerSection({
             <Button
               type="button"
               variant="primary"
-              className="primary-btn"
               disabled={working !== null || !repoRoot || branch.trim().length === 0}
               onClick={() =>
                 void run("create", async () => {
@@ -199,7 +198,6 @@ export function WorktreeManagerSection({
                     <Button
                       type="button"
                       variant="subtle"
-                      className="subtle-btn"
                       disabled={working !== null}
                       onClick={() => void run(`open:${entry.worktreePath}`, async () => onImport(entry.worktreePath))}
                     >
@@ -208,7 +206,6 @@ export function WorktreeManagerSection({
                     <Button
                       type="button"
                       variant="subtle"
-                      className="subtle-btn"
                       disabled={working !== null || removeDisabled}
                       onClick={() => {
                         setPendingRemovePath((current) => (current === entry.worktreePath ? null : entry.worktreePath));
@@ -237,13 +234,12 @@ export function WorktreeManagerSection({
                         Delete branch after remove
                       </label>
                       <div className="worktree-remove-actions">
-                        <Button type="button" variant="subtle" className="subtle-btn" onClick={() => setPendingRemovePath(null)}>
+                        <Button type="button" variant="subtle" onClick={() => setPendingRemovePath(null)}>
                           Cancel
                         </Button>
                         <Button
                           type="button"
                           variant="primary"
-                          className="primary-btn"
                           onClick={() =>
                             void run(`remove:${entry.worktreePath}`, async () => {
                               await onRemove({
